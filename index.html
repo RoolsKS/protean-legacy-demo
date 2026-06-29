@@ -838,6 +838,8 @@ function startLife(opts){
     job:null, jobPerf:50, jobHistory:[],   // career, work performance & past-job experience
     careers:{}, achievements:{}, business:null,   // collected careers (25 yrs), unlocked achievements, owned business
     goalsAchieved:{},       // LIFE GOALS / bucket list — a DYNASTY checklist (carries across generations)
+    scenario:{key:null, completed:{}},   // SCENARIO PACKS — an active themed challenge + the ones the dynasty has beaten
+    dynastyStats:{officesWon:0, pandemics:0},   // cumulative dynasty-wide tallies for scenario goals
     office:null, party:null, officeTerms:{}, electionCooldown:0,   // politics: current office, party, terms served per tier, re-run cooldown
     dynastyOffice:null, dynastyApproval:50,        // highest office & final approval a forebear reached (heir name recognition)
     stds:[],                // sexually transmitted infections (curable / managed)
@@ -869,6 +871,7 @@ function startLife(opts){
     investments: {stocks:0, spec:0, cost:0},   // your market positions
     hobbies: {},            // HOBBIES & PASSIONS — skills you cultivate (talent + practice)
     underworld: {rep:0, rank:-1, crew:null, heat:0, jobs:0, busts:0, jailUntil:0},   // CRIME & UNDERWORLD progression
+    fame: 0,                // FAME meter (0-100) — climbs through tiers, fades without upkeep
     flags:{},               // permanent memory
     people:{},              // relationships with memory
     scheduled:[],           // deferred consequences {atAge,id}
@@ -964,6 +967,8 @@ function continueGame(){
     S.hobbies=S.hobbies||{};   // HOBBIES backfill
     S.goalsAchieved=S.goalsAchieved||{};   // LIFE GOALS backfill
     S.underworld=S.underworld||{rep:0,rank:-1,crew:null,heat:0,jobs:0,busts:0,jailUntil:0};   // UNDERWORLD backfill
+    if(S.fame===undefined) S.fame=0;   // FAME backfill
+    S.scenario=S.scenario||{key:null,completed:{}}; S.dynastyStats=S.dynastyStats||{officesWon:0,pandemics:0};   // SCENARIOS backfill
     if(S.passportApp===undefined) S.passportApp=null;
     if(S.passportExpires===undefined) S.passportExpires = S.passport ? S.age+10 : null;   // grandfather older saves with a fresh 10-yr passport
     if(S.eduUntil===undefined||S.eduUntil===0) S.eduUntil = S.eduLevel==='primary'?12 : S.eduLevel==='high'?18 : S.eduLevel==='college'?(S.age+1) : 0;
@@ -1597,6 +1602,8 @@ function legacyScore(){ const a=legacyAxes();
   return Math.round( a.virtue + a.power + a.wealth + a.infamy
     + (S.legacyGen||1)*100 + Object.keys(S.achievements||{}).length*25 + Object.keys(S.careers||{}).length*18
     + Object.keys(S.goalsAchieved||{}).length*40       // fulfilled life goals feed the dynasty score
+    + Math.round((S.peakFame||0)*1.5)                   // the height of your fame is remembered
+    + Object.keys((S.scenario&&S.scenario.completed)||{}).length*120   // beaten scenario challenges
     + (factScore(null,{inherited:true})||0) ); }
 function legacyView(){ if(!S){toast('Start a life first.');return;}
   logAct('call',{fn:'legacyView'}); const a=legacyAxes(), arch=legacyArchetype(), sc=legacyScore();
@@ -2069,6 +2076,50 @@ const EVENTS = [
         return {text:`It all went wrong. The take slipped away and the law closed in — <b>${sentence} years</b>. You bet everything, and lost. 🔒`, tags:[['bad',`Prison: ${sentence}yr`]]}; }},
       {label:'Walk away from it', tip:'Some scores aren’t worth it', apply:()=>{ addSelfWorth(2);
         return {text:`You looked at the plan, saw the body count and the prison time hiding in it, and walked. Discipline is its own kind of strength.`, tags:[['flag','Walked away']]}; }},
+    ]};}},
+
+/* FAME: a fan recognizes you */
+{ id:'rx_fame_fan', once:false, weight:9, when:S=>fameScore()>=32 && fameScore()<70 && (S.age-(S._lastFan||-99)>=4),
+  build:S=>{ S._lastFan=S.age; const where=pick(['at a coffee shop','on the street','at the airport','in a restaurant','at the gym']);
+    return { yr:`Age ${S.age}`, title:'🌟 "Oh my god, is that you?!"',
+    text:`A fan spots you ${where}, starstruck and shaking, asking for a photo. People are starting to look over.`,
+    choices:[
+      {label:'Be gracious — make their day', tip:'Fans built you', apply:()=>{ gainFame(rng(2,5)); karma(2); chg('happy',2);
+        return {text:`You smiled, took the photo, chatted for a minute. They'll tell everyone how lovely you were — and that's worth more than any ad. ✨`, tags:[['good','A gracious star']]}; }},
+      {label:'Brush them off', tip:'You’re busy', apply:()=>{ gainFame(-rng(2,6)); karma(-2); S.rep=clamp((S.rep||0)-3,-100,100);
+        if(rng(0,100)<35){ ledgerAdd('scandal',14,{note:'Caught being rude to a fan — it went viral.'}); return {text:`You blew them off — and someone filmed it. "${S.name} is so rude" is trending by morning. 📉`, tags:[['bad','Rude to a fan — viral']]}; }
+        return {text:`You kept walking. They looked crushed. Word gets around about that kind of thing.`, tags:[['flag','Brushed off a fan']]}; }},
+    ]};}},
+
+/* FAME: an endorsement deal */
+{ id:'rx_fame_endorse', once:false, weight:9, when:S=>fameScore()>=45 && (S.age-(S._lastEndorse||-99)>=5),
+  build:S=>{ S._lastEndorse=S.age; const brand=pick(['a fashion label','an energy drink','a luxury watchmaker','a fast-food chain','a crypto app','a skincare line']);
+    const offer=Math.round(fameScore()*rng(400,1200)*priceMult());
+    return { yr:`Age ${S.age}`, title:'🤝 An Endorsement Deal',
+    text:`${brand.charAt(0).toUpperCase()+brand.slice(1)} wants to pay you <b>${cur()}${offer.toLocaleString()}</b> to be the face of their brand. Easy money — if you don't mind putting your name on it.`,
+    choices:[
+      {label:'Take the deal', tip:'Cash in the fame', apply:()=>{ money(offer); gainFame(rng(1,4));
+        if(/crypto|energy drink/.test(brand) && rng(0,100)<30){ ledgerAdd('scandal',16,{note:`Endorsed ${brand} — it turned out to be a scam.`}); gainFame(-rng(4,9));
+          return {text:`You banked <b>${cur()}${offer.toLocaleString()}</b> — but ${brand} turned out to be a scam, and your fans feel betrayed. 📉`, tags:[['bad','Bad endorsement']]}; }
+        return {text:`You signed the deal and pocketed <b>${cur()}${offer.toLocaleString()}</b>. Your face is everywhere now. 💰`, tags:[['good',`+${cur()}${offer.toLocaleString()} endorsement`]]}; }},
+      {label:'Turn it down — protect your image', tip:'Integrity over cash', apply:()=>{ gainFame(rng(2,5)); addSelfWorth(3);
+        return {text:`You passed — it wasn't the right fit for your brand. Selective is its own kind of prestige. ✨`, tags:[['good','Stayed selective']]}; }},
+    ]};}},
+
+/* FAME: paparazzi & a brewing scandal */
+{ id:'rx_fame_scandal', once:false, weight:8, when:S=>fameScore()>=58 && (S.age-(S._lastFameScandal||-99)>=6),
+  build:S=>{ S._lastFameScandal=S.age; const dirt=pick(['an old post resurfacing','a misquoted interview','a paparazzi photo taken out of context','a feud with another celebrity','a leaked private moment']);
+    return { yr:`Age ${S.age}`, title:'📸 The Headlines Turn',
+    text:`The tabloids have you in their crosshairs — ${dirt} has blown up, and the internet is piling on. Your publicist is calling nonstop.`,
+    choices:[
+      {label:'Hire a crisis PR team', tip:'Spend to control the story', when:S=>S.money>5000, apply:()=>{ const cost=Math.round(rng(8000,60000)*priceMult()); if(!spend(cost)) { gainFame(-rng(8,16)); return {text:`You couldn't afford the spin doctors, and the story ran wild.`,tags:[['bad','Scandal']]}; }
+        if(rng(0,100)<70){ gainFame(-rng(1,4)); return {text:`Your PR team got ahead of it — a careful apology, a softball interview, and the story died. (${cur()}${cost.toLocaleString()}) 🕴️`, tags:[['flag','Scandal contained']]}; }
+        gainFame(-rng(6,12)); return {text:`Even the spin doctors couldn't save this one. The fame takes a hit.`, tags:[['bad','Scandal stuck']]}; }},
+      {label:'Address it head-on, honestly', tip:'Own it publicly', apply:()=>{ const ok=rng(0,100)<48+S.stats.looks/5;
+        if(ok){ gainFame(rng(1,5)); karma(2); addSelfWorth(3); return {text:`You went live, owned what was real, and people respected the honesty. The scandal became a comeback. ✨`, tags:[['good','Owned the scandal']]}; }
+        gainFame(-rng(8,16)); ledgerAdd('scandal',18,{note:`A public scandal: ${dirt}.`}); return {text:`You addressed it, but it didn't land — the pile-on only grew. Your star dims. 📉`, tags:[['bad','Fame hit']]}; }},
+      {label:'Say nothing and lie low', tip:'Wait for it to blow over', apply:()=>{ gainFame(-rng(4,10));
+        return {text:`You went silent. The frenzy slowly faded — along with some of your shine. The public has a long memory for the quiet ones.`, tags:[['flag','Weathered the storm']]}; }},
     ]};}},
 
 /* MARRIAGE: temptation when the spark has faded */
@@ -2986,10 +3037,12 @@ function ageUp(){
   econYear();                 // the world economy turns — inflation, market returns, recession layoffs
   { const wy=S.worldYear;     // WORLD HISTORY — announce a new era or the onset of a world shock (deterministic)
     if(wy>0 && currentEra(wy)!==currentEra(wy-1)) pushLog(`🌍 The world has entered <b>${currentEra(wy).name}</b> — an age of ${currentEra(wy).vibe}.`,[['flag',currentEra(wy).name]]);
-    const sh=worldShockAt(wy); if(sh && sh.year===1) pushLog(`${sh.shock.icon} <b>${sh.shock.name}.</b> ${sh.shock.note} The whole world feels it.`,[['bad',sh.shock.name]]); }
+    const sh=worldShockAt(wy); if(sh && sh.year===1){ pushLog(`${sh.shock.icon} <b>${sh.shock.name}.</b> ${sh.shock.note} The whole world feels it.`,[['bad',sh.shock.name]]);
+      if(sh.shock.k==='pandemic'){ S.dynastyStats=S.dynastyStats||{officesWon:0,pandemics:0}; S.dynastyStats.pandemics++; } } }   // scenario tally: each pandemic you live through
   warFamilyToll();            // a war prunes the family tree — draft-age relatives can be lost
   underworldYear();           // crime life — police heat cools, crew income, raids & prison
   marriageYear();             // a marriage's spark drifts — neglect fades it, attention rekindles it
+  fameYear();                 // fame rises with your following & career, fades without upkeep, pays endorsements
   if(S.passportApp && S.passportApp.stage==='processing' && S.age===S.passportApp.readyAge)   // passport finished processing — go collect it
     pushLog(`📨 My <b>passport is ready to collect</b> — head to Activities → Passport to pick it up. 🛂`,[['flag','Passport ready']]);
   if(S.passport && S.passportExpires!=null && S.age===S.passportExpires+1)   // just expired
@@ -3024,7 +3077,7 @@ function ageUp(){
       pushLog(`I got fired from my job as ${jobTitle(S.job)}. 😬`,[['bad','Fired']]); clearCoworkers(); S.job=null;
     }
   }
-  if(S.age>=5){ checkAchievements(); checkGoals(); }   // milestone achievements + life-goal bucket list
+  if(S.age>=5){ checkAchievements(); checkGoals(); checkScenarios(); }   // milestones + life-goal bucket list + scenario packs
   if(!S.job && S.age>=18) refreshJobs(); else if(S.job) S.jobListings=null;   // fresh listings yearly while unemployed — generated in the SIM (deterministic), never during render
   refreshGigs();                   // a fresh batch of side-hustle gigs each year (deterministic; empty pool for the very young consumes no RNG)
   // local crime can catch up with you — scaled by your city's real crime rate
@@ -3320,7 +3373,7 @@ function sellHobby(k){ const h=hobbyDef(k), r=S.hobbies&&S.hobbies[k]; if(!h||!r
     if(S.sm&&S.sm.joined){ const f=rng(2000,40000); for(const p of Object.values(S.sm.platforms)){ if(p.joined){ p.followers=(p.followers||0)+Math.round(f/3); } } setFlag('went_viral'); }
   }
   income=Math.round(income); money(income); r.sold=(r.sold||0)+1; addMood(rng(2,6)); setFlag('hobby_income');
-  if(viral){ ledgerAdd('triumph', 18, {note:`${h.name} work went viral.`});
+  if(viral){ ledgerAdd('triumph', 18, {note:`${h.name} work went viral.`}); gainFame(rng(6,14));
     line=`🔥 My ${h.name.toLowerCase()} <b>blew up</b> — ${h.sell} earned <b>${cur()}${income.toLocaleString()}</b>${S.sm&&S.sm.joined?' and a wave of new followers':''}!`; }
   else line=`I sold ${h.sell} from my ${h.name.toLowerCase()} for <b>${cur()}${income.toLocaleString()}</b>. 💰`;
   pushLog(line,[[viral?'good':'flag',`+${cur()}${income.toLocaleString()} ${h.name}`]]);
@@ -3368,6 +3421,7 @@ function continueAsHeir(id){
   const _inheritedFeuds=inheritFeuds(heir.age||0);    // BLOOD FEUDS: rival bloodlines remember — the vendetta passes down
   const _ancestorTroubled = !!(S.mind && (S.mind.traumas.some(t=>t.heal<55) || (S.addictions&&S.addictions.length)));   // generational trauma passes if the parent never healed
   const _crimeLegacy = (S.underworld && S.underworld.rank>=3) ? {rank:Math.max(0,S.underworld.rank-2), rep:Math.round((S.underworld.rep||0)*0.5), crew:S.underworld.crew} : null;   // a made boss leaves the heir a place in the organization
+  const _parentFame = S.fame||0;   // a famous name gives the heir a head start
   const estate=Math.max(0,S.money+investValue());   // ECONOMY: holdings are liquidated into the estate
   const inheritance=Math.round(estate*(S.primaryHeir===id?0.8:0.6));
   const fameSeed=Math.round(oldFollowers*0.3);
@@ -3410,6 +3464,7 @@ function continueAsHeir(id){
   S.investments={stocks:0,spec:0,cost:0};   // ECONOMY: estate inherited as cash; worldYear & priceIndex CARRY (the century rolls on)
   S.hobbies={};   // HOBBIES are personal — the heir starts their own passions
   S.underworld = _crimeLegacy ? {rep:_crimeLegacy.rep, rank:_crimeLegacy.rank, crew:_crimeLegacy.crew, heat:0, jobs:0, busts:0, jailUntil:0} : {rep:0,rank:-1,crew:null,heat:0,jobs:0,busts:0,jailUntil:0};   // CRIME DYNASTY: a boss's heir is born into the family business
+  S.fame = Math.min(40, Math.round(_parentFame*0.4));   // FAME: a celebrity parent gives the heir name-recognition to start
   S.mind=freshMind(_ancestorTroubled);   // MENTAL HEALTH: a troubled parent leaves a mark (set AFTER flags/ledger were wiped above)
   if(_ancestorTroubled){ addTrauma('adverse_childhood', 38, `the home ${oldName} left you`); driftPers('volatility',6); driftPers('warmth',-4);
     ledgerAdd('milestone', 10, {note:`Grew up in ${oldName}'s shadow — a hard childhood.`}); setFlag('adverse_childhood'); }
@@ -4263,7 +4318,9 @@ function renderConnections(){ const v=document.getElementById('connectionsView')
   let h=`<button class="backbtn" onclick="setTab('life')">‹ Life Story</button><div class="genlabel">🤝 Connections</div>`;
   { const arch=legacyArchetype(); h+=hubCard('👑','Dynasty Legacy', `Score ${legacyScore().toLocaleString()} · ${arch.icon} ${arch.name} · Gen ${S.legacyGen||1}`, "legacyView()"); }
   { const dn=Object.keys(S.goalsAchieved||{}).length; h+=hubCard('🎯','Life Goals', `${dn} of ${LIFEGOALS.length} fulfilled · your bucket list`, "lifeGoalsView()"); }
+  { const sc=S.scenario||{completed:{}}, beaten=Object.keys(sc.completed||{}).length; h+=hubCard('🎬','Scenario Packs', sc.key?`▶ ${scenarioDef(sc.key).name} (active)`:(beaten?`${beaten}/${SCENARIOS.length} beaten · take on a challenge`:'Themed dynasty challenges'), "scenarioMenu()"); }
   h+=hubCard('❤️','Family & Relationships', `${fam} ${fam===1?'person':'people'} in your life`, "setTab('people')");
+  { const t=fameTier(); h+=hubCard('🌟','Fame', fameScore()>=15?`${t.icon} ${t.name} · ${fameScore()}/100`:'Build a name for yourself', "fameView()"); }
   h+=hubCard('⭐','Celebrities', met?`${met} famous ${met===1?'person':'people'} you know`:'Meet the stars', "setTab('stars')");
   if(S.age>=16) h+=hubCard('🎉','Gather Everyone', `Throw a big party — family, friends, even a celebrity${S.partiesThisYear?` · ${2-S.partiesThisYear} left this year`:''}`, "gatherEveryone()");
   { const ln=(S.ledger||[]).filter(f=>decayedSev(f)>0).length, fz=activeFeuds().length, sb=standingBand();
@@ -5374,6 +5431,7 @@ function takeOffice(tier){ const o=officeDef(tier); const reElect=!!(S.office&&S
     agenda:POLI_ISSUES.slice().sort(()=>0).slice(0,o.issues).map(n=>({name:n,focus:0,progress:0})), summary:'', keyMoments:[], recentEvents:[], promises:[] };
   ensureMem(S.office); keyMoment(S.office,'elected',60,`Elected ${o.title}.`);
   ledgerAdd('office', 30+officeRank(tier)*9, {note:`Elected ${o.title} for the ${partyName(S.party)}.`});   // name recognition the heirs inherit
+  S.dynastyStats=S.dynastyStats||{officesWon:0,pandemics:0}; S.dynastyStats.officesWon++;   // scenario tally (dynasty-wide)
   unlockAchievement('politician','🏛️ Public Servant','Win a public office.');
   if(tier==='president') unlockAchievement('president','👑 Head of State','Become President.');
   pushLog(`🏛️ I won the election — I'm the new <b>${o.title}</b>! Approval: ${S.office.approval}%.`,[['good',`Elected ${o.title}`]]);
@@ -5570,6 +5628,47 @@ function underworldYear(){ const u=uw();
   if(u.heat>=60 && rng(0,100) < (u.heat-55)/2){   // high heat → a raid/bust
     setFlag('criminal'); setFlag('arrested'); const sentence=rng(1,4); u.jailUntil=S.age+sentence; u.heat=clamp(u.heat-40,0,100); addTrauma('prison',rng(18,32),'a raid that put you away'); chg('happy',-10);
     pushLog(`🚔 The heat caught up with me — a raid, and <b>${sentence} years</b> inside.`,[['bad',`Prison: ${sentence}yr`]]); }
+}
+
+/* ============================================================
+   FAME & CELEBRITY (content) — a fame meter that climbs through
+   tiers (Unknown → Legend), fed by your following and entertainment
+   career. Fame fades without upkeep, brings endorsement money,
+   paparazzi, scandals and fans — and feeds family standing & legacy.
+   ============================================================ */
+const FAME_TIERS=[
+  {min:0,  name:'Unknown',       icon:'·'},
+  {min:15, name:'Locally Known', icon:'📍'},
+  {min:32, name:'Rising Star',   icon:'🌟'},
+  {min:52, name:'Celebrity',     icon:'✨'},
+  {min:70, name:'A-List',        icon:'🎬'},
+  {min:85, name:'Icon',          icon:'👑'},
+  {min:96, name:'Legend',        icon:'🏆'},
+];
+function fameScore(){ return clamp(Math.round(S.fame||0)); }
+function fameTier(v){ v=(v==null)?fameScore():v; let t=FAME_TIERS[0]; for(const x of FAME_TIERS) if(v>=x.min)t=x; return t; }
+function gainFame(n){ S.fame=clamp((S.fame||0)+n); if(S.fame>=52) setFlag('famous'); }
+function fameYear(){ const f=S.fame||0; const followers=(typeof totalFollowers==='function'?totalFollowers():0);
+  const star = S.job && /Actor|Actress|Musician|Singer|Pop Star|Star|Influencer|Model|Athlete|Author|Writer/i.test(S.job.title||'');
+  const target = Math.min(100, Math.round((followers>0?Math.log10(followers+1)*16:0) + (star?22:0) + (has('famous_family')?8:0)));
+  let nf=f; if(target>f) nf=Math.min(target, f+Math.max(2,Math.round((target-f)/4)));   // fame rises toward your reach…
+  nf=Math.max(0, nf-2);                                                                  // …but always fades a little
+  S.fame=clamp(Math.round(nf)); S.peakFame=Math.max(S.peakFame||0,S.fame);
+  if(S.fame>=52){ setFlag('famous');                                                     // the famous earn off their name
+    if(rng(0,100)<45){ const inc=Math.round(S.fame*rng(80,420)*priceMult()); money(inc);
+      if(inc>3000) pushLog(`💰 Endorsements and appearances earned <b>${cur()}${inc.toLocaleString()}</b> off your fame this year. ✨`,[['good',`+${cur()}${inc.toLocaleString()} fame`]]); } }
+}
+function fameView(){ if(!S){toast('Start a life first.');return;} logAct('call',{fn:'fameView'});
+  const v=fameScore(), t=fameTier(v), next=FAME_TIERS[FAME_TIERS.indexOf(t)+1];
+  let body=`<div style="text-align:left">
+    <div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:8px;text-align:center">
+      <div style="font-size:22px;font-weight:800">${t.icon} ${t.name}</div>
+      <div style="color:var(--dim);font-size:11px">YOUR FAME</div></div>
+    <div class="relbars">${barRow('🌟 Fame',v,100)}</div>
+    <div style="color:var(--dim);font-size:12px;margin-top:6px">${(typeof totalFollowers==='function'?fc(totalFollowers()):0)} followers${next?` · ${next.min-v} fame from <b>${next.icon} ${next.name}</b>`:' · you are a living <b>Legend</b> 🏆'}</div>
+    <p style="color:var(--dim);font-size:12px;margin-top:8px">Fame grows with your following and entertainment career — and fades without upkeep. The famous earn from endorsements, get chased by paparazzi, and one scandal can undo it all. ${v>=52?'Your name opens doors (and invites trouble).':''}</p></div>`;
+  openModal({banner:'Fame', title:'🌟 Fame & Celebrity', icon:'🌟', closable:true,
+    text:body, choices:[{label:'Close', fn:()=>{ closeModal(); setTab('connections'); }}] });
 }
 function interactCeleb(id,action){
   const c=S.celebs[id]; if(!c)return;
@@ -6645,6 +6744,7 @@ const LIFEGOALS=[
   {k:'infamy',   name:'A Dark Legend',     icon:'🩸', desc:'Become truly infamous.',                            when:S=>(factScore('crime')+factScore('violence'))>=60},
   {k:'innerpeace',name:'Inner Peace',      icon:'🧘', desc:'Find real contentment in old age (60+).',           when:S=>S.age>=60 && S.mind && S.mind.mood>=70 && S.mind.stress<=32},
   {k:'decorated',name:'Decorated Life',    icon:'🏅', desc:'Unlock ten achievements.',                          when:S=>Object.keys(S.achievements||{}).length>=10},
+  {k:'famous',   name:'A-List Fame',       icon:'🌟', desc:'Rise to A-List celebrity status.',                  when:S=>(S.peakFame||0)>=70||fameScore()>=70},
 ];
 function checkGoals(){ S.goalsAchieved=S.goalsAchieved||{};
   for(const g of LIFEGOALS){ if(S.goalsAchieved[g.k]) continue; let ok=false; try{ ok=g.when(S); }catch(e){}
@@ -6665,6 +6765,57 @@ function lifeGoalsView(){ if(!S){toast('Start a life first.');return;} if(typeof
         <span style="color:var(--dim);font-size:12px">${g.desc}</span></div></div>`; }).join('')+`</div>`;
   openModal({banner:'Life Goals', title:'🎯 Life Goals', icon:'🎯', closable:true,
     text:body, choices:[{label:'Close', fn:()=>{ closeModal(); setTab('connections'); }}] });
+}
+
+/* ============================================================
+   SCENARIO PACKS (content) — themed, multi-objective DYNASTY
+   challenges (BitLife-style). Take one on, hit all its objectives
+   across your bloodline, earn a permanent badge + legacy boost.
+   Some are tied to the era/world systems. Carries across heirs.
+   ============================================================ */
+const SCENARIOS=[
+  {k:'rags', name:'Rags to Riches', icon:'💰', era:null, blurb:'From nothing to a fortune.',
+    goals:[{t:'Be born without wealth', d:S=>!has('born_rich')&&!has('royal')},{t:'Reach $3,000,000 net worth', d:S=>netWorth()>=3000000},{t:'Master a hobby (100%)', d:S=>Object.values(S.hobbies||{}).some(h=>h.level>=100)}]},
+  {k:'empire', name:'The Crime Empire', icon:'🩸', era:null, blurb:'Build — and inherit — a criminal dynasty.',
+    goals:[{t:'Rise to Boss of a crew', d:S=>!!(S.achievements&&S.achievements.kingpin)},{t:'Pull off a major heist', d:S=>!!(S.achievements&&S.achievements.master_thief)},{t:'Pass the family business to an heir', d:S=>(S.legacyGen||1)>=2&&has('crime_family')}]},
+  {k:'power', name:'Dynasty of Power', icon:'🏛️', era:null, blurb:'A bloodline that rules.',
+    goals:[{t:'Win public office 3× across the bloodline', d:S=>((S.dynastyStats&&S.dynastyStats.officesWon)||0)>=3},{t:'Reach the 3rd generation', d:S=>(S.legacyGen||1)>=3},{t:'Build an esteemed family name', d:S=>standing().net>=60}]},
+  {k:'legends', name:'House of Legends', icon:'🌟', era:null, blurb:'Fame that outlives you.',
+    goals:[{t:'Reach A-List fame', d:S=>(S.peakFame||0)>=70},{t:'Carry the name to a 2nd generation', d:S=>(S.legacyGen||1)>=2},{t:'Unlock 8 achievements', d:S=>Object.keys(S.achievements||{}).length>=8}]},
+  {k:'pandemic', name:'The Pandemic Generation', icon:'🦠', era:'plague', blurb:'Outlast the plagues that sweep the century.',
+    goals:[{t:'Live through 2 pandemics', d:S=>((S.dynastyStats&&S.dynastyStats.pandemics)||0)>=2},{t:'Survive to age 70', d:S=>S.age>=70},{t:'Keep the family line unbroken', d:S=>(S.legacyGen||1)>=2}]},
+  {k:'reformer', name:'The Reformer', icon:'🕊️', era:null, blurb:'End the cycles of harm.',
+    goals:[{t:'Break a generational cycle of pain', d:S=>has('broke_the_cycle')},{t:'End a blood feud for good', d:S=>has('made_peace')},{t:'Carry the name onward, healed', d:S=>(S.legacyGen||1)>=2}]},
+];
+function scenarioDef(k){ return SCENARIOS.find(s=>s.k===k); }
+function scenarioMenu(){ if(!S){toast('Start a life first.');return;} if(typeof closeMenu==='function')closeMenu();
+  logAct('call',{fn:'scenarioMenu'}); S.scenario=S.scenario||{key:null,completed:{}};
+  const choices=SCENARIOS.map(sc=>{ const done=S.scenario.completed[sc.k], active=S.scenario.key===sc.k;
+    return {label:`${done?'✅ ':active?'▶ ':''}${sc.icon} ${sc.name}`, tip:sc.blurb, alt:!active, fn:()=>scenarioView(sc.k)}; });
+  choices.push({label:'Back', alt:true, fn:()=>setTab('connections')});
+  const beaten=Object.keys(S.scenario.completed||{}).length;
+  openModal({banner:'Scenarios', title:'🎯 Scenario Packs', icon:'🎯', closable:true,
+    text:`Take on a <b>themed challenge</b> for your dynasty — beat all its objectives across the generations for a permanent badge and a legacy boost. ${beaten?`<br>Beaten: <b>${beaten}/${SCENARIOS.length}</b>.`:''}${S.scenario.key?`<br>Active: <b>${scenarioDef(S.scenario.key).icon} ${scenarioDef(S.scenario.key).name}</b>.`:''}`,
+    choices});
+}
+function scenarioView(k){ const sc=scenarioDef(k); if(!sc){closeModal();return;} S.scenario=S.scenario||{key:null,completed:{}};
+  const done=S.scenario.completed[k], active=S.scenario.key===k;
+  const met=sc.goals.map(g=>{ let ok=false; try{ok=g.d(S);}catch(e){} return ok; });
+  let body=`<div style="text-align:left"><b>${sc.icon} ${sc.name}</b>${sc.era?` <span style="font-size:11px;color:var(--warn)">· era challenge</span>`:''}<br><span style="color:var(--dim);font-size:12px">${sc.blurb}</span>
+    <div class="genlabel" style="margin:8px 0 4px">Objectives ${done?'<span style="color:var(--good)">· COMPLETE</span>':''}</div>`+
+    sc.goals.map((g,i)=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);${met[i]?'':'opacity:.6'}"><div>${met[i]?'✅':'⬜'}</div><div style="flex:1">${g.t}</div></div>`).join('')+`</div>`;
+  const choices=[];
+  if(done) choices.push({label:'✅ Completed', fn:scenarioMenu});
+  else if(active) choices.push({label:'Stop pursuing this', alt:true, fn:()=>{ S.scenario.key=null; scenarioMenu(); }});
+  else choices.push({label:'▶ Take on this challenge', fn:()=>{ S.scenario.key=k; scenarioView(k); }});
+  choices.push({label:'Back', alt:true, fn:scenarioMenu});
+  openModal({banner:'Scenarios', title:`${sc.icon} ${sc.name}`, icon:sc.icon, closable:true, text:body, choices});
+}
+function checkScenarios(){ const sc=S.scenario&&S.scenario.key&&scenarioDef(S.scenario.key); if(!sc||S.scenario.completed[sc.k]) return;
+  for(const g of sc.goals){ let ok=false; try{ok=g.d(S);}catch(e){} if(!ok) return; }
+  S.scenario.completed[sc.k]=true; S.scenario.key=null;
+  chg('happy',12); addSelfWorth(8); ledgerAdd('triumph',40,{note:`Completed the "${sc.name}" challenge.`}); unlockAchievement('scenario_'+sc.k, `${sc.icon} ${sc.name}`, `Complete the ${sc.name} scenario.`);
+  pushLog(`🎯 <b>SCENARIO COMPLETE — ${sc.icon} ${sc.name}!</b> ${sc.blurb}`,[['good',`Scenario: ${sc.name}`]]);
 }
 function renderCareersDex(){ const v=document.getElementById('careersdexView'); if(!v||!S)return;
   const got=S.careers||{}, n=Object.keys(got).length;
