@@ -1497,7 +1497,7 @@ function investBuy(kind){ const iv=S.investments=S.investments||{stocks:0,spec:0
     text:`How much to put in? You have <b>${cur()}${S.money.toLocaleString()}</b>.${kind==='spec'?'<br>⚠️ Speculative assets can soar — or wipe out.':''}`,
     choices:amts.map((a,i)=>({label:`${cur()}${a.toLocaleString()}`, alt:i>0, fn:()=>{ if(spend(a)){ iv[kind]=(iv[kind]||0)+a; iv.cost=(iv.cost||0)+a;   // buy is replayed via the modalpick chain — no extra logAct
         pushLog(`I invested <b>${cur()}${a.toLocaleString()}</b> in ${kind==='stocks'?'an index fund':'a speculative play'}. 📈`,[['flag',`Invested ${cur()}${a.toLocaleString()}`]]);
-        resultModal('Investments','Position Opened','📈',[`You put <b>${cur()}${a.toLocaleString()}</b> into ${kind==='stocks'?'the index':'a speculative bet'}.`,`Its value will ride the economy each year. Sell when you're ahead.`],()=>setTab('life')); } }})).concat([{label:'Back', fn:investMenu}]) });
+        resultModal('Investments','Position Opened','📈',[`You put <b>${cur()}${a.toLocaleString()}</b> into ${kind==='stocks'?'the index':'a speculative bet'}.`,`Its value will ride the economy each year. Sell when you're ahead.`],()=>investMenu()); } }})).concat([{label:'Back', fn:investMenu}]) });
 }
 function investSell(){ const iv=S.investments||{}; const total=investValue();
   if(total<=0){ resultModal('Investments','Nothing to Sell','📈',[`You hold no investments right now.`],()=>setTab('life')); return; }
@@ -1515,7 +1515,7 @@ function investCashOut(kind){ const iv=S.investments||{stocks:0,spec:0}; let got
   else { got=iv[kind]||0; iv[kind]=0; }
   if(got<=0){ closeModal(); return; } money(got); iv.cost=Math.max(0,(iv.cost||0)-got);
   pushLog(`I cashed out <b>${cur()}${got.toLocaleString()}</b> in investments. 💰`,[['good',`+${cur()}${got.toLocaleString()} investments`]]);
-  resultModal('Investments','Cashed Out','💰',[`You sold for <b>${cur()}${got.toLocaleString()}</b>.`,`It's back in your account.`],()=>setTab('life')); }
+  resultModal('Investments','Cashed Out','💰',[`You sold for <b>${cur()}${got.toLocaleString()}</b>.`,`It's back in your account.`],()=>investMenu()); }
 
 /* ============================================================
    ERAS & WORLD EVENTS (system #6) — a century changes around your
@@ -3377,7 +3377,7 @@ function sellHobby(k){ const h=hobbyDef(k), r=S.hobbies&&S.hobbies[k]; if(!h||!r
     line=`🔥 My ${h.name.toLowerCase()} <b>blew up</b> — ${h.sell} earned <b>${cur()}${income.toLocaleString()}</b>${S.sm&&S.sm.joined?' and a wave of new followers':''}!`; }
   else line=`I sold ${h.sell} from my ${h.name.toLowerCase()} for <b>${cur()}${income.toLocaleString()}</b>. 💰`;
   pushLog(line,[[viral?'good':'flag',`+${cur()}${income.toLocaleString()} ${h.name}`]]);
-  resultModal('Passions', viral?'It Went Viral! 🔥':'Sold', h.icon, [line.replace(/<[^>]+>/g,m=>m), `Skill: ${hobbyTier(r.level)} (${r.level}%).`], ()=>setTab('life'));
+  resultModal('Passions', viral?'It Went Viral! 🔥':'Sold', h.icon, [line.replace(/<[^>]+>/g,m=>m), `Skill: ${hobbyTier(r.level)} (${r.level}%).`], ()=>hobbiesMenu());
 }
 
 function legacyLine(){
@@ -5043,7 +5043,7 @@ function treatIllness(){ closeModal();
   if(managed.length) lines.push(`💊 Now managing: <b>${managed.join(', ')}</b> — no more damage.`);
   if(failed.length) lines.push(`💔 Treatment didn't beat <b>${failed.join(', ')}</b> this round — keep fighting.`);
   pushLog(`I got treated for ${(S.illnesses.concat(cured.map(n=>({name:n})))).map(x=>x.name).slice(0,3).join(', ')||'my condition'} at the clinic. 💊`,[['good','Saw a doctor']]);
-  resultModal('Doctor','Treatment','💊',lines,()=>setTab('life'));
+  resultModal('Doctor','Treatment','💊',lines,()=>seeDoctor());
 }
 function quitAddiction(){ closeModal();
   const list=(S.addictions||[]).slice(); if(has('smoker')&&!list.some(a=>a.key==='smoking')) list.push({key:'smoking',name:'Smoking'});
@@ -5052,14 +5052,14 @@ function quitAddiction(){ closeModal();
   const a=list[0]; const ok=rng(0,100)< (50+(S.fitness||50)/5);
   if(ok){ if(a.key==='smoking') delete S.flags.smoker; S.addictions=(S.addictions||[]).filter(x=>x.key!==a.key);
     pushLog(`With help, I finally quit <b>${a.name.toLowerCase()}</b>. 🚭`,[['good',`Quit ${a.name}`]]);
-    resultModal('Doctor','You Quit!','🚭',[`Rehab/counselling cost ${cur()}${cost.toLocaleString()}.`,`You beat your <b>${a.name.toLowerCase()}</b> habit. Your health will thank you.`],()=>setTab('life'));
+    resultModal('Doctor','You Quit!','🚭',[`Rehab/counselling cost ${cur()}${cost.toLocaleString()}.`,`You beat your <b>${a.name.toLowerCase()}</b> habit. Your health will thank you.`],()=>seeDoctor());
   } else {
     pushLog(`I tried to quit <b>${a.name.toLowerCase()}</b> but relapsed. 😞`,[['bad',`Relapse: ${a.name}`]]);
-    resultModal('Doctor','Relapse','😞',[`Treatment cost ${cur()}${cost.toLocaleString()}, but the habit won this round.`,`Get fitter and try again.`],()=>setTab('life'));
+    resultModal('Doctor','Relapse','😞',[`Treatment cost ${cur()}${cost.toLocaleString()}, but the habit won this round.`,`Get fitter and try again.`],()=>seeDoctor());
   }
 }
 function doctorCheckup(){ closeModal(); const cost=rng(80,300); if(!spend(cost))return; chg('health',rng(2,6));
-  resultModal('Doctor','Check-up','🩺',[`The doctor runs the usual tests (${cur()}${cost}).`,`You're told to rest and hydrate. A little health restored.`],()=>setTab('life')); }
+  resultModal('Doctor','Check-up','🩺',[`The doctor runs the usual tests (${cur()}${cost}).`,`You're told to rest and hydrate. A little health restored.`],()=>seeDoctor()); }
 function treatSTDs(){ closeModal();
   const untreated=(S.stds||[]).filter(s=>!s.treated); if(!untreated.length){ toast('Nothing to treat.'); return; }
   const cost=untreated.length*rng(200,600); if(!spend(cost))return;
@@ -5070,7 +5070,7 @@ function treatSTDs(){ closeModal();
   if(cured.length) lines.push(`✅ Fully cured: <b>${cured.join(', ')}</b>.`);
   if(managed.length) lines.push(`💊 <b>${managed.join(', ')}</b> can't be cured — but treatment keeps it managed, so it stops damaging your health.`);
   pushLog(`I got treated at the clinic.${cured.length?` Cured: ${cured.join(', ')}.`:''}${managed.length?` Now managing: ${managed.join(', ')}.`:''} 💉`,[['good','Saw a doctor']]);
-  resultModal('Doctor','Treatment','💉',lines,()=>setTab('life'));
+  resultModal('Doctor','Treatment','💉',lines,()=>seeDoctor());
 }
 
 /* ---- Mind & Body — gym, diet, meditation, therapy ---- */
@@ -5087,11 +5087,11 @@ function mindBody(){ if(!S){toast('Start a life first.');return;} if(isLocked())
 }
 function mbDo(kind){ closeModal();
   if(kind==='gym'){ const cost=rng(0,600); if(S.money>0)money(-Math.min(cost,S.money)); S.fitness=clamp((S.fitness||50)+rng(5,12)); chg('looks',rng(1,3)); chg('health',rng(1,3));
-    pushLog(`I trained at the gym all year. 🏋️ Fitness ${S.fitness}/100.`,[['good','Gym']]); resultModal('Mind & Body','Workout','🏋️',[`You trained hard.`,`Fitness now <b>${S.fitness}/100</b> · +Looks, +Health.`],()=>setTab('life')); }
+    pushLog(`I trained at the gym all year. 🏋️ Fitness ${S.fitness}/100.`,[['good','Gym']]); resultModal('Mind & Body','Workout','🏋️',[`You trained hard.`,`Fitness now <b>${S.fitness}/100</b> · +Looks, +Health.`],()=>mindBody()); }
   else if(kind==='diet'){ S.fitness=clamp((S.fitness||50)+rng(3,8)); chg('health',rng(2,4)); chg('looks',1);
-    pushLog(`I cleaned up my diet. 🥗`,[['good','Healthy diet']]); resultModal('Mind & Body','Eating Clean','🥗',[`You ate clean this year.`,`Fitness ${S.fitness}/100 · +Health.`],()=>setTab('life')); }
+    pushLog(`I cleaned up my diet. 🥗`,[['good','Healthy diet']]); resultModal('Mind & Body','Eating Clean','🥗',[`You ate clean this year.`,`Fitness ${S.fitness}/100 · +Health.`],()=>mindBody()); }
   else if(kind==='meditate'){ chg('happy',rng(4,9)); chg('health',1); addStress(-rng(8,16)); addMood(rng(3,7));
-    pushLog(`I meditated daily. 🧘`,[['good','Meditation']]); resultModal('Mind & Body','Calm','🧘',[`A year of meditation.`,`Stress eased, mood lifted, and a clearer mind.`],()=>setTab('life')); }
+    pushLog(`I meditated daily. 🧘`,[['good','Meditation']]); resultModal('Mind & Body','Calm','🧘',[`A year of meditation.`,`Stress eased, mood lifted, and a clearer mind.`],()=>mindBody()); }
   else { const cost=rng(200,1500); if(!spend(cost))return; chg('happy',rng(6,12));
     const dep=(S.illnesses||[]).find(i=>i.key==='depression'&&!i.treated); let eased=false; if(dep&&rng(0,100)<60){ S.illnesses=S.illnesses.filter(i=>i!==dep); eased=true; }
     pushLog(`I started seeing a therapist. 🛋️${eased?' My depression lifted.':''}`,[['good','Therapy']]); resultModal('Mind & Body','Therapy','🛋️',[`Therapy cost ${cur()}${cost.toLocaleString()}.`,`Your head feels lighter. +Happiness${eased?' · depression eased':''}.`],()=>setTab('life')); }
@@ -5231,7 +5231,7 @@ function afterGamble(net){ S.gambles=(S.gambles||0)+1; S.gambleNet=(S.gambleNet|
   }
 }
 function gambleResult(title,icon,lines,net){ afterGamble(net);
-  resultModal('Casino',title,icon,lines.concat([net>=0?`<b style="color:var(--good)">Net: +${cur()}${net.toLocaleString()}</b>`:`<b style="color:var(--bad)">Net: −${cur()}${(-net).toLocaleString()}</b>`]),()=>setTab('life')); }
+  resultModal('Casino',title,icon,lines.concat([net>=0?`<b style="color:var(--good)">Net: +${cur()}${net.toLocaleString()}</b>`:`<b style="color:var(--bad)">Net: −${cur()}${(-net).toLocaleString()}</b>`]),()=>casino()); }   // stay at the table — leave via 'Leave'
 function playSlots(bet){ closeModal(); if(!spend(bet))return;
   const SYM=['🍒','🍋','🔔','⭐','🍉','🍀'];
   const r=rng(0,1000); let mult=0;
@@ -5546,7 +5546,7 @@ function inJail(){ const u=uw(); return u.jailUntil>S.age; }
 function genCrew(){ return pick(['Calloway','Marchetti','Okonkwo','Vasiliev','Sokolov','Bianchi','Delgado','the Nine Hands','the Ashfield','Kovač'])+(rand()<.5?' Family':' Syndicate'); }
 function underworldMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;} if(S.age<10){ toast('You’re too young for this life.'); return; }
   logAct('call',{fn:'underworldMenu'}); const u=uw();
-  if(inJail()){ resultModal('Locked Up','Behind Bars 🔒','🔒',[`You're in prison until age <b>${u.jailUntil}</b>.`,`Keep your head down and serve your time. Nothing for you on the outside until then.`],()=>setTab('life')); return; }
+  if(inJail()){ resultModal('Locked Up','Behind Bars 🔒','🔒',[`You're in prison until age <b>${u.jailUntil}</b>.`,`Keep your head down and serve your time. Nothing for you on the outside until then.`],()=>setTab('life')); return; }   // jail: feed is fine (nothing to do here)
   const rankLine = u.rank>=0 ? `${u.crew} · <b>${uwRankName()}</b> (${UNDERWORLD_RANKS[u.rank].cut}% cut)` : 'Unaffiliated';
   const ch=[{label:'🔪 Commit a Crime', fn:crimeMenu}];
   if(u.rank<0 && u.rep>=8) ch.push({label:'🤝 Get Made (join a crew)', alt:true, fn:joinCrew});
@@ -5580,7 +5580,7 @@ function commitCrime(k){ const u=uw(); let c=CRIMES.find(x=>x.k===k);
       return resultModal('Busted!','Sentenced 🔒','🔒',[`The job fell apart and the law caught up with you.`,`<b>${sentence} years</b> in prison. The clock starts now — and the family name wears it.`],()=>setTab('life')); }
     const fine=rng(1000,12000); money(-fine);
     pushLog(`🚔 I got caught attempting ${c.name.toLowerCase()} — arrested, ${cur()}${fine.toLocaleString()} in fines.`,[['bad','Arrested']]);
-    return resultModal('Busted!','Arrested 🚔','🚔',[`The ${c.name.toLowerCase()} went south — you were arrested and fined <b>${cur()}${fine.toLocaleString()}</b>.`,`Heat is rising. Lie low before you try again.`],()=>setTab('life')); }
+    return resultModal('Busted!','Arrested 🚔','🚔',[`The ${c.name.toLowerCase()} went south — you were arrested and fined <b>${cur()}${fine.toLocaleString()}</b>.`,`Heat is rising. Lie low before you try again.`],()=>underworldMenu()); }
   // success
   const take=Math.round((c.pay[0]+Math.round(rand()*(c.pay[1]-c.pay[0])))*priceMult());
   money(take); u.rep=Math.min(120,u.rep+c.rep); u.heat=clamp(u.heat+Math.round(c.heat*0.7),0,100); karma(-2); S.rep=clamp((S.rep||0)-2,-100,100);
@@ -5589,13 +5589,13 @@ function commitCrime(k){ const u=uw(); let c=CRIMES.find(x=>x.k===k);
     if(rng(0,100)<35) spawnFeud(pick(['Rourke','Vance','Salko','Marchetti','Okonkwo']), `You crossed them in a ${c.name.toLowerCase()}.`, 50); }
   if(c.big) unlockAchievement('master_thief','💎 Master Thief','Pull off a major heist.');
   pushLog(`🔫 I pulled off a <b>${c.name.toLowerCase()}</b> — scored <b>${cur()}${take.toLocaleString()}</b>. Street rep ${u.rep}.`,[['bad',`+${cur()}${take.toLocaleString()} (dirty)`]]);
-  resultModal('Score!', c.name, c.icon, [`Clean getaway — you scored <b>${cur()}${take.toLocaleString()}</b>.`,`Street rep is now <b>${u.rep}</b>${u.rank<0&&u.rep>=8?` — high enough that a crew might take notice.`:''}`,`🔥 Heat: ${u.heat}/100.`],()=>setTab('life')); }
+  resultModal('Score!', c.name, c.icon, [`Clean getaway — you scored <b>${cur()}${take.toLocaleString()}</b>.`,`Street rep is now <b>${u.rep}</b>${u.rank<0&&u.rep>=8?` — high enough that a crew might take notice.`:''}`,`🔥 Heat: ${u.heat}/100.`],()=>underworldMenu()); }
 function joinCrew(){ const u=uw(); if(u.rank>=0){ closeModal(); return; } closeModal();   // modalpick-covered → no logAct
   if(u.rep<8){ toast('Build more street rep first.'); return; }
   u.crew=u.crew||genCrew(); u.rank=0; setFlag('criminal'); setFlag('made_man');
   ledgerAdd('crime', 16, {note:`Got made into ${u.crew}.`});
   pushLog(`🤝 I got <b>made</b> into <b>${u.crew}</b> as an Associate. There's no leaving this life now.`,[['bad',`Joined ${u.crew}`]]);
-  resultModal('Made','Welcome to the Family 🤝','🤝',[`<b>${u.crew}</b> took you in as an <b>Associate</b>.`,`Do jobs, build rep, and climb the ranks — Soldier, Enforcer, Capo, Underboss… Boss. But once you're made, you're in for life.`],()=>setTab('life')); }
+  resultModal('Made','Welcome to the Family 🤝','🤝',[`<b>${u.crew}</b> took you in as an <b>Associate</b>.`,`Do jobs, build rep, and climb the ranks — Soldier, Enforcer, Capo, Underboss… Boss. But once you're made, you're in for life.`],()=>underworldMenu()); }
 function crewJob(){ const u=uw(); if(u.rank<0){ closeModal(); return; } closeModal();   // modalpick-covered → no logAct
   if(inJail()){ toast('You’re locked up.'); return; }
   const rk=UNDERWORLD_RANKS[u.rank]; const violent=rng(0,100)<40+u.rank*6;
@@ -5605,7 +5605,7 @@ function crewJob(){ const u=uw(); if(u.rank<0){ closeModal(); return; } closeMod
     if(sentence>0){ u.jailUntil=S.age+sentence; addTrauma('prison',rng(20,38),'the years you lost inside'); chg('happy',-10);
       pushLog(`🚔 A crew job went bad — <b>${sentence} years</b> in prison. ${u.crew} will remember you kept your mouth shut.`,[['bad',`Prison: ${sentence}yr`]]); u.rep=Math.min(120,u.rep+4);
       return resultModal('Pinched','Took the Fall 🔒','🔒',[`The job went wrong and you got pinched — <b>${sentence} years</b>.`,`You didn't rat. The crew respects that. (Street rep +)`],()=>setTab('life')); }
-    money(-rng(1000,8000)); return resultModal('Pinched','Arrested 🚔','🚔',[`The job fell apart and you were arrested.`,`A fine and more heat — but you held your tongue.`],()=>setTab('life')); }
+    money(-rng(1000,8000)); return resultModal('Pinched','Arrested 🚔','🚔',[`The job fell apart and you were arrested.`,`A fine and more heat — but you held your tongue.`],()=>underworldMenu()); }
   const gross=Math.round(rng(4000,20000)*(1+u.rank*0.5)*priceMult()); const take=Math.round(gross*rk.cut/100);
   money(take); u.jobs++; u.rep=Math.min(120,u.rep+rng(2,4)); u.heat=clamp(u.heat+rng(5,11),0,100); karma(-2);
   ledgerAdd('crime', 12, {pub:false, note:`Ran a job for ${u.crew}.`});
@@ -5615,11 +5615,11 @@ function crewJob(){ const u=uw(); if(u.rank<0){ closeModal(); return; } closeMod
     ledgerAdd('triumph', 14+u.rank*4, {note:`Rose to ${UNDERWORLD_RANKS[u.rank].name} in ${u.crew}.`}); setFlag('crime_'+UNDERWORLD_RANKS[u.rank].name.toLowerCase());
     if(u.rank>=3) setFlag('crime_family'); if(u.rank>=5){ unlockAchievement('kingpin','👑 Kingpin','Rise to Boss of a criminal organization.'); } } }
   pushLog(`💼 I ran a job for <b>${u.crew}</b> — took home <b>${cur()}${take.toLocaleString()}</b>.${promo}`,[[promo?'good':'bad',promo?`Promoted: ${uwRankName()}`:`Crew job +${cur()}${take.toLocaleString()}`]]);
-  resultModal('Crew Job', uwRankName(), '💼', [`You handled business for ${u.crew} — your ${rk.cut}% cut came to <b>${cur()}${take.toLocaleString()}</b>.`, promo?promo.replace(/<[^>]+>/g,'').trim():`Rep ${u.rep} · ${u.jobs} jobs · 🔥 heat ${u.heat}.`],()=>setTab('life')); }
+  resultModal('Crew Job', uwRankName(), '💼', [`You handled business for ${u.crew} — your ${rk.cut}% cut came to <b>${cur()}${take.toLocaleString()}</b>.`, promo?promo.replace(/<[^>]+>/g,'').trim():`Rep ${u.rep} · ${u.jobs} jobs · 🔥 heat ${u.heat}.`],()=>underworldMenu()); }
 function lieLow(){ const u=uw(); closeModal();   // modalpick-covered → no logAct
   u.heat=clamp(u.heat-rng(18,32),0,100); chg('happy',-rng(1,4));
   pushLog(`🤫 I lay low for a while — kept my head down and let the heat die down.`,[['flag',`Heat down to ${u.heat}`]]);
-  resultModal('Lying Low','Off the Radar 🤫','🤫',[`You stayed quiet and let things cool off.`,`🔥 Police heat is down to <b>${u.heat}/100</b>.`],()=>setTab('life')); }
+  resultModal('Lying Low','Off the Radar 🤫','🤫',[`You stayed quiet and let things cool off.`,`🔥 Police heat is down to <b>${u.heat}/100</b>.`],()=>underworldMenu()); }
 function underworldYear(){ const u=uw();
   u.heat=clamp(u.heat-rng(2,5),0,100);   // heat cools slowly over time
   if(inJail()){ chg('happy',-rng(2,5)); chg('health',-rng(0,2)); if(S.age>=u.jailUntil-0){} return; }
