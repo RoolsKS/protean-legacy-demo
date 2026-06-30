@@ -42,8 +42,13 @@
   .modal-wrap{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;align-items:center;justify-content:center;z-index:50;padding:26px}
   .modal-wrap.open{display:flex}
   .modal-card{position:relative;width:100%;max-width:420px;max-height:calc(100dvh - 52px);display:flex;flex-direction:column;background:var(--panel);border:2px solid #ff6a3d;border-radius:18px;padding:0 0 18px;animation:rise .22s ease;box-shadow:0 12px 44px rgba(0,0,0,.55)}
-  .modal-banner{text-align:right;font-style:italic;font-weight:800;font-size:14px;color:#fff;padding:10px 16px;border-radius:15px 15px 0 0;background:linear-gradient(90deg,rgba(255,106,61,0),#ff6a3d)}
-  .modal-x{position:absolute;top:-13px;left:-13px;width:30px;height:30px;border-radius:50%;background:#fff;color:#000;border:none;font-size:13px;font-weight:800;cursor:pointer;z-index:1}
+  /* Modal header bar — matches the sub-page header: circular ✕ on the left + centered title. */
+  .modal-banner{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);border-radius:16px 16px 0 0;background:linear-gradient(180deg,var(--panel2),var(--panel))}
+  .modal-banner:empty{display:none}
+  .modal-banner .mh-btn{width:34px;height:34px;border-radius:50%;border:2px solid #ff6a3d;background:transparent;color:#ff6a3d;font-size:15px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;padding:0}
+  .modal-banner .mh-btn:active{transform:scale(.92)}
+  .modal-banner .mh-spacer{width:34px;flex:0 0 auto}
+  .modal-banner .mh-title{flex:1;text-align:center;font-weight:800;font-size:15px;letter-spacing:.5px;color:#fff;line-height:1.25;padding-right:34px}
   .modal-body{padding:16px 18px 4px;text-align:center;flex-shrink:0;overflow-y:auto;max-height:42vh}
   .modal-body .mtitle{font-size:20px;font-weight:800;color:var(--accent);margin-bottom:10px}
   .modal-body .mtext{font-size:14px;line-height:1.55;color:#dfe6f0}
@@ -524,7 +529,6 @@
   </div>
   <div id="modal" class="modal-wrap">
     <div class="modal-card">
-      <button id="modalX" class="modal-x" onclick="closeModal()">✕</button>
       <div class="modal-banner" id="modalBanner"></div>
       <div class="modal-body" id="modalBody"></div>
       <div class="modal-choices" id="modalChoices"></div>
@@ -6672,12 +6676,13 @@ function menuSupport(){ closeMenu(); toast('💜 Donations & Premium arrive at l
 let _replayModal=null;   // during replay, the currently-"open" activity modal, resolved by a 'modalpick' tape action
 function openModal(cfg){
   if(S && S._replaying){ _replayModal = cfg._ev ? null : cfg; return; }   // headless: capture for tape-driven resolution, no DOM
-  document.getElementById('modalBanner').textContent=cfg.banner||'';
-  document.getElementById('modalBody').innerHTML=`<div class="mtitle">${cfg.icon?cfg.icon+' ':''}${cfg.title}</div><div class="mtext">${cfg.text||''}</div>`;
+  // Header bar: circular ✕ on the left when closable (else a spacer), centered title — matches the sub-page headers.
+  const _ttl=`${cfg.icon?cfg.icon+' ':''}${cfg.title||cfg.banner||''}`;
+  document.getElementById('modalBanner').innerHTML=`${cfg.closable?`<button class="mh-btn" onclick="closeModal()" aria-label="Close">✕</button>`:`<span class="mh-spacer"></span>`}<div class="mh-title">${_ttl}</div>`;
+  document.getElementById('modalBody').innerHTML=`<div class="mtext">${cfg.text||''}</div>`;
   const ch=document.getElementById('modalChoices');
   ch.innerHTML=(cfg.choices||[]).map(c=>`<button class="${c.alt?'alt':''}">${c.label}${c.tip?`<span class="tip">${c.tip}</span>`:''}</button>`).join('');
   [...ch.children].forEach((b,i)=>b.onclick=()=>{ if(!cfg._ev) logAct('modalpick', i); cfg.choices[i].fn(); });   // record which activity-modal option the player picked
-  document.getElementById('modalX').style.display=cfg.closable?'block':'none';
   document.getElementById('modal').classList.add('open');
   emojify(document.getElementById('modal'));
 }
