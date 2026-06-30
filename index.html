@@ -437,7 +437,13 @@
       <div style="display:flex;gap:7px;margin-top:8px">
         <button id="wmFixed" class="sexbtn on" onclick="pickWorldMode('fixed')" style="flex:1;font-size:12px">🏛️ Fixed Era</button>
         <button id="wmLiving" class="sexbtn" onclick="pickWorldMode('living')" style="flex:1;font-size:12px">🌍 Living Timeline</button></div>
-      <div id="cWorldModeBlurb" style="font-size:11px;color:var(--dim);margin-top:5px;min-height:14px">Your dynasty stays in this era for every generation.</div></div>
+      <div id="cWorldModeBlurb" style="font-size:11px;color:var(--dim);margin-top:5px;min-height:14px">Your dynasty stays in this era for every generation.</div>
+      <div id="cPaceRow" style="display:none;margin-top:8px">
+        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">World pace — how fast the ages turn</div>
+        <div style="display:flex;gap:6px">
+          <button id="pcHistorical" class="sexbtn" onclick="pickWorldPace('historical')" style="flex:1;font-size:11.5px">🐢 Historical</button>
+          <button id="pcBalanced" class="sexbtn on" onclick="pickWorldPace('balanced')" style="flex:1;font-size:11.5px">⚖️ Balanced</button>
+          <button id="pcEpic" class="sexbtn" onclick="pickWorldPace('epic')" style="flex:1;font-size:11.5px">🚀 Epic</button></div></div></div>
     <div class="fld"><span>🔤 First Name</span>
       <div class="namerow"><input id="cFirst" type="text" maxlength="20" autocomplete="off"><button class="reroll" onclick="rerollName()">🎲</button></div></div>
     <div class="fld"><span>➕ Middle Name <span style="opacity:.55">(optional)</span></span><input id="cMiddle" type="text" maxlength="20" autocomplete="off"></div>
@@ -674,8 +680,13 @@ function pickWorldMode(m, _user){ createWorldMode=(m==='living')?'living':'fixed
   if(f) f.classList.toggle('on',createWorldMode==='fixed'); if(l) l.classList.toggle('on',createWorldMode==='living');
   const b=document.getElementById('cWorldModeBlurb');
   if(b) b.textContent = createWorldMode==='living'
-    ? '🌍 Each generation the world advances one era — your dynasty marches through history toward the future.'
+    ? '🌍 The world advances through the ages as you live and as generations pass — your dynasty marches toward the future.'
     : '🏛️ Your dynasty stays in this era for every generation.';
+  const pr=document.getElementById('cPaceRow'); if(pr) pr.style.display = createWorldMode==='living' ? 'block' : 'none';
+}
+function pickWorldPace(p){ createWorldPace=WORLD_PACE[p]?p:'balanced';
+  if(typeof haptics!=='undefined') haptics.select();
+  [['pcHistorical','historical'],['pcBalanced','balanced'],['pcEpic','epic']].forEach(([id,k])=>{ const el=document.getElementById(id); if(el) el.classList.toggle('on',createWorldPace===k); });
 }
 function fillCities(){ const c=COUNTRIES[document.getElementById('cCountry').value];
   document.getElementById('cCity').innerHTML=c.cities.map(ct=>`<option>${ct}</option>`).join(''); }
@@ -706,6 +717,7 @@ function beginLife(origin){
     talent:document.getElementById('cTalent').value, rich:document.getElementById('cRich').checked,
     era:createEra,   // ERA — the chosen world ruleset (captured in birthOpts → replay-safe)
     worldMode:createWorldMode,   // fixed era vs Living Timeline (captured in birthOpts → replay-safe)
+    worldPace:createWorldPace,   // P3+: world-clock speed (captured in birthOpts → replay-safe)
     origin: typeof origin==='string'?origin:'normal' });
 }
 function surpriseMe(){ randomizeCreate();
@@ -882,6 +894,7 @@ function initHaptics(){ try{
 const ERA_ORDER=['oldWorld','ancient','medieval','renaissance','industrial','victorian','roaringTwenties','modern','future'];
 let createEra='modern';   // the era chosen on the creation screen (before a life exists)
 let createWorldMode='fixed';   // 'fixed' (stay in chosen era) | 'living' (march through the ages each generation)
+let createWorldPace='balanced';   // P3+: world-clock speed for Living Timeline — historical | balanced | epic
 function _caps(o){ return Object.assign({socialMedia:false,internet:false,telephone:false,telegraph:false,postalMail:false,motorVehicles:false,horses:false,airTravel:false,modernMedicine:false,electricity:false}, o); }
 const ERA_DEFS={
   oldWorld:{ id:'oldWorld', displayName:'The Old World', icon:'🏺', yearStart:-3000, yearEnd:1400, tier:'free',
@@ -964,6 +977,52 @@ function convertCurrency(amount, fromEra, toEra){
   if(fromEra===toEra) return Math.round(amount);
   return Math.max(0, Math.round(amount * eraToBaseUnit(fromEra) / eraToBaseUnit(toEra)));   // → base units → target era units
 }
+/* World-clock (P3+): in 'living' mode the world advances over time, not just at the heir boundary.
+   The era at any moment is a PURE function of (start era, dynastyYears elapsed, pace) → no RNG → replay-safe.
+   Pace = world-years per era step. */
+const WORLD_PACE={ historical:55, balanced:34, epic:20 };
+function worldYearsPerEra(){ return WORLD_PACE[(typeof S!=='undefined'&&S&&S.worldPace)||'balanced'] || WORLD_PACE.balanced; }
+function livingEraNow(){
+  if(typeof S==='undefined'||!S||S.worldMode!=='living') return S?S.era:'modern';
+  const start = (S.startEraIndex!=null) ? S.startEraIndex : ERA_ORDER.indexOf(S.era);
+  const idx = Math.min(ERA_ORDER.length-1, Math.max(0, start) + Math.floor((S.dynastyYears||0)/worldYearsPerEra()));
+  return ERA_ORDER[idx];
+}
+// Advance S.era to match the world-clock if the age has rolled the world into a new era. Returns the {from,to} jump or null.
+function syncWorldEra(){
+  if(!S || S.worldMode!=='living') return null;
+  const want=livingEraNow();
+  if(want===S.era) return null;
+  const from=S.era; S.era=want;
+  S.money=convertCurrency(S.money||0, from, want);
+  if(S.investments){ /* holdings revalue with the currency too */ }
+  applyEraTheme(S.era);
+  return {from, to:want};
+}
+/* Dynasty chronicle (P3+) — one record per completed generation, for the Timeline view. */
+function chronicleRole(){
+  if(S.office){ const o=officeDef(S.office.tier); return o?o.title:'Official'; }
+  if(S.job && !S.job.owner){ return (typeof jobTitle==='function'?jobTitle(S.job):S.job.title)||S.job.title; }
+  if(S.underworld && S.underworld.rank>=0 && typeof uwRankName==='function'){ return uwRankName(); }
+  if(S.fame>=40) return 'Celebrity';
+  return '—';
+}
+function chronicleRecord(name, gender){
+  (S.chronicle=S.chronicle||[]).push({ gen:S.legacyGen||1, era:S.era, age:S.age,
+    name:name||S.name, gender:gender||S.gender, role:chronicleRole(),
+    score:(typeof legacyScore==='function'?legacyScore():0), heirlooms:(S.heirlooms||[]).length });
+}
+/* Cross-era heirlooms (P3+) — relics that survive era jumps and feed the legacy score. */
+function grantHeirloom(name, icon, kind){
+  S.heirlooms=S.heirlooms||[];
+  if(S.heirlooms.some(h=>h.name===name)) return false;
+  S.heirlooms.push({ name, icon:icon||'🗝️', kind:kind||'relic', originEra:S.era, originGen:S.legacyGen||1, originAge:S.age });
+  return true;
+}
+function heirloomErasSurvived(h){ const a=ERA_ORDER.indexOf(h.originEra), b=ERA_ORDER.indexOf((S&&S.era)||'modern'); return Math.max(0, (b<0?0:b)-(a<0?0:a)); }
+function heirloomLegacy(){ return (S&&S.heirlooms||[]).reduce((sum,h)=>sum + 40 + heirloomErasSurvived(h)*60, 0); }   // each relic is worth more the longer the bloodline carries it
+// how an heirloom reads as it ages: fresh → antique → priceless relic
+function heirloomStatus(h){ const n=heirloomErasSurvived(h); return n<=0?'newly made':n===1?'an heirloom':n<=3?'a treasured antique':'a priceless relic of the ages'; }
 // Era-appropriate word for incarceration (Phase 2e) — flavor only, no mechanical effect
 function prisonWord(){ const i=ERA_ORDER.indexOf((typeof S!=='undefined'&&S&&S.era)||'modern');
   if(i<=ERA_ORDER.indexOf('renaissance')) return 'the dungeon';
@@ -1079,6 +1138,11 @@ function startLife(opts){
   S.birthOpts = Object.assign({}, opts, {seed:_seed});   // exact creation inputs — server replays startLife(birthOpts)
   S.era = (opts.era && ERA_DEFS[opts.era]) ? opts.era : 'modern';   // ERA — set BEFORE any name generation so the family uses era names (replay-safe; era is in birthOpts)
   S.worldMode = opts.worldMode==='living' ? 'living' : 'fixed';     // fixed era vs Living Timeline (Living engine: phase 3)
+  S.worldPace = WORLD_PACE[opts.worldPace] ? opts.worldPace : 'balanced';   // P3+: how fast the world-clock advances eras
+  S.startEraIndex = ERA_ORDER.indexOf(S.era);   // where the dynasty's march begins
+  S.dynastyYears = 0;     // total years lived across the whole dynasty — drives the world-clock (persists across heirs)
+  S.chronicle = [];       // P3+: per-generation record for the Dynasty Timeline (pushed at each succession)
+  S.heirlooms = [];       // P3+: relics that survive era jumps and feed legacy score
   applyEraTheme(S.era);
   // Build a full, living family tree (grandparents → cousins → siblings)
   buildFamily(opts.gender);
@@ -1169,6 +1233,7 @@ function continueGame(){
     if(S.fame===undefined) S.fame=0;   // FAME backfill
     S.scenario=S.scenario||{key:null,completed:{}}; S.dynastyStats=S.dynastyStats||{officesWon:0,pandemics:0};   // SCENARIOS backfill
     if(!S.era || !ERA_DEFS[S.era]) S.era='modern'; if(!S.worldMode) S.worldMode='fixed'; applyEraTheme(S.era);   // ERA backfill
+    if(!WORLD_PACE[S.worldPace]) S.worldPace='balanced'; if(S.startEraIndex==null) S.startEraIndex=ERA_ORDER.indexOf(S.era); if(S.dynastyYears==null) S.dynastyYears=S.age||0; if(!S.chronicle) S.chronicle=[]; if(!S.heirlooms) S.heirlooms=[];   // P3+ world-clock / chronicle / heirloom backfill
     if(S.passportApp===undefined) S.passportApp=null;
     if(S.passportExpires===undefined) S.passportExpires = S.passport ? S.age+10 : null;   // grandfather older saves with a fresh 10-yr passport
     if(S.eduUntil===undefined||S.eduUntil===0) S.eduUntil = S.eduLevel==='primary'?12 : S.eduLevel==='high'?18 : S.eduLevel==='college'?(S.age+1) : 0;
@@ -1805,6 +1870,7 @@ function legacyScore(){ const a=legacyAxes();
     + Object.keys(S.goalsAchieved||{}).length*40       // fulfilled life goals feed the dynasty score
     + Math.round((S.peakFame||0)*1.5)                   // the height of your fame is remembered
     + Object.keys((S.scenario&&S.scenario.completed)||{}).length*120   // beaten scenario challenges
+    + heirloomLegacy()                                  // P3+: relics carried across the ages
     + (factScore(null,{inherited:true})||0) ); }
 function legacyView(){ if(!S){toast('Start a life first.');return;}
   logAct('call',{fn:'legacyView'}); const a=legacyAxes(), arch=legacyArchetype(), sc=legacyScore();
@@ -1822,9 +1888,48 @@ function legacyView(){ if(!S){toast('Start a life first.');return;}
     <p style="color:var(--dim);font-size:12px;margin-top:8px">However you build it — through good works, high office, vast wealth, or sheer infamy — your dynasty leaves a mark. The Legacy Score counts it all.</p></div>`;
   openModal({banner:'The Legacy', title:'👑 Your Dynasty', icon:'👑', closable:true,
     text:body, choices:[
+      {label:'📜 Dynasty Timeline', alt:true, fn:dynastyTimeline},
       {label:'🏆 Submit to Leaderboard', fn:()=>{ closeModal(); submitToLeaderboard(); }},
       {label:'📤 Share this Saga', alt:true, fn:()=>{ closeModal(); exportSaga(); }},
       {label:'Close', alt:true, fn:()=>{ closeModal(); setTab('connections'); }}] });
+}
+/* Dynasty Timeline (P3+) — the family's march through the ages + heirlooms. Pure render (no RNG / no logAct) → safe from anywhere. */
+function dynastyTimeline(){ if(!S){toast('Start a life first.');return;} closeModal();
+  const eraTag=era=>{ const e=ERA_DEFS[era]||ERA_DEFS.modern; return `${e.icon} ${e.displayName}`; };
+  const rows=[];
+  for(const c of (S.chronicle||[])){
+    rows.push(`<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line)">
+      <b style="width:54px;color:var(--dim);flex:0 0 auto;font-size:12px">Gen ${c.gen}</b>
+      <div style="flex:1"><div style="font-size:13px"><b>${c.name}</b> <span style="color:var(--dim)">— ${c.role||'—'}</span></div>
+        <div style="font-size:11px;color:var(--dim)">${eraTag(c.era)} · died at ${c.age}</div></div></div>`);
+  }
+  // the living generation
+  rows.push(`<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0">
+    <b style="width:54px;color:var(--gold,#f5c451);flex:0 0 auto;font-size:12px">Gen ${S.legacyGen||1}</b>
+    <div style="flex:1"><div style="font-size:13px"><b>${S.name}</b> <span style="color:var(--accent)">(you)</span> <span style="color:var(--dim)">— ${chronicleRole()}</span></div>
+      <div style="font-size:11px;color:var(--dim)">${eraTag(S.era)} · age ${S.age}${S.alive?'':' · ⚰️'}</div></div></div>`);
+  const startIdx=(S.startEraIndex!=null?S.startEraIndex:ERA_ORDER.indexOf(S.era)), curIdx=ERA_ORDER.indexOf(S.era);
+  const crossed=Math.max(0,curIdx-startIdx), toFuture=(ERA_ORDER.length-1)-curIdx;
+  const modeLine = S.worldMode==='living'
+    ? `🌍 <b>Living Timeline</b> · ${crossed} age${crossed===1?'':'s'} crossed · ${toFuture} to the Future`
+    : `🏛️ <b>${ERA_DEFS[S.era].displayName}</b> · a fixed-era dynasty`;
+  let hl='';
+  if((S.heirlooms||[]).length){
+    hl=`<div class="genlabel" style="margin:10px 0 4px">🗝️ Heirlooms <span>${S.heirlooms.length} · +${heirloomLegacy().toLocaleString()} legacy</span></div>`
+      + S.heirlooms.map(h=>`<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--line)">
+          <span style="font-size:18px;flex:0 0 auto">${h.icon}</span>
+          <div style="flex:1"><div style="font-size:13px"><b>${h.name}</b></div>
+            <div style="font-size:11px;color:var(--dim)">Of ${eraTag(h.originEra)} (Gen ${h.originGen}) · now ${heirloomStatus(h)}${heirloomErasSurvived(h)>0?` · survived ${heirloomErasSurvived(h)} age${heirloomErasSurvived(h)===1?'':'s'}`:''}</div></div></div>`).join('');
+  } else {
+    hl=`<p style="color:var(--dim);font-size:12px;margin-top:10px">🗝️ No heirlooms yet. Triumphs in era set-pieces — the arena, the tournament, the New World — leave relics your descendants inherit.</p>`;
+  }
+  const body=`<div style="text-align:left">
+    <div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:12.5px">${modeLine}</div>
+    <div class="genlabel" style="margin:2px 0 4px">The Bloodline</div>
+    ${rows.join('')}
+    ${hl}</div>`;
+  openModal({banner:'The Legacy', title:'📜 The Dynasty', icon:'📜', closable:true,
+    text:body, choices:[{label:'‹ Back to Legacy', alt:true, fn:legacyView},{label:'Close', fn:closeModal}] });
 }
 // SECRETS — private Ledger facts (affairs, hidden crimes) that can be discovered or blackmailed
 function secrets(){ const cg=S.legacyGen||1; return (S.ledger||[]).filter(f=>!f.pub && f.gen===cg
@@ -1912,7 +2017,7 @@ const EVENTS = [
     text:`The games come to the city. The editor offers a purse of silver to any free soul brave — or desperate — enough to fight.`,
     choices:[
       {label:'Fight for glory', tip:'Win coin & fame · risk your life', apply:()=>{
-        if(rng(0,100) < 30 + S.stats.health/4 + (has('talent_sports')?15:0)){ const purse=rng(120,600); money(purse); S.fame=Math.min(100,(S.fame||0)+rng(6,14)); chg('happy',6); ledgerAdd('triumph',16,{note:'Victor in the arena.'}); return {text:`The crowd roared your name as your opponent fell. You leave the sand alive — and ${cur()}${purse} richer.`,tags:[['good',`Arena victor +${cur()}${purse}`]]}; }
+        if(rng(0,100) < 30 + S.stats.health/4 + (has('talent_sports')?15:0)){ const purse=rng(120,600); money(purse); S.fame=Math.min(100,(S.fame||0)+rng(6,14)); chg('happy',6); ledgerAdd('triumph',16,{note:'Victor in the arena.'}); grantHeirloom('The Gladiator’s Blade','🗡️','weapon'); return {text:`The crowd roared your name as your opponent fell. You leave the sand alive — and ${cur()}${purse} richer. You keep your blade.`,tags:[['good',`Arena victor +${cur()}${purse}`]]}; }
         chg('health',-rng(20,40)); addTrauma('violence',rng(20,35),'the day the arena nearly killed you'); return {text:`The mob bayed for blood — nearly yours. You were dragged off the sand broken and bleeding, but alive.`,tags:[['bad','Maimed in the arena']]}; }},
       {label:'Bet on the games', tip:'Gamble', apply:()=>{ const stake=Math.min(S.money,rng(20,120)); money(-stake);
         if(rng(0,100)<45){ const win=stake*rng(2,3); money(win); return {text:`Your champion triumphed! You collect ${cur()}${win}.`,tags:[['good',`Won ${cur()}${win}`]]}; }
@@ -1926,7 +2031,7 @@ const EVENTS = [
     text:`Banners snap in the wind. A tournament has come to the realm — jousts, a melee, and a champion's purse of gold.`,
     choices:[
       {label:'Enter the lists', tip:'Glory & gold · risk injury', apply:()=>{
-        if(rng(0,100) < 28 + S.stats.health/4 + S.stats.looks/8 + (has('talent_sports')?15:0)){ const purse=rng(200,900); money(purse); S.fame=Math.min(100,(S.fame||0)+rng(8,16)); chg('happy',7); ledgerAdd('triumph',18,{note:'Champion of the tournament.'}); return {text:`Lance after lance, you unhorsed them all. You are the champion — ${cur()}${purse} and a name that will be sung.`,tags:[['good',`Tournament champion +${cur()}${purse}`]]}; }
+        if(rng(0,100) < 28 + S.stats.health/4 + S.stats.looks/8 + (has('talent_sports')?15:0)){ const purse=rng(200,900); money(purse); S.fame=Math.min(100,(S.fame||0)+rng(8,16)); chg('happy',7); ledgerAdd('triumph',18,{note:'Champion of the tournament.'}); grantHeirloom('The Champion’s Lance','🏇','trophy'); return {text:`Lance after lance, you unhorsed them all. You are the champion — ${cur()}${purse} and a name that will be sung.`,tags:[['good',`Tournament champion +${cur()}${purse}`]]}; }
         chg('health',-rng(14,30)); addTrauma('injury',rng(10,22),'the joust that nearly broke you'); return {text:`A lance caught you square and the world went white. You woke days later, aching but alive.`,tags:[['bad','Unhorsed & injured']]}; }},
       {label:'Watch from the stands', apply:()=>{ chg('happy',4); return {text:`You cheered the champions and feasted with the crowd. A fine day.`,tags:[['good','Enjoyed the tourney']]}; }},
       {label:'Work the crowd as a cutpurse', tip:'Crime', apply:()=>{ karma(-3);
@@ -1952,7 +2057,7 @@ const EVENTS = [
     text:`Word spreads of fortunes waiting across the ocean. A ship is taking on passengers — and the desperate, and the bold.`,
     choices:[
       {label:'Stake everything and sail', tip:'High risk · high reward', apply:()=>{ const stake=Math.min(S.money, Math.round(S.money*0.6)); money(-stake);
-        if(rng(0,100)<48){ const win=stake*rng(2,4)+rng(200,1000); money(win); chg('happy',8); ledgerAdd('triumph',14,{note:'Made a fortune in the New World.'}); setFlag('emigrated'); return {text:`You crossed the ocean and built something from nothing. You came back — or sent word home — ${cur()}${win} the richer.`,tags:[['good',`New-world fortune +${cur()}${win}`]]}; }
+        if(rng(0,100)<48){ const win=stake*rng(2,4)+rng(200,1000); money(win); chg('happy',8); ledgerAdd('triumph',14,{note:'Made a fortune in the New World.'}); setFlag('emigrated'); grantHeirloom('A New-World Map','🗺️','relic'); return {text:`You crossed the ocean and built something from nothing. You came back — or sent word home — ${cur()}${win} the richer.`,tags:[['good',`New-world fortune +${cur()}${win}`]]}; }
         chg('health',-rng(6,16)); return {text:`The crossing was brutal and the promised riches a mirage. You scraped your way home with little but stories.`,tags:[['bad',`Lost ${cur()}${stake} on the voyage`]]}; }},
       {label:'Invest in a merchant voyage', tip:'Moderate gamble', apply:()=>{ const stake=Math.min(S.money,rng(50,400)); money(-stake);
         if(rng(0,100)<55){ const win=Math.round(stake*(1.4+rand())); money(win); return {text:`The ship returned laden with goods. Your share: ${cur()}${win}.`,tags:[['good',`Voyage paid +${cur()}${win}`]]}; }
@@ -1991,7 +2096,7 @@ const EVENTS = [
   build:S=>({ yr:`Age ${S.age}`, title:'A Berth Off-World 🛸',
     text:`The orbital lottery just opened a civilian berth on the Mars-cycler. A one-way ticket to the colonies — the frontier of the age.`,
     choices:[
-      {label:'Buy passage to the colonies', tip:'Costly · life-changing', apply:()=>{ const cost=Math.min(S.money, rng(2000,9000)); money(-cost); S.fame=Math.min(100,(S.fame||0)+rng(4,10)); chg('happy',10); setFlag('offworlder'); ledgerAdd('triumph',16,{note:'Emigrated off-world.'}); return {text:`You watched Earth shrink to a blue marble through the viewport. Whatever comes next, you're a colonist now.`,tags:[['good','Went off-world']]}; }},
+      {label:'Buy passage to the colonies', tip:'Costly · life-changing', apply:()=>{ const cost=Math.min(S.money, rng(2000,9000)); money(-cost); S.fame=Math.min(100,(S.fame||0)+rng(4,10)); chg('happy',10); setFlag('offworlder'); ledgerAdd('triumph',16,{note:'Emigrated off-world.'}); grantHeirloom('Colony Founder’s Seal','🛸','relic'); return {text:`You watched Earth shrink to a blue marble through the viewport. Whatever comes next, you're a colonist now.`,tags:[['good','Went off-world']]}; }},
       {label:'Stay on Earth', apply:()=>({text:`You let the berth go to someone else. Earth's old, but it's home.`,tags:[['flag','Stayed planetside']]})},
     ]})},
 
@@ -3216,6 +3321,12 @@ function ageUp(){
   logAct('age');                        // replay tape: one year advanced
   const _logStart=S.log.length;        // safety net: guarantee every year leaves a feed entry (no skipped ages)
   S.partiesThisYear=0;                 // a fresh allowance of big gatherings each year
+  // WORLD-CLOCK (P3+): in Living-Timeline mode the world advances over time — the era can change mid-life (pure fn of dynastyYears → replay-safe)
+  if(S.worldMode==='living'){ S.dynastyYears=(S.dynastyYears||0)+1; const _jump=syncWorldEra();
+    if(_jump){ const b=ERA_DEFS[_jump.to];
+      pushLog(`🌍 <b>THE WORLD TURNS.</b> The age of <b>${ERA_DEFS[_jump.from].displayName}</b> gives way to the <b>${b.displayName}</b> ${b.icon} — ${b.blurb.toLowerCase()}. The world changes around you; your wealth is revalued into <b>${worldRules.currency().name}</b>.`,[['echo',b.displayName]]);
+    }
+  }
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -3751,10 +3862,8 @@ function continueAsHeir(id){
   const estate=Math.max(0,S.money+investValue());   // ECONOMY: holdings are liquidated into the estate
   let inheritance=Math.round(estate*(S.primaryHeir===id?0.8:0.6));
   const fameSeed=Math.round(oldFollowers*0.3);
-  // LIVING TIMELINE: the world advances one era each generation (pure step → replay-safe). Estate is revalued into the new currency.
-  let _eraJump=null;
-  if(S.worldMode==='living'){ const ne=nextEra(S.era);
-    if(ne!==S.era){ _eraJump={from:S.era, to:ne}; inheritance=convertCurrency(inheritance, S.era, ne); S.era=ne; S.worldMode='living'; applyEraTheme(S.era); } }
+  // P3+: record the life just lived into the Dynasty chronicle (era is whatever the world-clock reached). The world-clock (in ageUp) handles era advancement now — no per-generation jump here.
+  chronicleRecord(oldName, oldGender);
   const shift=heir.gen;                                // re-root the family tree around the heir
   delete S.people[id];
   for(const p of Object.values(S.people)){
@@ -3807,9 +3916,8 @@ function continueAsHeir(id){
   S.sm={joined:false,handle:null,skeletons:[],bannedUntil:null,postsThisYear:0,feed:[],active:null,knownYT:[],platforms:initPlatforms()};
   if(fameSeed>200){ S.sm.joined=true; S.sm.handle='@'+heir.name.split(' ')[0].toLowerCase()+rng(10,999); S.sm.platforms.ig.joined=true; S.sm.platforms.ig.followers=fameSeed; setFlag('famous_family'); }
   S.log=[];                                            // a clean story feed for the new generation
-  pushLog(`👑 <b>THE LEGACY CONTINUES.</b> You are now <b>${heir.name}</b>, ${heir.gender==='f'?'daughter':'son'} of the late <b>${oldName}</b> — generation ${S.legacyGen} of the family.${inheritance>0?` You inherit <b>${cur()}${inheritance.toLocaleString()}</b>.`:''}${fameSeed>200?` The family name brings you <b>${fc(fameSeed)}</b> followers to start.`:''}`,[['echo',`Legacy · Gen ${S.legacyGen}`]]);
-  if(_eraJump){ const b=ERA_DEFS[_eraJump.to];
-    pushLog(`🌍 <b>A NEW AGE DAWNS.</b> The family passes from <b>${ERA_DEFS[_eraJump.from].displayName}</b> into the <b>${b.displayName}</b> ${b.icon} — ${b.blurb.toLowerCase()}. The estate is revalued into <b>${worldRules.currency().name}</b>.`,[['echo',b.displayName]]); }
+  pushLog(`👑 <b>THE LEGACY CONTINUES.</b> You are now <b>${heir.name}</b>, ${heir.gender==='f'?'daughter':'son'} of the late <b>${oldName}</b> — generation ${S.legacyGen} of the family${S.worldMode==='living'?`, in the age of <b>${worldRules.era().displayName}</b>`:''}.${inheritance>0?` You inherit <b>${cur()}${inheritance.toLocaleString()}</b>.`:''}${fameSeed>200?` The family name brings you <b>${fc(fameSeed)}</b> followers to start.`:''}`,[['echo',`Legacy · Gen ${S.legacyGen}`]]);
+  if((S.heirlooms||[]).length) pushLog(`🗝️ You inherit the family's heirlooms: <b>${S.heirlooms.map(h=>h.name).join(', ')}</b>.`,[['echo','Heirlooms passed down']]);
   setTab('life'); render();
 }
 function becomeGhost(){ S.ghost=true; setFlag('became_ghost'); S.hauntCount=0; closeModal();
