@@ -433,7 +433,11 @@
     <div class="csub">Every choice will be remembered.</div>
     <div class="fld"><span>🌍 Choose Your Era <span id="cEraName" style="opacity:.7;font-weight:700"></span></span>
       <div id="cEraRow" style="display:flex;gap:9px;overflow-x:auto;padding:4px 2px 8px;-webkit-overflow-scrolling:touch"></div>
-      <div id="cEraBlurb" style="font-size:12px;color:var(--dim);min-height:16px"></div></div>
+      <div id="cEraBlurb" style="font-size:12px;color:var(--dim);min-height:16px"></div>
+      <div style="display:flex;gap:7px;margin-top:8px">
+        <button id="wmFixed" class="sexbtn on" onclick="pickWorldMode('fixed')" style="flex:1;font-size:12px">🏛️ Fixed Era</button>
+        <button id="wmLiving" class="sexbtn" onclick="pickWorldMode('living')" style="flex:1;font-size:12px">🌍 Living Timeline</button></div>
+      <div id="cWorldModeBlurb" style="font-size:11px;color:var(--dim);margin-top:5px;min-height:14px">Your dynasty stays in this era for every generation.</div></div>
     <div class="fld"><span>🔤 First Name</span>
       <div class="namerow"><input id="cFirst" type="text" maxlength="20" autocomplete="off"><button class="reroll" onclick="rerollName()">🎲</button></div></div>
     <div class="fld"><span>➕ Middle Name <span style="opacity:.55">(optional)</span></span><input id="cMiddle" type="text" maxlength="20" autocomplete="off"></div>
@@ -645,7 +649,7 @@ function showCreate(){
     cs.innerHTML=Object.entries(COUNTRIES).map(([k,c])=>`<option value="${k}">${c.flag} ${c.name}</option>`).join('');
     document.getElementById('cTalent').innerHTML=TALENTS.map(t=>`<option value="${t.k}">${t.icon} ${t.name}</option>`).join('');
   }
-  fillCities(); createSex='m'; syncSex(); renderEraPicker(); pickEra(createEra); rerollName();
+  fillCities(); createSex='m'; syncSex(); renderEraPicker(); pickEra(createEra); pickWorldMode(createWorldMode,false); rerollName();
 }
 function renderEraPicker(){ const row=document.getElementById('cEraRow'); if(!row) return;
   row.innerHTML=ERA_ORDER.map(id=>{ const e=ERA_DEFS[id], sel=id===createEra, locked=!canUseEra(e);
@@ -663,6 +667,15 @@ function pickEra(id){ const e=ERA_DEFS[id]; if(!e) return;
   const yrs=(e.yearStart<0?Math.abs(e.yearStart)+' BC':e.yearStart)+'–'+e.yearEnd;
   const bl=document.getElementById('cEraBlurb'); if(bl) bl.textContent=`${e.blurb}  ·  ${yrs}`;
   rerollName();   // suggest an era-appropriate name
+}
+function pickWorldMode(m, _user){ createWorldMode=(m==='living')?'living':'fixed';
+  if(_user!==false && typeof haptics!=='undefined') haptics.select();
+  const f=document.getElementById('wmFixed'), l=document.getElementById('wmLiving');
+  if(f) f.classList.toggle('on',createWorldMode==='fixed'); if(l) l.classList.toggle('on',createWorldMode==='living');
+  const b=document.getElementById('cWorldModeBlurb');
+  if(b) b.textContent = createWorldMode==='living'
+    ? '🌍 Each generation the world advances one era — your dynasty marches through history toward the future.'
+    : '🏛️ Your dynasty stays in this era for every generation.';
 }
 function fillCities(){ const c=COUNTRIES[document.getElementById('cCountry').value];
   document.getElementById('cCity').innerHTML=c.cities.map(ct=>`<option>${ct}</option>`).join(''); }
@@ -692,6 +705,7 @@ function beginLife(origin){
     country:document.getElementById('cCountry').value, city:document.getElementById('cCity').value,
     talent:document.getElementById('cTalent').value, rich:document.getElementById('cRich').checked,
     era:createEra,   // ERA — the chosen world ruleset (captured in birthOpts → replay-safe)
+    worldMode:createWorldMode,   // fixed era vs Living Timeline (captured in birthOpts → replay-safe)
     origin: typeof origin==='string'?origin:'normal' });
 }
 function surpriseMe(){ randomizeCreate();
@@ -867,6 +881,7 @@ function initHaptics(){ try{
    ============================================================ */
 const ERA_ORDER=['oldWorld','ancient','medieval','renaissance','industrial','victorian','roaringTwenties','modern','future'];
 let createEra='modern';   // the era chosen on the creation screen (before a life exists)
+let createWorldMode='fixed';   // 'fixed' (stay in chosen era) | 'living' (march through the ages each generation)
 function _caps(o){ return Object.assign({socialMedia:false,internet:false,telephone:false,telegraph:false,postalMail:false,motorVehicles:false,horses:false,airTravel:false,modernMedicine:false,electricity:false}, o); }
 const ERA_DEFS={
   oldWorld:{ id:'oldWorld', displayName:'The Old World', icon:'🏺', yearStart:-3000, yearEnd:1400, tier:'free',
@@ -933,6 +948,32 @@ const worldRules={
     if(item.maxEra!=null && i>ERA_ORDER.indexOf(item.maxEra)) return false;
     return true; },
 };
+/* ============================================================
+   LIVING TIMELINE (Phase 3)
+   In worldMode 'living', the world marches forward one era each
+   generation: a dynasty begun in antiquity climbs through the
+   ages toward the future. All advancement is a PURE step along
+   ERA_ORDER (no RNG) → replays reproduce the same march. Estates
+   are revalued into the new era's money via toBaseUnit.
+   ============================================================ */
+function nextEra(era){ const i=ERA_ORDER.indexOf(era); return (i>=0 && i<ERA_ORDER.length-1) ? ERA_ORDER[i+1] : era; }
+function eraToBaseUnit(era){ const e=ERA_DEFS[era]; return (e&&e.currency)?e.currency.toBaseUnit:1; }   // modern (null currency) = 1
+function convertCurrency(amount, fromEra, toEra){
+  if(fromEra===toEra) return Math.round(amount);
+  return Math.max(0, Math.round(amount * eraToBaseUnit(fromEra) / eraToBaseUnit(toEra)));   // → base units → target era units
+}
+// Era-appropriate word for incarceration (Phase 2e) — flavor only, no mechanical effect
+function prisonWord(){ const i=ERA_ORDER.indexOf((typeof S!=='undefined'&&S&&S.era)||'modern');
+  if(i<=ERA_ORDER.indexOf('renaissance')) return 'the dungeon';
+  if(i<=ERA_ORDER.indexOf('victorian')) return 'gaol';
+  return 'prison'; }
+// How news travels in the active era — used wherever social media is unavailable (Phase 2c)
+function eraCommsLabel(){
+  if(worldRules.cap('socialMedia')) return 'social media';
+  if(worldRules.cap('telephone')) return 'telephone, radio & the papers';
+  if(worldRules.cap('telegraph')) return 'the telegraph & printed papers';
+  return 'letters, messengers & word of mouth';
+}
 /* Era visual themes — CSS variable overrides; applied on era pick & at startLife. DOM-safe (no-ops headless). */
 const ERA_THEMES={
   sepia:{'--accent':'#c79a4b','--accent2':'#9c7b3a'}, marble:{'--accent':'#cdb892','--accent2':'#a89a7d'},
@@ -3057,9 +3098,11 @@ function ageUp(){
   if(has('smoker')) chg('health',-2);
   for(const a of (S.addictions||[])){ chg('health',-(a.drain||2));   // addictions wear you down
     if(a.key==='gambling' && S.money>0){ const loss=Math.min(S.money, rng(500,8000)); money(-loss); if(loss>0) pushLog(`My gambling habit bled <b>${cur()}${loss.toLocaleString()}</b> this year. 🎰`,[['bad',`-${cur()}${loss.toLocaleString()} gambling`]]); } }
-  // illnesses you carry drain health each year; severe ones can be fatal
-  for(const i of (S.illnesses||[])){ if(!i.treated){ chg('health',-i.sev);
-    if(i.sev>=4 && rng(0,100)< i.sev*2){ S.stats.health=0; }   // heart disease / cancer can take you
+  // illnesses you carry drain health each year; severe ones can be fatal.
+  // Without modern medicine (pre-1900s eras) the same illnesses hit harder and kill more readily.
+  const _medOK = worldRules.cap('modernMedicine');
+  for(const i of (S.illnesses||[])){ if(!i.treated){ chg('health', _medOK ? -i.sev : -Math.round(i.sev*1.6));
+    if(i.sev>=(_medOK?4:3) && rng(0,100) < (_medOK ? i.sev*2 : Math.round(i.sev*3.4))){ S.stats.health=0; }   // heart disease / cancer / fever can take you
   } }
   // a new illness can develop — risk climbs with age, low fitness, smoking, addictions, HEREDITARY genes & a PANDEMIC
   const _pandemic = (function(){ const s=worldShockAt(); return s&&s.shock.k==='pandemic'?9:0; })();
@@ -3581,8 +3624,12 @@ function continueAsHeir(id){
   const _crimeLegacy = (S.underworld && S.underworld.rank>=3) ? {rank:Math.max(0,S.underworld.rank-2), rep:Math.round((S.underworld.rep||0)*0.5), crew:S.underworld.crew} : null;   // a made boss leaves the heir a place in the organization
   const _parentFame = S.fame||0;   // a famous name gives the heir a head start
   const estate=Math.max(0,S.money+investValue());   // ECONOMY: holdings are liquidated into the estate
-  const inheritance=Math.round(estate*(S.primaryHeir===id?0.8:0.6));
+  let inheritance=Math.round(estate*(S.primaryHeir===id?0.8:0.6));
   const fameSeed=Math.round(oldFollowers*0.3);
+  // LIVING TIMELINE: the world advances one era each generation (pure step → replay-safe). Estate is revalued into the new currency.
+  let _eraJump=null;
+  if(S.worldMode==='living'){ const ne=nextEra(S.era);
+    if(ne!==S.era){ _eraJump={from:S.era, to:ne}; inheritance=convertCurrency(inheritance, S.era, ne); S.era=ne; S.worldMode='living'; applyEraTheme(S.era); } }
   const shift=heir.gen;                                // re-root the family tree around the heir
   delete S.people[id];
   for(const p of Object.values(S.people)){
@@ -3636,6 +3683,8 @@ function continueAsHeir(id){
   if(fameSeed>200){ S.sm.joined=true; S.sm.handle='@'+heir.name.split(' ')[0].toLowerCase()+rng(10,999); S.sm.platforms.ig.joined=true; S.sm.platforms.ig.followers=fameSeed; setFlag('famous_family'); }
   S.log=[];                                            // a clean story feed for the new generation
   pushLog(`👑 <b>THE LEGACY CONTINUES.</b> You are now <b>${heir.name}</b>, ${heir.gender==='f'?'daughter':'son'} of the late <b>${oldName}</b> — generation ${S.legacyGen} of the family.${inheritance>0?` You inherit <b>${cur()}${inheritance.toLocaleString()}</b>.`:''}${fameSeed>200?` The family name brings you <b>${fc(fameSeed)}</b> followers to start.`:''}`,[['echo',`Legacy · Gen ${S.legacyGen}`]]);
+  if(_eraJump){ const b=ERA_DEFS[_eraJump.to];
+    pushLog(`🌍 <b>A NEW AGE DAWNS.</b> The family passes from <b>${ERA_DEFS[_eraJump.from].displayName}</b> into the <b>${b.displayName}</b> ${b.icon} — ${b.blurb.toLowerCase()}. The estate is revalued into <b>${worldRules.currency().name}</b>.`,[['echo',b.displayName]]); }
   setTab('life'); render();
 }
 function becomeGhost(){ S.ghost=true; setFlag('became_ghost'); S.hauntCount=0; closeModal();
@@ -3888,6 +3937,31 @@ const VEHICLES=[
   {name:'Private Plane',    value:2400000, icon:'🛩️', lic:'pilot'},
   {name:'Private Jet',      value:18000000,icon:'✈️', lic:'pilot'},
 ];
+// Era transport (Phase 2b) — shown when the era has no motor vehicles. Mounts & conveyances; no license/garage.
+const ERA_VEHICLES=[
+  {name:'Donkey',                value:60,    icon:'🫏'},
+  {name:'Ox & Cart',             value:150,   icon:'🐂'},
+  {name:'Riding Horse',          value:280,   icon:'🐴'},
+  {name:'Rowboat',               value:120,   icon:'🚣'},
+  {name:'Fine Steed',            value:720,   icon:'🐎'},
+  {name:'War Horse',             value:1400,  icon:'🐎', eras:['ancient','medieval','renaissance']},
+  {name:'Horse & Carriage',      value:2200,  icon:'🛞'},
+  {name:'Sailing Ship',          value:6500,  icon:'⛵'},
+];
+function vehicleEraOK(x){   // keeps VEHICLES indices stable — filter in render, never re-index
+  const era=(S&&S.era)||'modern';
+  if(/Bicycle/.test(x.name)) return ERA_ORDER.indexOf(era)>=ERA_ORDER.indexOf('industrial');
+  if(/Plane|Jet/.test(x.name)) return worldRules.cap('airTravel');
+  return worldRules.cap('motorVehicles');   // scooters, motorcycles, cars, speedboats, yachts
+}
+function buyEraVehicle(i){ const x=ERA_VEHICLES.filter(v=>worldRules.isAvailable(v))[i]; if(!x)return;
+  const price=Math.round(x.value*colFactor());
+  if(S.money<price){ penniless2(price, `buy the ${x.name.toLowerCase()}`); return; }
+  logAct('call',{fn:'buyEraVehicle',args:[i]});
+  spend(price); S.assets.vehicles.push({name:x.name, icon:x.icon, value:price});
+  pushLog(`I bought a <b>${x.name}</b> for ${fcm(price)}. ${x.icon}`,[['good',`Bought a ${x.name}`]]);
+  resultModal('Transport', x.name, x.icon, [`You bought a <b>${x.name}</b> for ${fcm(price)}!`], ()=>setTab('shop'));
+}
 const CAR_STORAGE=[
   {t:'Carport',        slots:2,  rent:1500,  icon:'🅿️'},
   {t:'Private Garage', slots:6,  rent:5000,  icon:'🏚️'},
@@ -4081,7 +4155,9 @@ function renderShop(){ const v=document.getElementById('shopView'); if(!v||!S)re
     let h=hubBack('shop')+shopBank()+`<div class="genlabel">Categories</div>`;
     h+=hubCard('🏠','Real Estate','Homes, condos & estates — own vs rent', "openShop('realestate')");
     h+=hubCard('🔑','Rent','Rent a home or a car — no big down payment', "openShop('rent')");
-    h+=hubCard('🚗','Vehicles','Cars, boats & aircraft (need a license)', "openShop('vehicles')");
+    h+=worldRules.cap('motorVehicles')
+      ? hubCard('🚗','Vehicles','Cars, boats & aircraft (need a license)', "openShop('vehicles')")
+      : hubCard('🐴','Transport','Horses, carriages & ships', "openShop('vehicles')");
     h+=hubCard('💍','Jewelry','Rings, watches & fine pieces', "openShop('jewelry')");
     h+=hubCard('📦','Storage Units','Rent space for your belongings', "openShop('storage')");
     v.innerHTML=h; return;
@@ -4094,11 +4170,19 @@ function renderShop(){ const v=document.getElementById('shopView'); if(!v||!S)re
       <div class="pinfo"><div class="pn">${p.type} <span style="color:var(--dim);font-weight:600;font-size:12px">${p.addr}</span></div>
         <div class="pf">${fcm(p.price)} · ${p.br}br/${p.ba}ba · ${p.age}yr · cond ${p.condition}%</div></div><span class="parrow">›</span></div>`).join('');
   } else if(cat==='vehicles'){
+    if(!worldRules.cap('motorVehicles')){
+      // pre-motor era — horses, carriages & ships; no licenses or garages
+      h+=`<div class="card" style="padding:11px 14px"><div class="pf" style="line-height:1.6">🐴 In ${worldRules.era().displayName}, you get around by <b>horse, cart and sail</b>. No licenses or garages needed — just keep them fed.</div></div>`;
+      h+=`<div class="genlabel">Mounts & Conveyances</div>`;
+      h+=ERA_VEHICLES.filter(x=>worldRules.isAvailable(x)).map((x,i)=>`<div class="platrow" onclick="buyEraVehicle(${i})"><div class="picon" style="background:#222b37">${x.icon}</div>
+        <div class="pinfo"><div class="pn">${x.name}</div><div class="pf">${fcm(Math.round(x.value*colFactor()))}</div></div><span class="parrow">›</span></div>`).join('');
+      v.innerHTML=h; return;
+    }
     const onSt=carsOnStreet().length;
     h+=`<div class="card" style="padding:11px 14px"><div class="pf" style="line-height:1.6">🅿️ <b style="color:#fff">Garage:</b> ${carsGaraged()}/${garageCap()} cars${onSt?` · 🛣️ <b style="color:var(--bad)">${onSt}</b> on the street (max ${streetCap()})`:''}</div>
       <button class="verifybtn" style="margin:8px 0 0" onclick="openShop('carstorage')">🏚️ Manage Car Storage</button></div>`;
     h+=`<div class="genlabel">Vehicles</div>`;
-    h+=VEHICLES.map((x,i)=>{ const lic=x.lic?LIC_DEF[x.lic]:null, ok=!x.lic||(S.licenses[x.lic]&&S.licenses[x.lic].has);
+    h+=VEHICLES.map((x,i)=>{ if(!vehicleEraOK(x)) return ''; const lic=x.lic?LIC_DEF[x.lic]:null, ok=!x.lic||(S.licenses[x.lic]&&S.licenses[x.lic].has);
       return `<div class="platrow" onclick="buyVehicle(${i})"><div class="picon" style="background:#222b37">${x.icon}</div>
         <div class="pinfo"><div class="pn">${x.name}${x.g?' 🅿️':''}</div><div class="pf">${fcm(Math.round(x.value*colFactor()))}${x.lic?` · ${ok?'✅':'🔒'} needs ${lic.name}`:''}</div></div><span class="parrow">›</span></div>`; }).join('');
   } else if(cat==='carstorage'){
@@ -4128,11 +4212,13 @@ function renderShop(){ const v=document.getElementById('shopView'); if(!v||!S)re
     if(has('owns_home')) h+='<p class="log">You own your home — no need to rent.</p>';
     else h+=RENTAL_HOMES.map((t,i)=>`<div class="platrow" onclick="rentHomeTier(${i})"><div class="picon" style="background:#222b37">${t.icon}</div>
       <div class="pinfo"><div class="pn">${t.t}${S.rentalHome&&S.rentalHome.name===t.t?' ✓':''}</div><div class="pf">${cur()}${t.rent.toLocaleString()}/yr${t.happy?` · +${t.happy} happiness`:''}</div></div><span class="parrow">›</span></div>`).join('');
-    h+=`<div class="genlabel">🚗 Rent a Car</div>`;
-    if((S.rentedCars||[]).length) h+=S.rentedCars.map((c,i)=>`<div class="platrow" onclick="returnRentedCar(${i})"><div class="picon" style="background:#222b37">${c.icon}</div>
-      <div class="pinfo"><div class="pn">${c.name} (rented)</div><div class="pf">${cur()}${c.rent.toLocaleString()}/yr · tap to return</div></div><span class="parrow">›</span></div>`).join('');
-    h+=RENTAL_CARS.map((t,i)=>`<div class="platrow" onclick="rentACar(${i})"><div class="picon" style="background:#222b37">${t.icon}</div>
-      <div class="pinfo"><div class="pn">${t.name}</div><div class="pf">${cur()}${t.rent.toLocaleString()}/yr · no garage needed</div></div><span class="parrow">›</span></div>`).join('');
+    if(worldRules.cap('motorVehicles')){
+      h+=`<div class="genlabel">🚗 Rent a Car</div>`;
+      if((S.rentedCars||[]).length) h+=S.rentedCars.map((c,i)=>`<div class="platrow" onclick="returnRentedCar(${i})"><div class="picon" style="background:#222b37">${c.icon}</div>
+        <div class="pinfo"><div class="pn">${c.name} (rented)</div><div class="pf">${cur()}${c.rent.toLocaleString()}/yr · tap to return</div></div><span class="parrow">›</span></div>`).join('');
+      h+=RENTAL_CARS.map((t,i)=>`<div class="platrow" onclick="rentACar(${i})"><div class="picon" style="background:#222b37">${t.icon}</div>
+        <div class="pinfo"><div class="pn">${t.name}</div><div class="pf">${cur()}${t.rent.toLocaleString()}/yr · no garage needed</div></div><span class="parrow">›</span></div>`).join('');
+    }
   }
   v.innerHTML=h;
 }
@@ -5181,16 +5267,22 @@ function seeDoctor(){
   if(stds.length) choices.push({label:`💉 Treat infections (${stds.length})`, alt:true, fn:treatSTDs});
   if(addic.length) choices.push({label:`🚭 Get help quitting (${addic.length})`, alt:true, fn:quitAddiction});
   choices.push({label:'Leave', fn:closeModal});
-  openModal({banner:'Doctor', title:'The Clinic', icon:'🩺', closable:true,
-    text:`<div class="relbars" style="margin-bottom:10px">${pbar('Health',S.stats.health)}${pbar('Fitness',S.fitness||50)}</div><b>Diagnosis:</b><br>${illTxt}`, choices});
+  const _medOK=worldRules.cap('modernMedicine');
+  const place=_medOK?['The Clinic','🩺']:['The Apothecary','🌿'];
+  openModal({banner:'Doctor', title:place[0], icon:place[1], closable:true,
+    text:`<div class="relbars" style="margin-bottom:10px">${pbar('Health',S.stats.health)}${pbar('Fitness',S.fitness||50)}</div>${_medOK?'':'<div class="pf" style="color:var(--warn);margin-bottom:8px">⚕️ Without modern medicine, remedies are unreliable and chronic illness can\'t be fully managed.</div>'}<b>Diagnosis:</b><br>${illTxt}`, choices});
 }
 function treatIllness(){ closeModal();
   const ill=(S.illnesses||[]).filter(i=>!i.treated); if(!ill.length){ toast('Nothing to treat.'); return; }
-  let cost=0; ill.forEach(i=>cost+=i.sev*rng(400,1500)); cost=Math.round(cost);
+  const _medOK=worldRules.cap('modernMedicine');
+  let cost=0; ill.forEach(i=>cost+=i.sev*rng(400,1500)); cost=Math.round(cost*(_medOK?1:0.5));   // pre-modern remedies are cheaper but weaker
   if(!spend(cost))return;
   const cured=[], managed=[], failed=[];
   for(const i of S.illnesses){ if(i.treated)continue;
-    if(i.tough){ if(rng(0,100)< (60 - i.sev*4 + (S.fitness||50)/4)){ cured.push(i.name); } else { failed.push(i.name); } }   // cancer: treatable but not guaranteed
+    if(!_medOK){   // pre-modern: every remedy is a gamble; serious illness rarely beaten, nothing is "managed" away
+      if(rng(0,100) < Math.max(6, 42 - i.sev*7 + (S.fitness||50)/6)){ cured.push(i.name); } else { failed.push(i.name); }
+    }
+    else if(i.tough){ if(rng(0,100)< (60 - i.sev*4 + (S.fitness||50)/4)){ cured.push(i.name); } else { failed.push(i.name); } }   // cancer: treatable but not guaranteed
     else if(i.curable){ cured.push(i.name); }
     else { i.treated=true; managed.push(i.name); }
   }
@@ -5529,10 +5621,53 @@ const POLI_Q=[
   {q:'How do you unite a divided country?', a:[{t:'Listen to everyone and find common ground',s:2},{t:'My way or the highway',s:0},{t:'Crush the opposition',s:0},{t:'With great speeches',s:1}]},
   {q:'Your top priority in office?', a:[{t:'Deliver on what I promised, honestly',s:2},{t:'Reward my donors',s:0},{t:'Settle old scores',s:0},{t:'Staying popular',s:1}]},
 ];
-function officeDef(tier){ return OFFICES.find(o=>o.tier===tier); }
-function officeRank(tier){ return OFFICES.findIndex(o=>o.tier===tier); }
+/* ============================================================
+   ERA-GATED POLITICS (Phase 2d)
+   The path to power depends on the era's government form.
+   Monarchies/empires/republics get their own office ladders &
+   issues; democracies use the modern OFFICES. Tier keys are
+   prefixed so they never collide across ladders. Pure function
+   of worldRules.govForm() (derived from S.era) → replay-safe.
+   ============================================================ */
+const GOV_OFFICES={
+  democracy: OFFICES,
+  monarchy: [
+    {tier:'m_reeve',     title:'Village Reeve',   minAge:18, edu:null, costMin:50,    costMax:400,    term:5,  maxTerms:4, fame:0, issues:3},
+    {tier:'m_bailiff',   title:'Town Bailiff',    minAge:24, edu:null, costMin:200,   costMax:1500,   term:5,  maxTerms:4, fame:0, issues:3},
+    {tier:'m_magistrate',title:'Magistrate',      minAge:30, edu:null, costMin:800,   costMax:6000,   term:6,  maxTerms:3, fame:0, issues:4},
+    {tier:'m_sheriff',   title:'High Sheriff',    minAge:34, edu:null, costMin:3000,  costMax:20000,  term:6,  maxTerms:3, fame:0, issues:4},
+    {tier:'m_baron',     title:'Baron',           minAge:38, edu:null, costMin:15000, costMax:90000,  term:99, maxTerms:1, fame:0, issues:5},
+    {tier:'m_chancellor',title:'Royal Chancellor',minAge:44, edu:null, costMin:60000, costMax:400000, term:99, maxTerms:1, fame:0, issues:6},
+  ],
+  empire: [
+    {tier:'e_aedile',  title:'Aedile',             minAge:20, edu:null, costMin:80,    costMax:600,    term:4,  maxTerms:3, fame:0, issues:3},
+    {tier:'e_quaestor',title:'Quaestor',           minAge:26, edu:null, costMin:400,   costMax:3000,   term:4,  maxTerms:3, fame:0, issues:4},
+    {tier:'e_praetor', title:'Praetor',            minAge:32, edu:null, costMin:2000,  costMax:15000,  term:4,  maxTerms:2, fame:0, issues:4},
+    {tier:'e_senator', title:'Senator',            minAge:36, edu:null, costMin:8000,  costMax:60000,  term:99, maxTerms:1, fame:0, issues:5},
+    {tier:'e_consul',  title:'Consul',             minAge:42, edu:null, costMin:40000, costMax:300000, term:2,  maxTerms:3, fame:0, issues:6},
+  ],
+  republic: [
+    {tier:'r_councilor',    title:'City Councilor', minAge:22, edu:null, costMin:100,   costMax:900,    term:4, maxTerms:4, fame:0, issues:3},
+    {tier:'r_magistrate',   title:'Magistrate',     minAge:28, edu:null, costMin:600,   costMax:5000,   term:4, maxTerms:3, fame:0, issues:4},
+    {tier:'r_senator',      title:'Senator',        minAge:34, edu:null, costMin:4000,  costMax:30000,  term:5, maxTerms:2, fame:0, issues:5},
+    {tier:'r_gonfaloniere', title:'Gonfaloniere',   minAge:40, edu:null, costMin:20000, costMax:150000, term:2, maxTerms:3, fame:0, issues:5},
+    {tier:'r_doge',         title:'Doge',           minAge:46, edu:null, costMin:80000, costMax:600000, term:99,maxTerms:1, fame:0, issues:6},
+  ],
+};
+const GOV_ISSUES={
+  democracy: POLI_ISSUES,
+  monarchy: ['Taxes & Tithes','Defense of the Realm','The Harvest','Law & Order','The Church','Roads & Bridges','Trade','Plague & Health'],
+  empire:   ['Grain Supply','The Legions','Public Games','Roads & Aqueducts','Taxes','The Provinces','The Senate','Citizenship'],
+  republic: ['Commerce & Trade','City Defenses','Public Works','Taxes','The Arts','Rival City-States','The Guilds','Banking'],
+};
+function activeOffices(){ return GOV_OFFICES[worldRules.govForm()] || OFFICES; }
+function activeIssues(){ return GOV_ISSUES[worldRules.govForm()] || POLI_ISSUES; }
+const _ALL_OFFICE_SETS=()=>[GOV_OFFICES.democracy, GOV_OFFICES.monarchy, GOV_OFFICES.empire, GOV_OFFICES.republic];
+function officeDef(tier){ for(const set of _ALL_OFFICE_SETS()){ const o=set.find(x=>x.tier===tier); if(o) return o; } return null; }
+function officeRank(tier){ const a=activeOffices().findIndex(o=>o.tier===tier); if(a>=0) return a;
+  for(const set of _ALL_OFFICE_SETS()){ const i=set.findIndex(o=>o.tier===tier); if(i>=0) return i; } return 0; }
 function partyName(k){ const p=PARTIES.find(x=>x.k===k); return p?p.name:(k||'Independent'); }
-function eligibleOffices(){ return OFFICES.filter(o=>{
+function eligibleOffices(){ return activeOffices().filter(o=>{
   if(S.age<o.minAge) return false;
   if(o.edu && !has(o.edu)) return false;
   if(o.fame && (typeof totalFollowers==='function'?totalFollowers():0) < o.fame*0.25 && !has('famous_family') && !S.dynastyOffice) return false;
@@ -5544,10 +5679,12 @@ function politics(){ if(!S){toast('Start a life first.');return;} if(isLocked())
   if(S.office && S.office.inOffice) return politicsOffice();
   if(S.electionCooldown && S.age<S.electionCooldown){ return resultModal('Politics','Lying Low','🛌',[`You lost your last race.`,`You can run for office again at age <b>${S.electionCooldown}</b>.`],()=>setTab('life')); }
   const elig=eligibleOffices();
-  const choices=elig.map(o=>({label:`🏛️ Run for ${o.title}`, alt:true, fn:()=>runForOffice(o.tier)}));
+  const gf=worldRules.govForm(), monarchic=(gf==='monarchy'||gf==='empire');
+  const verb=monarchic?'Seek appointment as':'Run for', titleNoun=monarchic?'👑 Court & Power':(gf==='republic'?'🏛️ The Republic':'🏛️ Politics');
+  const choices=elig.map(o=>({label:`${monarchic?'👑':'🏛️'} ${verb} ${o.title}`, alt:true, fn:()=>runForOffice(o.tier)}));
   choices.push({label:'Close', fn:closeModal});
-  openModal({banner:'Politics', title:'🏛️ Politics', icon:'🏛️', closable:true,
-    text: elig.length? `Throw your hat in the ring. Higher offices need more age, education, fame and money.${has('criminal')?'<br>⚠️ Your <b>criminal record</b> will hurt you at the ballot box.':''}${S.dynastyOffice?`<br>👑 Your family name (a former ${officeDef(S.dynastyOffice)?officeDef(S.dynastyOffice).title:'official'}) gives you recognition.`:''}` : `You're not eligible for any office yet — build up your age, education, and public profile (fame helps).`,
+  openModal({banner:'Politics', title:titleNoun, icon:monarchic?'👑':'🏛️', closable:true,
+    text: elig.length? `${monarchic?'Climb the ladder of station and favor — higher titles demand age, standing and coin.':gf==='republic'?'Win the favor of the city — higher offices demand age, standing and coin.':'Throw your hat in the ring. Higher offices need more age, education, fame and money.'}${has('criminal')?`<br>⚠️ Your <b>criminal record</b> will hurt you ${monarchic?'at court':'at the ballot box'}.`:''}${S.dynastyOffice?`<br>👑 Your family name (a former ${officeDef(S.dynastyOffice)?officeDef(S.dynastyOffice).title:'official'}) gives you recognition.`:''}` : `You're not eligible for any ${monarchic?'station':'office'} yet — build up your age and standing.`,
     choices});
 }
 function runForOffice(tier){ closeModal(); if(!S.party) return pickParty(()=>campaignStart(tier)); campaignStart(tier); }
@@ -5586,7 +5723,7 @@ function takeOffice(tier){ const o=officeDef(tier); const reElect=!!(S.office&&S
     pushLog(`🗳️ I was <b>re-elected</b> as ${o.title}!`,[['good','Re-elected']]);
     return resultModal('Election','Re-elected! 🎉','🏛️',[`The voters kept you on as <b>${o.title}</b>.`,`Another term to push your agenda.`],()=>setTab('life')); }
   S.office={ tier, title:o.title, party:S.party, termsServed:((S.officeTerms||{})[tier]||0), yearsInTerm:0, approval:rng(48,62), inOffice:true,
-    agenda:POLI_ISSUES.slice().sort(()=>0).slice(0,o.issues).map(n=>({name:n,focus:0,progress:0})), summary:'', keyMoments:[], recentEvents:[], promises:[] };
+    agenda:activeIssues().slice().sort(()=>0).slice(0,o.issues).map(n=>({name:n,focus:0,progress:0})), summary:'', keyMoments:[], recentEvents:[], promises:[] };
   ensureMem(S.office); keyMoment(S.office,'elected',60,`Elected ${o.title}.`);
   ledgerAdd('office', 30+officeRank(tier)*9, {note:`Elected ${o.title} for the ${partyName(S.party)}.`});   // name recognition the heirs inherit
   S.dynastyStats=S.dynastyStats||{officesWon:0,pandemics:0}; S.dynastyStats.officesWon++;   // scenario tally (dynasty-wide)
@@ -5704,7 +5841,7 @@ function inJail(){ const u=uw(); return u.jailUntil>S.age; }
 function genCrew(){ return pick(['Calloway','Marchetti','Okonkwo','Vasiliev','Sokolov','Bianchi','Delgado','the Nine Hands','the Ashfield','Kovač'])+(rand()<.5?' Family':' Syndicate'); }
 function underworldMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;} if(S.age<10){ toast('You’re too young for this life.'); return; }
   logAct('call',{fn:'underworldMenu'}); const u=uw();
-  if(inJail()){ resultModal('Locked Up','Behind Bars 🔒','🔒',[`You're in prison until age <b>${u.jailUntil}</b>.`,`Keep your head down and serve your time. Nothing for you on the outside until then.`],()=>setTab('life')); return; }   // jail: feed is fine (nothing to do here)
+  if(inJail()){ resultModal('Locked Up','Behind Bars 🔒','🔒',[`You're in ${prisonWord()} until age <b>${u.jailUntil}</b>.`,`Keep your head down and serve your time. Nothing for you on the outside until then.`],()=>setTab('life')); return; }   // jail: feed is fine (nothing to do here)
   const rankLine = u.rank>=0 ? `${u.crew} · <b>${uwRankName()}</b> (${UNDERWORLD_RANKS[u.rank].cut}% cut)` : 'Unaffiliated';
   const ch=[{label:'🔪 Commit a Crime', fn:crimeMenu}];
   if(u.rank<0 && u.rep>=8) ch.push({label:'🤝 Get Made (join a crew)', alt:true, fn:joinCrew});
@@ -5734,8 +5871,8 @@ function commitCrime(k){ const u=uw(); let c=CRIMES.find(x=>x.k===k);
     // serious/repeat offenses → prison
     const sentence = (c.big?rng(4,9):c.violent?rng(2,5):u.busts>=3?rng(1,4):0);
     if(sentence>0){ u.jailUntil=S.age+sentence; u.heat=clamp(u.heat-30,0,100); addTrauma('prison',rng(20,40),`the years you lost behind bars`); chg('happy',-12);
-      pushLog(`🚔 The ${c.name.toLowerCase()} went wrong — I was caught and sentenced to <b>${sentence} years</b> in prison.`,[['bad',`Prison: ${sentence}yr`]]);
-      return resultModal('Busted!','Sentenced 🔒','🔒',[`The job fell apart and the law caught up with you.`,`<b>${sentence} years</b> in prison. The clock starts now — and the family name wears it.`],()=>setTab('life')); }
+      pushLog(`🚔 The ${c.name.toLowerCase()} went wrong — I was caught and sentenced to <b>${sentence} years</b> in ${prisonWord()}.`,[['bad',`Sentenced: ${sentence}yr`]]);
+      return resultModal('Busted!','Sentenced 🔒','🔒',[`The job fell apart and the law caught up with you.`,`<b>${sentence} years</b> in ${prisonWord()}. The clock starts now — and the family name wears it.`],()=>setTab('life')); }
     const fine=rng(1000,12000); money(-fine);
     pushLog(`🚔 I got caught attempting ${c.name.toLowerCase()} — arrested, ${cur()}${fine.toLocaleString()} in fines.`,[['bad','Arrested']]);
     return resultModal('Busted!','Arrested 🚔','🚔',[`The ${c.name.toLowerCase()} went south — you were arrested and fined <b>${cur()}${fine.toLocaleString()}</b>.`,`Heat is rising. Lie low before you try again.`],()=>underworldMenu()); }
@@ -5868,7 +6005,7 @@ function renderStars(){
   const metCelebs=Object.values(S.celebs).filter(c=>c.met).sort((a,b)=>b.fame-a.fame);
   if(!metCelebs.length){
     h+=`<div class="card" style="text-align:center;padding:22px"><div style="font-size:30px">👀</div>
-      <p style="margin-top:6px">You haven't crossed paths with any celebrities yet.<br>Get out there — attend events, travel, go for a jog, or blow up online — and you'll start running into them.</p></div>`;
+      <p style="margin-top:6px">You haven't crossed paths with any notable figures yet.<br>Get out there — attend events, travel${worldRules.cap('socialMedia')?', go for a jog, or blow up online':' and make a name for yourself'} — and you'll start running into them.</p></div>`;
   } else h+=metCelebs.map(c=>{
     const st=Math.max(1,Math.round(c.fame/20)), stars='★'.repeat(st)+'☆'.repeat(5-st);
     const mood=c.mood>30?'😎 Great':c.mood>0?'🙂 Okay':c.mood>-30?'😐 Meh':'😠 Sour';
@@ -6672,6 +6809,82 @@ const JOB_REQS={
   'Marketing Manager':'Sales Rep', 'Office Manager':'Sales Rep',
   'Adult Film Director':'Adult Film Actor',
 };
+/* ============================================================
+   ERA-GATED CAREERS (Phase 2a)
+   Pre-modern eras get a curated, period-appropriate job pool;
+   the twenties drop internet/AI/space jobs from the modern list;
+   modern & future use the full CAREERS list. All pure functions
+   of S.era → identical across replays (era lives in birthOpts).
+   ============================================================ */
+const ERA_CAREERS={
+  // antiquity — oldWorld & ancient (gold/denarii, low wages in era units)
+  antiquity:[
+    {t:'Farmer',f:'Land',e:'none',s:0,p:180,i:'🌾'},{t:'Shepherd',f:'Pasture',e:'none',s:0,p:160,i:'🐑'},
+    {t:'Fisherman',f:'Harbor',e:'none',s:0,p:170,i:'🎣'},{t:'Hunter',f:'Wilds',e:'none',s:10,p:175,i:'🏹'},
+    {t:'Blacksmith',f:'Forge',e:'none',s:25,p:240,i:'⚒️'},{t:'Stonemason',f:'Quarry',e:'none',s:25,p:230,i:'🪨'},
+    {t:'Potter',f:'Workshop',e:'none',s:20,p:200,i:'🏺'},{t:'Weaver',f:'Workshop',e:'none',s:20,p:195,i:'🧵'},
+    {t:'Carpenter',f:'Workshop',e:'none',s:25,p:225,i:'🪚'},{t:'Merchant',f:'Market',e:'none',s:40,p:380,i:'⚖️'},
+    {t:'Sailor',f:'Fleet',e:'none',s:15,p:210,i:'⛵'},{t:'Soldier',f:'Legion',e:'none',s:30,p:260,i:'🗡️'},
+    {t:'Charioteer',f:'Arena',e:'none',s:35,p:320,i:'🏇'},{t:'Gladiator',f:'Arena',e:'none',s:40,p:340,i:'🛡️'},
+    {t:'Scribe',f:'Court',e:'none',s:60,p:300,i:'📜'},{t:'Physician',f:'Temple',e:'none',s:65,p:360,i:'🌿'},
+    {t:'Priest',f:'Temple',e:'none',s:55,p:340,i:'🛕'},{t:'Tax Collector',f:'Treasury',e:'none',s:50,p:400,i:'💰'},
+    {t:'Senator',f:'Senate',e:'none',s:70,p:520,i:'🏛️'},{t:'Servant',f:'Household',e:'none',s:0,p:120,i:'🧹'},
+  ],
+  // medieval & renaissance (florins/ducats)
+  medieval:[
+    {t:'Serf',f:'Manor',e:'none',s:0,p:140,i:'🌾'},{t:'Farmer',f:'Land',e:'none',s:0,p:170,i:'🌾'},
+    {t:'Miller',f:'Mill',e:'none',s:20,p:210,i:'🌾'},{t:'Baker',f:'Bakery',e:'none',s:20,p:215,i:'🍞'},
+    {t:'Blacksmith',f:'Forge',e:'none',s:30,p:260,i:'⚒️'},{t:'Cooper',f:'Workshop',e:'none',s:25,p:225,i:'🛢️'},
+    {t:'Carpenter',f:'Guild',e:'none',s:28,p:240,i:'🪚'},{t:'Mason',f:'Guild',e:'none',s:30,p:250,i:'🧱'},
+    {t:'Tailor',f:'Guild',e:'none',s:25,p:230,i:'🧵'},{t:'Tanner',f:'Guild',e:'none',s:15,p:195,i:'🪣'},
+    {t:'Merchant',f:'Market',e:'none',s:45,p:420,i:'⚖️'},{t:'Squire',f:'Castle',e:'none',s:25,p:230,i:'🐴'},
+    {t:'Man-at-Arms',f:'Garrison',e:'none',s:30,p:260,i:'🗡️'},{t:'Knight',f:'Order',e:'none',s:55,p:520,i:'⚔️'},
+    {t:'Falconer',f:'Castle',e:'none',s:35,p:280,i:'🦅'},{t:'Minstrel',f:'Court',e:'none',s:35,p:240,i:'🎻'},
+    {t:'Jester',f:'Court',e:'none',s:35,p:230,i:'🃏'},{t:'Monk',f:'Abbey',e:'none',s:60,p:200,i:'⛪'},
+    {t:'Scribe',f:'Abbey',e:'none',s:60,p:300,i:'📜'},{t:'Apothecary',f:'Shop',e:'none',s:60,p:340,i:'⚗️'},
+    {t:'Alchemist',f:'Study',e:'none',s:70,p:380,i:'🧪'},{t:'Physician',f:'Guild',e:'none',s:70,p:420,i:'🌿'},
+    {t:'Steward',f:'Manor',e:'none',s:55,p:440,i:'🗝️'},{t:'Tax Collector',f:'Crown',e:'none',s:50,p:430,i:'💰'},
+    {t:'Cartographer',f:'Studio',e:'none',s:65,p:360,i:'🗺️'},{t:'Painter',f:'Studio',e:'none',s:60,p:350,i:'🎨'},
+    {t:'Printer',f:'Press',e:'none',s:55,p:340,i:'📖'},
+  ],
+  // industrial & victorian (sterling/pounds) — early factories, rail, telegraph; no internet/cars yet
+  industrial:[
+    {t:'Factory Hand',f:'Mill',e:'none',s:0,p:90,i:'🏭'},{t:'Mill Worker',f:'Textile Mill',e:'none',s:0,p:95,i:'🧵'},
+    {t:'Coal Miner',f:'Colliery',e:'none',s:10,p:120,i:'⛏️'},{t:'Chimney Sweep',f:'Trade',e:'none',s:0,p:70,i:'🧹'},
+    {t:'Dockworker',f:'Docks',e:'none',s:5,p:110,i:'⚓'},{t:'Railway Worker',f:'Railway',e:'none',s:20,p:150,i:'🚂'},
+    {t:'Telegraph Operator',f:'Post Office',e:'none',s:45,p:180,i:'📡'},{t:'Clerk',f:'Counting House',e:'none',s:40,p:170,i:'🖊️'},
+    {t:'Blacksmith',f:'Forge',e:'none',s:30,p:160,i:'⚒️'},{t:'Locksmith',f:'Trade',e:'none',s:35,p:165,i:'🔐'},
+    {t:'Watchmaker',f:'Workshop',e:'none',s:55,p:200,i:'⌚'},{t:'Engineer',f:'Works',e:'none',s:60,p:240,i:'⚙️'},
+    {t:'Maid',f:'Household',e:'none',s:0,p:80,i:'🧹'},{t:'Butler',f:'Household',e:'none',s:30,p:160,i:'🤵'},
+    {t:'Governess',f:'Household',e:'none',s:55,p:150,i:'📚'},{t:'Cook',f:'Household',e:'none',s:25,p:120,i:'🍲'},
+    {t:'Constable',f:'Police',e:'none',s:35,p:170,i:'👮'},{t:'Apothecary',f:'Shop',e:'none',s:60,p:220,i:'⚗️'},
+    {t:'Physician',f:'Practice',e:'none',s:70,p:300,i:'🩺'},{t:'Barrister',f:'Chambers',e:'none',s:75,p:340,i:'⚖️'},
+    {t:'Banker',f:'Bank',e:'none',s:65,p:380,i:'🏦'},{t:'Newspaper Editor',f:'Press',e:'none',s:60,p:260,i:'📰'},
+    {t:'Photographer',f:'Studio',e:'none',s:50,p:210,i:'📷'},{t:'Merchant',f:'Trade',e:'none',s:45,p:300,i:'⚖️'},
+    {t:'Sailor',f:'Merchant Navy',e:'none',s:15,p:130,i:'⛵'},{t:'Schoolmaster',f:'School',e:'none',s:60,p:190,i:'🎓'},
+  ],
+};
+function eraCareerTier(era){
+  const i=ERA_ORDER.indexOf(era);
+  if(i<=ERA_ORDER.indexOf('ancient')) return 'antiquity';
+  if(i<=ERA_ORDER.indexOf('renaissance')) return 'medieval';
+  return 'industrial';   // industrial & victorian
+}
+// modern CAREERS that need capabilities the Roaring Twenties don't have (internet/AI/space/social)
+function careerCapOK(c){
+  if(worldRules.cap('internet')) return true;          // modern & future: everything is fine
+  const s=c.t+' '+c.f;
+  if(/Content|Stream|Podcast|Social Media|UX|UI |App Dev|Software|\bData\b|Game Dev|Cyber|\bAI\b|Drone|Esports|IT Support|Web Dev|Cam Model|Adult Content|Adult Platform|Motion|Animator|Influenc/i.test(s)) return false;
+  if(/Astronaut|Space|Air Traffic|Drone Pilot/i.test(s)) return false;
+  return true;
+}
+function eraCareerPool(){
+  const era=(S&&S.era)||'modern';
+  if(ERA_ORDER.indexOf(era) < ERA_ORDER.indexOf('roaringTwenties')){
+    return ERA_CAREERS[eraCareerTier(era)]||ERA_CAREERS.industrial;   // pre-1920s: curated period jobs only
+  }
+  return CAREERS.filter(careerCapOK);                                  // twenties → future: modern list (twenties trims anachronisms)
+}
 function jobReq(title){ return JOB_REQS[title]||null; }
 function hasJobExp(title){ return (S.jobHistory||[]).indexOf(title)>=0; }
 function reqMet(title){ const r=jobReq(title); return !r || hasJobExp(r); }
@@ -6815,7 +7028,7 @@ function workGig(i){ const g=S.gigs&&S.gigs[i]; if(!g||g.done)return;
   resultModal('Side Hustle', g.name, g.icon, [`You worked a ${g.name} gig for ${hours} hours.`, pay>0?`You earned <b>${cur()}${pay.toLocaleString()}</b>.`:`This one paid <b>nothing</b> — tough luck.`], ()=>setTab('gigs'));
 }
 function refreshJobs(){
-  const pool=CAREERS.filter(c=>meetsEdu(c.e) && (!c.adult || S.age>=18));
+  const pool=eraCareerPool().filter(c=>meetsEdu(c.e) && (!c.adult || S.age>=18));
   const out=[];
   for(let i=0;i<15 && pool.length;i++){ const c=pick(pool);
     out.push({title:c.t,field:c.f,icon:c.i,edu:c.e,adult:c.adult,smarts:c.s,req:jobReq(c.t),deg:careerDeg(c.t),employer:employerFor(c.f),salary:Math.round(c.p*(0.85+rand()*0.4)*priceMult())}); }   // wages keep pace with inflation
@@ -7610,6 +7823,11 @@ function renderSchool(){
 function renderSocial(){
   const v=document.getElementById('socialView'); if(!v||!S)return;
   const sm=S.sm;
+  if(!worldRules.cap('socialMedia')){   // pre-internet era — no platforms; reputation is built by deeds, not followers
+    v.innerHTML=hubBack('social')+`<div class="card profile"><div class="handle">📜 No Social Media</div>
+      <div class="pf" style="margin-top:6px">There's no internet in <b>${worldRules.era().displayName}</b>. News travels by <b>${eraCommsLabel()}</b>.<br><br>Your name is made through <b>deeds, family standing and reputation</b> — not followers. Build a legacy the old way.</div></div>`;
+    return;
+  }
   if(S.age<13){ v.innerHTML=hubBack('social')+'<p class="log">📵 You’re too young for social media.<br>Unlocks at age 13.</p>'; return; }
 
   const lab=moodLab(avgSent());
