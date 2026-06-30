@@ -2421,6 +2421,76 @@ const EVENTS = [
     ] };}},
 
 /* ============================================================
+   ⚽ SOCCER FLAVOR (Phase 3) — press / contract / locker-room /
+   rivalry / owner scenarios. Memory-aware, TEMPLATED & DETERMINISTIC
+   (a live LLM would break replay-validation; these local tables are
+   the replay-safe realization of the spec's offline fallback). The
+   agent/manager/rival are Relationship records, so feuds & favours
+   are remembered by the normal system. Shared 2-yr cooldown via
+   S.soccer._lastFlavor (set in build → replay-safe).
+   ============================================================ */
+{ id:'soc_presser', once:false, weight:13, when:S=>socFlavorOK() && (soc().player.form>=62 || (soc().trophies||[]).some(t=>t.age>=S.age-1)),
+  build:S=>{ const sc=soc(); sc._lastFlavor=S.age; const mgr=sc.managerId&&S.people[sc.managerId], club=socClub();
+    const recent=(sc.trophies||[]).slice(-1)[0]; const topic=(recent&&recent.age>=S.age-1)?`winning the ${recent.competitionName}`:`your red-hot form`;
+    return { yr:`Age ${S.age}`, title:'🎤 Press Conference',
+    text:`The cameras roll after ${topic} for <b>${club?club.name:'your club'}</b>. The reporters lean in for a quote.`,
+    choices:[
+      {label:'Credit the team & the gaffer', tip:'Humble', apply:()=>{ gainFame(rng(2,5)); chg('happy',3); if(mgr) rel(mgr.id,+rng(4,8),+rng(2,5),'You praised the manager to the press.'); return {text:`"It's all about the lads and the gaffer." The dressing room loves you for it.`,tags:[['good','Class act']]}; }},
+      {label:'Talk yourself up', tip:'Bold · risky', apply:()=>{ gainFame(rng(4,8)); S.rep=clamp((S.rep||0)-rng(1,4),-100,100); if(mgr) rel(mgr.id,-rng(2,6),-rng(1,3),'You hogged the spotlight in the press.'); return {text:`"I'm the best in this league, simple." The headlines love it; the manager, less so.`,tags:[['flag','Big talk']]}; }},
+      {label:'Bat it away with clichés', apply:()=>({text:`"We take each game as it comes." Safe, forgettable, nobody upset.`,tags:[['flag','Straight bat']]})},
+    ] };}},
+{ id:'soc_lockerroom', once:false, weight:11, when:S=>socFlavorOK() && soc().managerId && S.people[soc().managerId],
+  build:S=>{ const sc=soc(); sc._lastFlavor=S.age; const mgr=S.people[sc.managerId]; const benched=sc.player.form<55;
+    return { yr:`Age ${S.age}`, title:'🧥 In the Dressing Room',
+    text: benched?`${mgr.name} has left you on the bench lately. After training, they catch your eye.`:`${mgr.name} gathers the squad for a hard word after a sloppy run.`,
+    choices:[
+      {label:'Knuckle down, fight for the shirt', apply:()=>{ sc.player.form=clamp(sc.player.form+rng(3,8)); sc.player.morale=clamp(sc.player.morale+rng(2,5)); rel(mgr.id,+rng(3,7),+rng(2,4),'You answered the manager like a pro.'); return {text:`You said nothing and let your training do the talking. ${mgr.name} noticed.`,tags:[['good','Professional']]}; }},
+      {label:'Demand to play', tip:'Confront the gaffer', apply:()=>{ if(rng(0,100)<45){ sc.player.morale=clamp(sc.player.morale+rng(2,6)); rel(mgr.id,-rng(1,4),0,'You demanded to play — they respected the fire.'); return {text:`You banged the table. ${mgr.name} respects the hunger — you're back in the side.`,tags:[['flag','Stood up for yourself']]}; } sc.player.morale=clamp(sc.player.morale-rng(3,7)); rel(mgr.id,-rng(5,10),-rng(3,6),'You clashed with the manager.'); return {text:`It became a row. ${mgr.name} won't forget it — and you're still benched.`,tags:[['bad','Clashed with the gaffer']]}; }},
+      {label:'Sulk about it', apply:()=>{ sc.player.form=clamp(sc.player.form-rng(2,6)); sc.player.morale=clamp(sc.player.morale-rng(2,5)); return {text:`You stew in silence. It doesn't help your game.`,tags:[['bad','Sulked']]}; }},
+    ] };}},
+{ id:'soc_contract', once:false, weight:12, when:S=>socFlavorOK() && soc().player.contract && soc().player.contract.yearsRemaining<=1,
+  build:S=>{ const sc=soc(); sc._lastFlavor=S.age; const ag=sc.agentId&&S.people[sc.agentId], club=socClub(); const w=sc.player.contract.wagePerYear;
+    return { yr:`Age ${S.age}`, title:'✍️ Contract Talks',
+    text:`Your deal at <b>${club?club.name:'the club'}</b> is nearly up. ${ag?ag.name:'Your agent'} lays out the options over your ${cur()}${w.toLocaleString()}/yr.`,
+    choices:[
+      {label:'Sign on — show loyalty', apply:()=>{ sc.player.contract={wagePerYear:Math.round(w*(1.1+rand()*0.2)), yearsRemaining:rng(3,5)}; sc.player.morale=clamp(sc.player.morale+rng(3,7)); setFlag('one_club_loyal'); if(ag) rel(ag.id,+rng(2,5),+rng(1,3),'You signed the deal they brokered.'); return {text:`Pen to paper — a modest raise to ${cur()}${sc.player.contract.wagePerYear.toLocaleString()}/yr. The fans adore the loyalty.`,tags:[['good','Signed on']]}; }},
+      {label:'Hold out for top dollar', tip:'Greedy · risky', apply:()=>{ if(rng(0,100)<55){ sc.player.contract={wagePerYear:Math.round(w*(1.5+rand()*0.5)), yearsRemaining:rng(2,4)}; return {text:`Brinkmanship paid off — a bumper deal at ${cur()}${sc.player.contract.wagePerYear.toLocaleString()}/yr.`,tags:[['good','Big new deal']]}; } sc.player.morale=clamp(sc.player.morale-rng(4,9)); sc.player.contract.yearsRemaining=1; if(ag) rel(ag.id,-rng(2,5),0,'The hold-out soured things.'); return {text:`The club called your bluff. Talks stalled and the fans turned.`,tags:[['bad','Talks stalled']]}; }},
+      {label:'Push for a transfer', tip:'Force a move', apply:()=>{ sc.player.morale=clamp(sc.player.morale-rng(1,4)); sc._forceTransfer=true; return {text:`You tell ${ag?ag.name:'your agent'} to find an exit. The rumours start swirling.`,tags:[['flag','Wants out']]}; }},
+    ] };}},
+{ id:'soc_rival', once:false, weight:10, when:S=>socFlavorOK() && soc().rivalId && S.people[soc().rivalId],
+  build:S=>{ const sc=soc(); sc._lastFlavor=S.age; const rv=S.people[sc.rivalId];
+    return { yr:`Age ${S.age}`, title:'⚔️ The Rivalry',
+    text:`<b>${rv.name}</b> — your great rival — has been in the papers talking about you. The next big match looms.`,
+    choices:[
+      {label:'Answer on the pitch', apply:()=>{ sc.player.form=clamp(sc.player.form+rng(3,7)); rel(rv.id,-rng(2,5),0,'You let your football do the talking.'); return {text:`You channel it into your game — sharper than ever for the big one.`,tags:[['good','Fired up']]}; }},
+      {label:'Trash-talk back', tip:'Fame · heat', apply:()=>{ gainFame(rng(3,7)); rel(rv.id,-rng(6,12),-rng(2,5),'You traded barbs in the press.'); ledgerAdd('rivalry',rng(6,12),{who:rv.id,note:`A war of words with ${rv.name}.`}); return {text:`You give as good as you get. The media feasts; the feud deepens.`,tags:[['flag','War of words']]}; }},
+      {label:'Rise above it', apply:()=>{ addSelfWorth(3); rel(rv.id,+rng(1,4),+rng(0,2),'You took the high road.'); return {text:`You smile and say nothing. Sometimes that's the loudest answer.`,tags:[['good','Took the high road']]}; }},
+    ] };}},
+{ id:'soc_owner_press', once:false, weight:11, when:S=>S.soccer&&S.soccer.owned&&S.age>=18&&(S.age-(S.soccer._lastOwnerFlavor||-99)>=2),
+  build:S=>{ const sc=soc(), own=sc.owned, club=sc.world.clubs[own.clubId]; sc._lastOwnerFlavor=S.age; const scen=pick(['fans','sponsor','board']);
+    if(scen==='fans') return { yr:`Age ${S.age}`, title:'📣 The Supporters',
+      text:`The <b>${club.name}</b> supporters unfurl a banner about your ownership — they want to see ambition.`,
+      choices:[
+        {label:'Promise to back the manager', apply:()=>{ club.fanbase=Math.round(club.fanbase*1.04); chg('happy',2); return {text:`You pledge funds for the squad. The terraces roar your name.`,tags:[['good','Fans onside']]}; }},
+        {label:'Preach patience', apply:()=>({text:`You ask for time to build it right. A few groans, but the sensible nod along.`,tags:[['flag','Patience']]})},
+        {label:'Tell them to mind their business', apply:()=>{ club.fanbase=Math.round(club.fanbase*0.97); gainFame(-rng(1,3)); return {text:`You snap at the fans. It does not go down well.`,tags:[['bad','Fans turned']]}; }},
+      ] };
+    if(scen==='sponsor') return { yr:`Age ${S.age}`, title:'🤝 A Sponsor Calls',
+      text:`A backer offers a shirt deal for <b>${club.name}</b> — quick cash, but they’re a controversial brand.`,
+      choices:[
+        {label:'Take the money', apply:()=>{ const c=Math.round(rng(2,9)*1000000*priceMult()); own.finances.cashBalance+=c; if(rng(0,100)<30){ gainFame(-rng(2,5)); return {text:`You bank ${fcm(c)} — then the brand’s scandal splashes your club’s name.`,tags:[['bad',`+${fcm(c)} but tainted`]]}; } return {text:`A tidy ${fcm(c)} into the club’s coffers.`,tags:[['good',`+${fcm(c)}`]]}; }},
+        {label:'Hold out for a cleaner deal', apply:()=>({text:`You pass. Principles intact, balance unchanged.`,tags:[['flag','Passed']]})},
+      ] };
+    const happy = own._lastRev && (own._lastRev.matchday+own._lastRev.broadcast+own._lastRev.commercial+own._lastRev.prize) > (own._lastExp?own._lastExp.wages+own._lastExp.upkeep+own._lastExp.staff:0);
+    return { yr:`Age ${S.age}`, title:'🪑 The Boardroom',
+      text:`The board ${happy?'is pleased with the club’s direction':'is uneasy about the finances'} and wants a word.`,
+      choices:[
+        {label:'Set bold targets', apply:()=>{ chg('happy',2); return {text:`You promise silverware. They like the ambition — now deliver.`,tags:[['flag','Bold promise']]}; }},
+        {label:'Steady the ship', apply:()=>{ own.finances.cashBalance+=Math.round(rng(1,4)*500000*priceMult()); return {text:`You preach prudence; the board frees up a little extra cash.`,tags:[['good','Prudent']]}; }},
+      ] };
+  }},
+
+/* ============================================================
    THE LEDGER — CALLBACK EVENTS. These QUERY your past deeds, so
    the game appears to "remember everything." Each is once-per-life
    (and re-arms for every heir, since S.fired resets at succession).
@@ -5310,11 +5380,20 @@ function socJoin(position){   // modalpick-reached → no logAct
     trophies:[], awards:[], _matchedThisSeason:0,
     summary:'', keyMoments:[], recentEvents:[] };
   const ov=socOverall(S.soccer.player);
+  socEnsureNPCs();   // agent / manager / rival relationship records
   socKeyMoment('debut', `Signed youth forms with ${world.clubs[clubId].name} as a ${SOC_POS_NAME[position]} (OVR ${ov}).`);
   gainFame(rng(1,3)); setFlag('footballer');
   pushLog(`⚽ I joined the <b>${world.clubs[clubId].name}</b> academy as a <b>${SOC_POS_NAME[position]}</b> (OVR ${ov}). A football dream begins.`,[['good','Joined an academy']]);
   resultModal('Football','Academy Signed ⚽','⚽',[`You’re a <b>${SOC_POS_NAME[position]}</b> at <b>${world.clubs[clubId].name}</b> — Overall <b>${ov}</b>, potential <b>${S.soccer.player.potential}</b>.`,`Train hard, break into the senior side, and the matches will come each season.`],()=>socHub()); }
 function socKeyMoment(type, description){ const sc=soc(); if(!sc) return; (sc.keyMoments=sc.keyMoments||[]).push({type, age:S.age, description}); }
+/* P3 — the people of football: agent, manager, rival as Relationship records (memory & feuds run through the normal system). Deterministic. */
+function socEnsureNPCs(){ const sc=soc(); if(!sc||!sc.player||sc.player.retired) return;
+  const mk=(id,rel,aff,trust,extra)=>{ const g=rand()<.5?'m':'f'; const o={id,name:nm(g)+' '+pick(LAST),rel,affinity:aff,trust,alive:true,memory:[],keyMoments:[],summary:'',soccer:true,gender:g,age:rng(38,60),fam:false,gen:9}; if(extra) for(const k in extra) o[k]=extra[k]; S.people[id]=o; };
+  if(!sc.agentId || !S.people[sc.agentId]){ mk('soc_agent','Agent',rng(45,65),rng(40,60),{agent:true,age:rng(35,58)}); sc.agentId='soc_agent'; }
+  if(!sc.managerId || !S.people[sc.managerId] || sc._mgrClub!==sc.player.clubId){ mk('soc_mgr','Manager',rng(40,62),rng(35,58),{manager:true,age:rng(42,64)}); sc.managerId='soc_mgr'; sc._mgrClub=sc.player.clubId; }
+  if(!sc.rivalId || !S.people[sc.rivalId]){ mk('soc_rival','Rival',rng(20,40),rng(15,35),{rival:true,enemy:true,age:clamp(S.age+rng(-3,3),16,40)}); sc.rivalId='soc_rival'; }
+}
+function socFlavorOK(){ return !!(S.soccer && S.soccer.player && !S.soccer.player.retired && S.age>=17 && (S.age-(S.soccer._lastFlavor||-99)>=2)); }
 function socStatLine(label,v){ return `<div style="display:flex;justify-content:space-between;font-size:12px;margin:2px 0"><span style="color:var(--dim)">${label}</span><b>${v}</b></div>`; }
 // ---- Player hub (pure render — reached via footballMenu/result modals) ----
 function socHub(){ if(!S){toast('Start a life first.');return;} const sc=soc(); if(!sc||!sc.player){ socJoinPrompt(); return; }
@@ -5389,8 +5468,10 @@ function socAgeCurve(p){ const A=p.attributes;   // rise toward potential when y
     A[k]=clamp(A[k]+d,15,99);
   } }
 function socTransferWindow(ov, avg){ const sc=soc(), p=sc.player, world=sc.world, club=world.clubs[p.clubId];
-  // a stronger club buys you when you've outgrown your current side (a star at a small club gets bought) OR you're simply good
-  if(S.age<=31 && (ov >= club.strength+6 || (ov>=66 && avg>=6.6)) && rng(0,100) < clamp(ov-38,12,88)){
+  // a stronger club buys you when you've outgrown your current side (a star at a small club gets bought) OR you're simply good.
+  // A "push for a transfer" from the contract scenario boosts the odds this window (then clears).
+  const forced=!!sc._forceTransfer; sc._forceTransfer=false;
+  if(S.age<=31 && (forced || ov >= club.strength+6 || (ov>=66 && avg>=6.6)) && rng(0,100) < clamp(ov-38,12,88) + (forced?35:0)){
     const cands=Object.values(world.clubs).filter(c=>c.id!==club.id && c.strength>club.strength+4 && c.strength<=ov+13);
     if(cands.length){ cands.sort((a,b)=>b.strength-a.strength); const dest=cands[rng(0,Math.min(3,cands.length-1))];
       const fee=Math.round((ov*ov*40 + rng(0,250000))*priceMult());
@@ -5404,6 +5485,7 @@ function socTransferWindow(ov, avg){ const sc=soc(), p=sc.player, world=sc.world
 function socSeasonEnd(){
   const sc=soc(); if(!sc||!socActive()||S.age<16) return;
   const p=sc.player, world=sc.world; const club=world.clubs[p.clubId]; if(!club) return;
+  socEnsureNPCs();   // keep agent/manager(refreshes on transfer)/rival current
   const ov=socOverall(p); let lines=[], injured=false;
   if(rng(0,100) < Math.max(3, 20 - p.fitness/7)){ injured=true; const sev=rng(1,3);
     p.fitness=clamp(p.fitness - rng(15,30)); p.form=clamp(p.form-rng(8,16)); chg('health',-rng(2,8));
