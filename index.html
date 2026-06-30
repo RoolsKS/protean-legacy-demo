@@ -3804,33 +3804,40 @@ function ageUp(){
   // schooling — a stronger national education system grows your smarts faster as a child
   if(S.age>=5 && S.age<=18){ const e=C.edu||50; chg('smarts', e>80?rng(0,2):e>55?rng(0,1):0); if(geneVal('intellect')>=70 && rng(0,1)) chg('smarts',1); }   // a sharp mind grows faster
 
-  // schooling milestones — auto-enroll, pass/fail, hold-back & graduate (school is a backbone system)
-  if(S.age===6 && S.eduLevel==='none'){ enrollSchool('primary','Primary School'); setTab('life'); return; }
-  if(S.eduLevel==='primary' && S.age>=S.eduUntil){ graduateSchool('primary'); enrollSchool('high','High School'); setTab('life'); return; }   // grade school always advances
-  if(S.eduLevel==='high' && S.age>=S.eduUntil){
-    if(S.grades>=PASS_GRADE){ graduateSchool('high', openCollegeChoice); setTab('life'); return; }
-    else if(S.age>=21){ S.eduLevel='dropout'; setFlag('aged_out_hs'); chg('happy',-rng(3,7));   // aged out — GED is the way back
-      pushLog(`After years of failing, I aged out of high school without a diploma. I can sit the <b>GED exam</b> to earn one (Career → School). 📕`,[['bad','Aged out of school']]);
-      resultModal('Education','No Diploma','📕',[`You kept failing and have aged out of high school.`,`You can still earn the equivalent — take the <b>GED exam</b> from the School page to get your diploma.`],()=>setTab('life')); return; }
-    else { failYear('high school'); setTab('life'); return; } }
-  if(S.eduLevel==='cc' && S.age>=S.eduUntil){
-    if(S.grades>=PASS_GRADE-8){ finishCommunityCollege(); setTab('life'); return; }
-    else { failYear('community college'); setTab('life'); return; } }
-  if(S.eduLevel==='college' && S.age>=S.eduUntil){
-    if(S.grades>=PASS_GRADE){ S.eduLevel='done'; graduateSchool('college'); setTab('life'); return; }
-    else { failYear('university'); setTab('life'); return; } }
-  if(S.eduLevel==='grad' && S.age>=S.eduUntil){
-    if(S.grades>=PASS_GRADE){ finishGradSchool(); setTab('life'); return; }
-    else { failYear((gradByKey(S.gradKey)||{}).name||'graduate school'); setTab('life'); return; } }
-  // grades drift; if you neglect school they slide and you risk failing the year
-  if(['primary','high','college','cc','grad'].includes(S.eduLevel)){
-    S.grades=clamp(S.grades+rng(-3,3));
-    if(S.grades<30 && rng(0,100)<35) pushLog(`I'm <b>failing my classes</b> at ${S.schoolName}. If I don't turn it around I'll be held back. 📉`,[['bad',`Grades: ${S.grades}/100`]]); }
+  // schooling milestones — auto-enroll, pass/fail, hold-back & graduate (school is a backbone system).
+  // SKIPPED once you've reached the natural end of life, so a lingering school state (e.g. an unresolved
+  // graduation/college-choice modal) can never block the old-age death check below (replay-safe — pure guard).
+  const _natCap = Math.max(35,(hasLongevity()?99:92)+worldRules.lifeExpMod());   // era life-expectancy + longevity genes set the natural cap
+  const _atEnd = S.stats.health<=0 || S.age>=_natCap;
+  if(!_atEnd){
+    if(S.age===6 && S.eduLevel==='none'){ enrollSchool('primary','Primary School'); setTab('life'); return; }
+    if(S.eduLevel==='primary' && S.age>=S.eduUntil){ graduateSchool('primary'); enrollSchool('high','High School'); setTab('life'); return; }   // grade school always advances
+    if(S.eduLevel==='high' && S.age>=S.eduUntil){
+      if(has('graduated_hs')){ S.eduLevel='done'; setTab('life'); return; }   // already earned the diploma (just never picked college) → move on, don't re-graduate every year
+      if(S.grades>=PASS_GRADE){ graduateSchool('high', openCollegeChoice); setTab('life'); return; }
+      else if(S.age>=21){ S.eduLevel='dropout'; setFlag('aged_out_hs'); chg('happy',-rng(3,7));   // aged out — GED is the way back
+        pushLog(`After years of failing, I aged out of high school without a diploma. I can sit the <b>GED exam</b> to earn one (Career → School). 📕`,[['bad','Aged out of school']]);
+        resultModal('Education','No Diploma','📕',[`You kept failing and have aged out of high school.`,`You can still earn the equivalent — take the <b>GED exam</b> from the School page to get your diploma.`],()=>setTab('life')); return; }
+      else { failYear('high school'); setTab('life'); return; } }
+    if(S.eduLevel==='cc' && S.age>=S.eduUntil){
+      if(S.grades>=PASS_GRADE-8){ finishCommunityCollege(); setTab('life'); return; }
+      else { failYear('community college'); setTab('life'); return; } }
+    if(S.eduLevel==='college' && S.age>=S.eduUntil){
+      if(S.grades>=PASS_GRADE){ S.eduLevel='done'; graduateSchool('college'); setTab('life'); return; }
+      else { failYear('university'); setTab('life'); return; } }
+    if(S.eduLevel==='grad' && S.age>=S.eduUntil){
+      if(S.grades>=PASS_GRADE){ finishGradSchool(); setTab('life'); return; }
+      else { failYear((gradByKey(S.gradKey)||{}).name||'graduate school'); setTab('life'); return; } }
+    // grades drift; if you neglect school they slide and you risk failing the year
+    if(['primary','high','college','cc','grad'].includes(S.eduLevel)){
+      S.grades=clamp(S.grades+rng(-3,3));
+      if(S.grades<30 && rng(0,100)<35) pushLog(`I'm <b>failing my classes</b> at ${S.schoolName}. If I don't turn it around I'll be held back. 📉`,[['bad',`Grades: ${S.grades}/100`]]); }
+  }
 
   // DEATH CHECK — from this year's drains or old age. MUST come BEFORE event selection:
   // if you die this year, no random event is picked (death is the year's event), so the
   // ghost/death modal never collides with a dangling pending event (a replay-safety fix).
-  if(S.stats.health<=0 || S.age>=Math.max(35,(hasLongevity()?99:92)+worldRules.lifeExpMod())){    // era life-expectancy + longevity genes set the natural cap
+  if(_atEnd){
     die(); return;   // the big, irreversible moment — ribbons awarded inside die()
   }
 
