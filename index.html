@@ -2009,6 +2009,7 @@ function lifeRecord(){
     ghost:has('became_ghost'),
     footballer:has('footballer'), worldPlayer:has('world_player'),
     soccerTrophies:(S.soccer&&S.soccer.trophies)?S.soccer.trophies.length:0,
+    clubOwner:has('club_owner'), clubDynastyGens:(S.soccer&&S.soccer.owned&&S.soccer.owned.gensWon)?S.soccer.owned.gensWon.length:0,
     famBondLow: famAlive.length>0 && famAlive.every(p=>(p.affinity||0)<25),
   };
 }
@@ -2053,6 +2054,8 @@ const RIBBONS=[
   {id:'pro_footballer', name:'Footballer', icon:'⚽', rarity:'rare', priority:5, desc:'Make it as a professional footballer.', q:r=>r.footballer?1:0},
   {id:'silverware', name:'Silverware', icon:'🏆', rarity:'epic', priority:7, track:'maxTrophies', desc:'Win 10 football trophies in a career.', q:r=>_frac(r.soccerTrophies,10)},
   {id:'football_legend', name:'Footballing Legend', icon:'🌟', rarity:'legendary', priority:9, desc:'Be crowned World Player of the Year.', q:r=>r.worldPlayer?1:0},
+  {id:'club_owner', name:'Club Owner', icon:'🏟️', rarity:'rare', priority:5, desc:'Own a football club.', q:r=>r.clubOwner?1:0},
+  {id:'dynasty_club', name:'Dynasty Club', icon:'👑', rarity:'legendary', priority:10, desc:'Build a family club that wins across generations.', q:r=>r.clubDynastyGens>=2?1:0},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
@@ -2091,7 +2094,7 @@ const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame
   powerful:'power',sovereign:'power',self_made_monarch:'power', notorious:'crime',kingpin:'crime',conqueror:'crime',
   saintly:'virtue',devoted:'virtue',redemption:'virtue', dynasty_legend:'dynasty',polymath_founder:'dynasty',matriarch:'dynasty',
   centenarian:'health', pioneer:'era', deviant:'vice',
-  pro_footballer:'fame', silverware:'fame', football_legend:'fame' };
+  pro_footballer:'fame', silverware:'fame', football_legend:'fame', club_owner:'wealth', dynasty_club:'dynasty' };
   // renaissance_soul is intentionally themeless — a combo of wealth+mind+fame; it advances via all three and the milestone tracker, not one opportunity event.
 function ambTheme(){ return (S&&S.ambition)?(RIBBON_THEME[S.ambition]||null):null; }
 function ambHint(rb){ return ({ wealth:' Keep building your fortune.', fame:' Chase the spotlight.', mind:' Hit the books.', power:' Climb toward high office.', crime:' The underworld is calling.', virtue:' Keep doing good.', dynasty:' Grow the family line.', era:' Live to see the age turn.', health:' Stay healthy and live long.', vice:' Court a little scandal.' }[RIBBON_THEME[rb.id]]||''); }
@@ -3635,6 +3638,7 @@ function ageUp(){
   }
   ambitionNudge();   // RIBBONS: surface progress toward a declared Life Ambition (pure — no RNG)
   if(typeof socActive==='function' && socActive()) socSeasonEnd();   // ⚽ conclude the football season (deterministic, feed-only)
+  if(S.soccer && S.soccer.owned) socOwnerSeason();                   // 🏟️ run the owned club's season (deterministic, feed-only)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -4226,7 +4230,9 @@ function continueAsHeir(id){
   if(S.office){ if(!S.dynastyOffice || officeRank(S.office.tier)>=officeRank(S.dynastyOffice)){ S.dynastyOffice=S.office.tier; S.dynastyApproval=S.office.approval; } }
   const _dynImpeached = has('impeached')||has('dynasty_impeached');
   S.alive=true; S.ghost=false; S.exorcised=false; S.hauntCount=0; S._died=false; S._deathRibbons=null; S._ambMark=0; S._ambDone=false; S._ambOpp=-99; S.honorific=null;   // RIBBONS: heir starts a fresh life (codex S.ribbons, ambition & fulfilled-tally carry on; per-life nudge state + honorific reset)
-  S.soccer=null;   // ⚽ heir starts with no football career of their own — but inherits the athletic GENES (socGenAttributes reads the genome) → a footballing dynasty
+  // ⚽ heir starts a fresh PLAYING career (inherits only the athletic genes), but INHERITS the family CLUB (stadium, honours, finances compound across generations — the differentiator)
+  if(S.soccer && S.soccer.owned){ S._inheritedClub=S.soccer.world.clubs[S.soccer.owned.clubId]?S.soccer.world.clubs[S.soccer.owned.clubId].name:'the family club'; S.soccer={ world:S.soccer.world, owned:S.soccer.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'', seasonsPlayed:0 }; }
+  else S.soccer=null;
   S.stats={health:rng(78,100), happy:rng(70,95), smarts:rng(40,85), looks:rng(40,90)};
   S.genome = heir.genome || rollGenome(S.genome, null); applyGenomeToStats();   // GENETICS: the heir IS your child — your genes live on
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
@@ -4254,6 +4260,7 @@ function continueAsHeir(id){
   S.log=[];                                            // a clean story feed for the new generation
   pushLog(`👑 <b>THE LEGACY CONTINUES.</b> You are now <b>${heir.name}</b>, ${heir.gender==='f'?'daughter':'son'} of the late <b>${oldName}</b> — generation ${S.legacyGen} of the family${S.worldMode==='living'?`, in the age of <b>${worldRules.era().displayName}</b>`:''}.${inheritance>0?` You inherit <b>${cur()}${inheritance.toLocaleString()}</b>.`:''}${fameSeed>200?` The family name brings you <b>${fc(fameSeed)}</b> followers to start.`:''}`,[['echo',`Legacy · Gen ${S.legacyGen}`]]);
   if((S.heirlooms||[]).length) pushLog(`🗝️ You inherit the family's heirlooms: <b>${S.heirlooms.map(h=>h.name).join(', ')}</b>.`,[['echo','Heirlooms passed down']]);
+  if(S._inheritedClub){ pushLog(`🏟️ You inherit the family football club — <b>${S._inheritedClub}</b> (${(S.soccer.owned.trophies||[]).length} honours so far). Carry it forward (Activities → Football).`,[['echo','Family club inherited']]); S._inheritedClub=null; }
   setTab('life'); render();
 }
 function becomeGhost(){ S.ghost=true; setFlag('became_ghost'); S.hauntCount=0; closeModal();
@@ -5264,8 +5271,21 @@ function socActive(){ return !!(S.soccer && S.soccer.player && !S.soccer.player.
 function footballMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
   if(!soccerEraOK()){ toast('Organized football doesn’t exist in this era yet.'); return; }
   logAct('call',{fn:'footballMenu'});
-  if(!S.soccer || !S.soccer.player){ socJoinPrompt(); return; }
-  socHub();
+  const sc=S.soccer;
+  if(sc && sc.owned){ socOwnerHub(); return; }            // OWNER mode is primary once you run a club
+  if(sc && sc.player){ socHub(); return; }                // player career (active or retired)
+  socStartMenu();
+}
+function socStartMenu(){   // nothing yet → choose your path into football
+  const canAcademy = S.age>=8 && S.age<=24;
+  const minClub = Math.round(3000000*priceMult());
+  const choices=[];
+  if(canAcademy) choices.push({label:'⚽ Join an academy (go pro)', alt:true, fn:socJoinPrompt});
+  if(S.age>=18) choices.push({label:`🏟️ Buy a football club${netWorth()<minClub?` (need ${fcm(minClub)}+)`:''}`, alt:true, fn:()=>{ if(netWorth()<minClub){ toast(`You need at least ${fcm(minClub)} net worth.`); socStartMenu(); return; } socBuyClubPrompt(); }});
+  if(!choices.length) choices.push({label:'🧒 Too young for the academy', fn:closeModal, tip:'Scouts look at ages 8–24'});
+  choices.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
+  openModal({banner:'Football', title:'⚽ Football', icon:'⚽', closable:true,
+    text:`Two ways into the game: <b>play</b> — sign youth forms and chase a pro career — or <b>own</b> — buy a club and build a footballing empire (and a family club your heirs inherit).`, choices});
 }
 function socJoinPrompt(){
   if(S.age<8){ resultModal('Football','Too Young ⚽','⚽',[`You’re still a kid — academies scout from about age 8.`,`Keep kicking a ball around and come back.`],()=>setTab('activities')); return; }
@@ -5325,6 +5345,7 @@ function socHub(){ if(!S){toast('Start a life first.');return;} const sc=soc(); 
   else if(!p.retired){ choices.push({label:'🧒 Still in the academy', fn:socHub, tip:`Senior football from age 16 (you're ${S.age})`}); }
   if((sc.trophies||[]).length||(sc.awards||[]).length) choices.push({label:'🏆 Trophy Cabinet', alt:true, fn:socCabinet});
   if(senior && S.age>=30) choices.push({label:'🚪 Retire from playing', alt:true, fn:socRetirePrompt});
+  if(!sc.owned && S.age>=18) choices.push({label:`🏟️ Buy a Club${p.retired?'':' (own & manage)'}`, alt:true, fn:()=>{ const min=Math.round(3000000*priceMult()); if(netWorth()<min){ toast(`Need ${fcm(min)}+ net worth to buy a club.`); socHub(); return; } socBuyClubPrompt(); }});
   choices.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
   openModal({banner:'Football', title:'⚽ My Career', icon:'⚽', closable:true, text:body, choices});
 }
@@ -5433,6 +5454,146 @@ function socDoRetire(forced){ const sc=soc(),p=sc&&sc.player; if(!p||p.retired)r
   socKeyMoment('retirement', `Retired: ${p.careerStats.seasons} seasons, ${p.careerStats.goals} goals, ${(sc.trophies||[]).length} trophies.`);
   setFlag('retired_footballer');
   pushLog(`⚽ I retired from football${forced?' — the body finally gave out':''}. <b>${p.careerStats.seasons}</b> seasons, <b>${p.careerStats.goals}</b> goals, <b>${(sc.trophies||[]).length}</b> trophies. 🎖️`,[['echo','Retired from football']]); }
+/* ============================================================
+   ⚽ OWNER / MANAGER MODE (Phase 2) — buy or INHERIT a club, run
+   its finances, develop the STADIUM, sign players, win trophies.
+   The family club passes down generations (the differentiator).
+   Fully deterministic (seeded rng) → replay-safe.
+   ============================================================ */
+function socClubValue(c){ return Math.round((c.strength*c.strength*1600 + c.prestige*45000 + (3-c.tier)*900000) * priceMult()); }
+function socBuyClubPrompt(){
+  const world=(S.soccer&&S.soccer.world)||socBuildWorld();
+  const nw=netWorth();
+  const all=Object.values(world.clubs).map(c=>({c, price:socClubValue(c)})).sort((a,b)=>a.price-b.price).filter(x=>x.price<=nw);
+  if(!all.length){ resultModal('Football','Out of Reach 🏟️','🏟️',[`Even the smallest club is beyond your means right now.`,`Build your fortune and come back.`],()=>setTab('activities')); return; }
+  const picks=[]; const seen={}; [all[0], all[Math.floor(all.length/2)], all[all.length-1]].forEach(x=>{ if(x&&!seen[x.c.id]){ seen[x.c.id]=1; picks.push(x); } });
+  if(!S.soccer) S.soccer={ world, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'', seasonsPlayed:0 };
+  else if(!S.soccer.world) S.soccer.world=world;
+  openModal({banner:'Football', title:'🏟️ Buy a Club', icon:'🏟️', closable:true,
+    text:`Pick a club to buy. A bigger, higher-division club costs far more but starts stronger with bigger crowds. You’ll run its finances, transfers and stadium. Your net worth: <b>${fcm(nw)}</b>.`,
+    choices: picks.map(x=>({label:`${x.c.name} · ${SOC_TIERS[x.c.tier].name}`, tip:`STR ${x.c.strength} · ${fcm(x.price)}`, alt:true, fn:()=>socBuyClub(x.c.id, x.price)}))
+      .concat([{label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }}]) });
+}
+function socBuyClub(clubId, price){   // modalpick-reached → no logAct
+  if(S.money<price){ toast(`You can’t afford ${fcm(price)}.`); return; }
+  spend(price);
+  const sc=S.soccer, club=sc.world.clubs[clubId]; club.ownedByPlayer=true;
+  const cap=clamp(Math.round(club.fanbase*(0.35+(3-club.tier)*0.16)), 4000, club.tier===0?82000:club.tier===1?42000:24000);
+  sc.owned={ clubId, foundedGen:S.legacyGen||1, seasonsOwned:0, gensWon:[],
+    finances:{ cashBalance:Math.round(price*0.15), transferBudget:Math.round(price*0.14), wageBudget:Math.round(club.strength*30000*priceMult()) },
+    stadium:{ name:club.name.split(' ')[0]+' Park', capacity:cap, tier:(club.tier===0?3:club.tier===1?2:1), facilities:1 },
+    trophies:[], boardObj:socNewBoardObj(club), _lastRev:null, _lastExp:null };
+  setFlag('club_owner'); gainFame(rng(2,5));
+  socKeyMoment('boughtClub', `Bought ${club.name} for ${fcm(price)}.`);
+  pushLog(`🏟️ I bought <b>${club.name}</b> (${SOC_TIERS[club.tier].name}) for <b>${fcm(price)}</b>. The club is mine — time to build something lasting.`,[['good','Bought a football club']]);
+  resultModal('Football','Club Bought 🏟️','🏟️',[`<b>${club.name}</b> is yours — squad strength ${club.strength}, a ${cap.toLocaleString()}-seat stadium.`,`Board objective: <b>${socBoardObjText(sc.owned.boardObj)}</b>.`,`Each year your club plays a season — reinvest in players, the stadium and facilities.`],()=>socOwnerHub()); }
+function socNewBoardObj(club){ const r=rng(0,100);
+  if(club.tier>0 && r<45) return {type:'promote'};
+  if(r<70) return {type:'finish', target:(club.tier===0?6:8)};
+  return {type:'profit'}; }
+function socBoardObjText(o){ return o.type==='promote'?'Win promotion' : o.type==='finish'?`Finish in the top ${o.target}` : 'Stay profitable (positive cash)'; }
+function socClubTrophy(name){ const own=soc().owned; (own.trophies=own.trophies||[]).push({competitionName:name, gen:S.legacyGen||1, age:S.age}); own.gensWon=own.gensWon||[]; if(own.gensWon.indexOf(S.legacyGen||1)<0) own.gensWon.push(S.legacyGen||1); }
+function socOwnerHub(){ const sc=soc(); if(!sc||!sc.owned){ socStartMenu(); return; }
+  const own=sc.owned, club=sc.world.clubs[own.clubId], st=own.stadium, fin=own.finances;
+  const rev=own._lastRev||{matchday:0,broadcast:0,commercial:0,prize:0}, exp=own._lastExp||{wages:0,upkeep:0,staff:0};
+  const totRev=rev.matchday+rev.broadcast+rev.commercial+rev.prize, totExp=exp.wages+exp.upkeep+exp.staff;
+  let body=`<div style="text-align:left">
+    <div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between"><b style="font-size:15px">🏟️ ${club.name}</b><span style="color:var(--dim);font-size:12px">${SOC_TIERS[club.tier].emoji} ${SOC_TIERS[club.tier].name}</span></div>
+      <div style="font-size:12px;color:var(--dim);margin-top:3px">STR ${club.strength} · Prestige ${club.prestige} · 👥 ${fc(club.fanbase)} fans · 🏟️ ${st.capacity.toLocaleString()} seats</div></div>
+    <div class="relbars" style="margin-bottom:8px">${pbar('Squad Strength',club.strength)}${pbar('Prestige',club.prestige)}${pbar('Stadium',Math.round(st.capacity/85000*100))}${pbar('Facilities',st.facilities*20)}</div>
+    <div class="genlabel" style="margin:2px 0 4px">💰 Finances ${own.seasonsOwned?`<span>last season</span>`:''}</div>
+    ${socStatLine('Cash balance', (fin.cashBalance<0?'-':'')+cur()+Math.abs(fin.cashBalance).toLocaleString())}
+    ${socStatLine('Transfer budget', cur()+fin.transferBudget.toLocaleString())}
+    ${own.seasonsOwned?socStatLine('Revenue (matchday)', `${cur()}${totRev.toLocaleString()} (${cur()}${rev.matchday.toLocaleString()})`):''}
+    ${own.seasonsOwned?socStatLine('Costs', cur()+totExp.toLocaleString()):''}
+    ${own.seasonsOwned?socStatLine('Net last season', `${totRev-totExp>=0?'+':''}${cur()}${(totRev-totExp).toLocaleString()}`):''}
+    <div class="genlabel" style="margin:8px 0 4px">🎯 Board · 🏆 Honours</div>
+    ${socStatLine('Objective', socBoardObjText(own.boardObj))}
+    ${socStatLine('Club trophies', `🏆 ${(own.trophies||[]).length}${(own.gensWon||[]).length>1?` · 👑 won across ${own.gensWon.length} generations`:''}`)}
+    <p style="color:var(--dim);font-size:11px;margin-top:8px">Matchday income scales with your stadium size and big winning games. Invest, win, and the family club compounds across generations.</p></div>`;
+  const choices=[
+    {label:`🛒 Sign a Player`, alt:true, fn:socSignPlayer},
+    {label:`🏟️ Expand Stadium`, alt:true, fn:socUpgradeStadium},
+    {label:`🎓 Upgrade Facilities`, alt:true, fn:socUpgradeFacilities},
+  ];
+  if((own.trophies||[]).length) choices.push({label:'🏆 Club Honours', alt:true, fn:socClubHonours});
+  choices.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
+  openModal({banner:'Football', title:'🏟️ My Club', icon:'🏟️', closable:true, text:body, choices});
+}
+function socSignPlayer(){ const sc=soc(), own=sc.owned, fin=own.finances; const minFee=Math.round(50000*priceMult());
+  if(fin.transferBudget<minFee){ resultModal('Transfers','No Budget 🛒','🛒',[`Your transfer budget is ${fcm(fin.transferBudget)} — not enough to sign anyone worthwhile.`,`Win games, grow the crowds, and the money will follow.`],()=>socOwnerHub()); return; }
+  const opts=[{lab:'Bargain signing',f:0.3,g:[1,3]},{lab:'Solid signing',f:0.6,g:[2,5]},{lab:'Marquee signing',f:0.95,g:[4,8]}].map(o=>({lab:o.lab,cost:Math.round(fin.transferBudget*o.f),g:o.g})).filter(o=>o.cost>=minFee&&o.cost<=fin.transferBudget);
+  openModal({banner:'Transfers', title:'🛒 Sign a Player', icon:'🛒', closable:true,
+    text:`Spend from your <b>${fcm(fin.transferBudget)}</b> transfer budget to strengthen the squad. Bigger fees buy bigger talent (and bigger wages).`,
+    choices: opts.map(o=>({label:`${o.lab} — ${fcm(o.cost)}`, alt:true, fn:()=>socDoSign(o.cost,o.g)})).concat([{label:'‹ Back', fn:socOwnerHub}]) });
+}
+function socDoSign(cost,g){ const sc=soc(), own=sc.owned, club=sc.world.clubs[own.clubId];
+  own.finances.transferBudget-=cost; own.finances.cashBalance-=cost; const gain=rng(g[0],g[1]); club.strength=clamp(club.strength+gain,8,99); own.finances.wageBudget+=Math.round(cost*0.15);
+  pushLog(`🛒 ${club.name} signed a new player for ${fcm(cost)} — squad strength +${gain} (now ${club.strength}).`,[['good',`+${gain} squad`]]);
+  resultModal('Transfers','Signed ✍️','✍️',[`A ${fcm(cost)} signing lifts squad strength by <b>${gain}</b> to <b>${club.strength}</b>.`],()=>socOwnerHub()); }
+function socUpgradeStadium(){ const sc=soc(), own=sc.owned, st=own.stadium;
+  if(st.capacity>=85000){ resultModal('Stadium','World-Class 🏟️','🏟️',[`Your ${st.capacity.toLocaleString()}-seat stadium is already among the biggest in the world.`],()=>socOwnerHub()); return; }
+  const addCap=5000+st.tier*4000, cost=Math.round(addCap*1200*priceMult());
+  openModal({banner:'Stadium', title:'🏟️ Expand the Stadium', icon:'🏟️', closable:true,
+    text:`Add <b>${addCap.toLocaleString()} seats</b> → ${(st.capacity+addCap).toLocaleString()} for <b>${fcm(cost)}</b>. More capacity = bigger matchday income, biggest on the marquee games when you’re winning. Cash: <b>${fcm(own.finances.cashBalance)}</b>.`,
+    choices:[{label:`Build it (${fcm(cost)})`, alt:true, fn:()=>socDoStadium(cost,addCap)},{label:'‹ Back', fn:socOwnerHub}] });
+}
+function socDoStadium(cost,addCap){ const own=soc().owned; if(own.finances.cashBalance<cost){ toast(`Not enough cash — need ${fcm(cost)}.`); return; }
+  own.finances.cashBalance-=cost; own.stadium.capacity=clamp(own.stadium.capacity+addCap,6000,85000); own.stadium.tier++;
+  pushLog(`🏟️ Expanded ${soc().world.clubs[own.clubId].name}’s stadium to <b>${own.stadium.capacity.toLocaleString()}</b> seats (${fcm(cost)}).`,[['good','Stadium expanded']]);
+  resultModal('Stadium','Bigger & Louder 🏟️','🏟️',[`Capacity is now <b>${own.stadium.capacity.toLocaleString()}</b>. Expect a matchday-revenue bump — especially on the big games.`],()=>socOwnerHub()); }
+function socUpgradeFacilities(){ const own=soc().owned;
+  if(own.stadium.facilities>=5){ resultModal('Facilities','Elite 🎓','🎓',[`Your training & youth facilities are already elite.`],()=>socOwnerHub()); return; }
+  const cost=Math.round(own.stadium.facilities*400000*priceMult());
+  openModal({banner:'Facilities', title:'🎓 Upgrade Facilities', icon:'🎓', closable:true,
+    text:`Better training & youth facilities (level ${own.stadium.facilities}→${own.stadium.facilities+1}) grow your squad strength faster every season. Cost <b>${fcm(cost)}</b>. Cash: <b>${fcm(own.finances.cashBalance)}</b>.`,
+    choices:[{label:`Invest (${fcm(cost)})`, alt:true, fn:()=>socDoFacilities(cost)},{label:'‹ Back', fn:socOwnerHub}] });
+}
+function socDoFacilities(cost){ const own=soc().owned; if(own.finances.cashBalance<cost){ toast(`Not enough cash.`); return; }
+  own.finances.cashBalance-=cost; own.stadium.facilities++;
+  pushLog(`🎓 Upgraded facilities to level ${own.stadium.facilities} (${fcm(cost)}).`,[['good','Facilities upgraded']]);
+  resultModal('Facilities','Built for the Future 🎓','🎓',[`Facilities at level <b>${own.stadium.facilities}</b> — your squad will improve faster each season.`],()=>socOwnerHub()); }
+function socClubHonours(){ const own=soc().owned, tr=(own.trophies||[]).slice().reverse();
+  let body=`<div style="text-align:left"><div class="genlabel" style="margin:2px 0 4px">🏆 Club Honours <span>${tr.length}${(own.gensWon||[]).length>1?` · 👑 ${own.gensWon.length} gens`:''}</span></div>`;
+  body+= tr.length? tr.map(t=>`<div style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)">🏆 <b>${t.competitionName}</b> <span style="color:var(--dim);font-size:11px">· Gen ${t.gen} · age ${t.age}</span></div>`).join('') : `<p style="color:var(--dim)">No honours yet.</p>`;
+  body+=`</div>`;
+  openModal({banner:'Football', title:'🏆 Club Honours', icon:'🏆', closable:true, text:body, choices:[{label:'‹ Back', fn:socOwnerHub},{label:'Close', fn:closeModal}]});
+}
+// The owned club's season, concluded deterministically each ageUp (feed-only).
+function socOwnerSeason(){ const sc=soc(); if(!sc||!sc.owned||S.age<18) return;
+  const own=sc.owned, club=sc.world.clubs[own.clubId], st=own.stadium, fin=own.finances; if(!club) return;
+  let lines=[], won=false, promoted=false;
+  const div=sc.world.divisions[club.tier]||[];
+  let rank=1; for(const id of div){ if(id===club.id) continue; if((sc.world.clubs[id].strength+rng(-12,12)) > club.strength+rng(-6,6)) rank++; } rank=clamp(rank,1,Math.max(div.length,8));
+  if(rank===1){ won=true; socClubTrophy(SOC_TIERS[club.tier].name+' Title'); club.prestige=clamp(club.prestige+rng(1,3)); club.fanbase=Math.round(club.fanbase*1.06);
+    if(club.tier>0){ club.tier--; promoted=true; lines.push(`🏆 <b>${SOC_TIERS[club.tier+1].name} Champions</b> — promoted!`); }
+    else { lines.push(`🏆 <b>League Champions!</b>`); if(rng(0,100)<50){ socClubTrophy(SOC_COMPS.contCup); lines.push(`🌍 Won the <b>${SOC_COMPS.contCup}</b>!`); } }
+  } else if(rank>=Math.max(div.length-2,9) && club.tier<SOC_TIERS.length-1){ club.tier++; lines.push(`📉 Relegated to the ${SOC_TIERS[club.tier].name} (${_ord(rank)}).`); }
+  else lines.push(`📊 ${_ord(rank)} in the ${SOC_TIERS[club.tier].name}.`);
+  if(rng(0,100) < 8 + club.prestige/10){ socClubTrophy(SOC_COMPS.natCup); lines.push(`🏆 Won the <b>${SOC_COMPS.natCup}</b>!`); }
+  // STADIUM matchday revenue — the emphasis: capacity × attendance(form/prestige/success) × ticket × home games
+  const succ = rank<=2?1.0 : rank<=6?0.85 : rank<=10?0.7 : 0.55;
+  const attPct = clamp(0.42 + club.prestige/220 + succ*0.32, 0.3, 1.0);
+  const att = Math.round(st.capacity*attPct);
+  const ticket = Math.round((11 + (club.tier===0?16:club.tier===1?5:1))*priceMult());
+  const matchday = att*ticket*19;
+  const broadcast = Math.round((3-club.tier)*(3-club.tier) * Math.max(1,(60-rank)) * 15000 * priceMult());   // TV money: hugely tier-weighted
+  const commercial= Math.round(club.prestige*club.fanbase*1.1*priceMult());
+  const prize = Math.round(((won?2.0:0) + (promoted?1.5:0) + (club.tier===0?Math.max(0,(60-rank))/10:0)) * 900000 * priceMult());
+  const revenue=matchday+broadcast+commercial+prize;
+  const wages=Math.round(club.strength*club.strength*4200*priceMult()), upkeep=Math.round(st.capacity*22*priceMult()), staff=Math.round((180000+st.facilities*140000)*priceMult());
+  const expenses=wages+upkeep+staff;
+  fin.cashBalance += revenue-expenses;
+  fin.transferBudget=Math.max(0,Math.round(Math.max(0,fin.cashBalance)*0.55 + revenue*0.15));
+  own._lastRev={matchday,broadcast,commercial,prize}; own._lastExp={wages,upkeep,staff};
+  const grow=(st.facilities>=3?rng(0,2):st.facilities>=2?rng(0,1):0) - (rng(0,100)<25?1:0); club.strength=clamp(club.strength+grow,8,99);
+  const ob=own.boardObj, met = ob.type==='promote'?promoted : ob.type==='finish'?(rank<=ob.target) : (revenue>expenses);
+  if(met) gainFame(rng(1,3));
+  own.boardObj=socNewBoardObj(club); own.seasonsOwned++;
+  socRecent(`Club S${own.seasonsOwned}: ${club.name} ${_ord(rank)} ${SOC_TIERS[club.tier].name}, net ${revenue-expenses>=0?'+':''}${fcm(revenue-expenses)}.`);
+  pushLog(`🏟️ <b>${club.name}</b> · ${lines.join(' ')} Revenue ${fcm(revenue)} − costs ${fcm(expenses)} = <b>${revenue-expenses>=0?'+':''}${fcm(revenue-expenses)}</b> (cash ${fcm(fin.cashBalance)})${fin.cashBalance<0?' ⚠️':''}.`, (won||promoted)?[['good','🏟️ Club season']]:[['flag','🏟️ Club season']]);
+}
 function socResolveMatch(attr, kind, opp){   // modalpick-reached → no logAct; deterministic via rng
   const sc=soc(), p=sc.player; const a=p.attributes[attr]||50;
   const edge = a - (opp.strength||50)*0.4 + (p.form-50)*0.3 + rng(-22,22);
