@@ -957,6 +957,8 @@ const worldRules={
    are revalued into the new era's money via toBaseUnit.
    ============================================================ */
 function nextEra(era){ const i=ERA_ORDER.indexOf(era); return (i>=0 && i<ERA_ORDER.length-1) ? ERA_ORDER[i+1] : era; }
+function eraIs(){ const e=(typeof S!=='undefined'&&S&&S.era)||'modern'; for(let i=0;i<arguments.length;i++) if(arguments[i]===e) return true; return false; }
+function eraInRange(minEra,maxEra){ const i=ERA_ORDER.indexOf((typeof S!=='undefined'&&S&&S.era)||'modern'); return i>=ERA_ORDER.indexOf(minEra) && i<=ERA_ORDER.indexOf(maxEra); }
 function eraToBaseUnit(era){ const e=ERA_DEFS[era]; return (e&&e.currency)?e.currency.toBaseUnit:1; }   // modern (null currency) = 1
 function convertCurrency(amount, fromEra, toEra){
   if(fromEra===toEra) return Math.round(amount);
@@ -1880,6 +1882,129 @@ function birthNarrative(){
    "tags" surface to the player WHY something is being remembered.
    ============================================================ */
 const EVENTS = [
+
+/* ============================================================
+   ERA EVENT-FLAVOR PACK (era touch) — period set-pieces gated by
+   era/capability. Every `when` is a PURE read of S.era / worldRules
+   (no RNG) → the eligible set is identical on replay; apply() may
+   use rng() just like every other event. Pre-modern eras only.
+   ============================================================ */
+
+/* A plague sweeps any era without modern medicine */
+{ id:'era_plague', once:true, weight:9, when:S=>!worldRules.cap('modernMedicine') && S.age>=8,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Plague Descends 🕯️',
+    text:`A pestilence sweeps the land. Carts collect the dead at dawn, and the bells toll without end.`,
+    choices:[
+      {label:'Flee to the countryside', tip:'Costly, but safer', apply:()=>{ money(-Math.min(S.money, rng(20,90)));
+        if(rng(0,100)<20){ (S.illnesses=S.illnesses||[]).push({key:'flu',name:'the fever',sev:3,curable:true,treated:false,age:S.age}); chg('health',-rng(6,14)); return {text:`You fled, but the sickness followed the roads — you fell ill on the way.`,tags:[['bad','Caught the fever']]}; }
+        chg('happy',-4); return {text:`You left everything behind and waited it out in the hills. You came through untouched.`,tags:[['good','Survived the plague']]}; }},
+      {label:'Stay and tend the sick', tip:'Honorable · dangerous', apply:()=>{ karma(4);
+        if(rng(0,100)<55){ (S.illnesses=S.illnesses||[]).push({key:'flu',name:'the plague',sev:4,curable:true,treated:false,age:S.age}); chg('health',-rng(14,28)); addTrauma('illness',rng(15,30),'the plague year'); return {text:`You nursed the dying — and the plague took hold of you too. You burn with fever.`,tags:[['bad','Plague-stricken']]}; }
+        chg('happy',-3); ledgerAdd('charity',18,{note:'Tended the sick through the plague.'}); return {text:`You tended the sick through the long nights and, by some miracle, never fell ill. The town remembers.`,tags:[['good','Tended the sick']]}; }},
+      {label:'Bar the doors and pray', apply:()=>{ chg('happy',-6);
+        if(rng(0,100)<32){ (S.illnesses=S.illnesses||[]).push({key:'flu',name:'the fever',sev:3,curable:true,treated:false,age:S.age}); chg('health',-rng(8,18)); return {text:`You shut out the world — but the sickness crept in regardless.`,tags:[['bad','Fell ill']]}; }
+        return {text:`You sealed the house and waited, trembling, until the carts stopped coming.`,tags:[['flag','Waited out the plague']]}; }},
+    ]})},
+
+/* The arena — antiquity blood sport */
+{ id:'era_arena', once:true, weight:7, when:S=>eraIs('oldWorld','ancient') && S.age>=16,
+  build:S=>({ yr:`Age ${S.age}`, title:'Blood in the Arena 🏟️',
+    text:`The games come to the city. The editor offers a purse of silver to any free soul brave — or desperate — enough to fight.`,
+    choices:[
+      {label:'Fight for glory', tip:'Win coin & fame · risk your life', apply:()=>{
+        if(rng(0,100) < 30 + S.stats.health/4 + (has('talent_sports')?15:0)){ const purse=rng(120,600); money(purse); S.fame=Math.min(100,(S.fame||0)+rng(6,14)); chg('happy',6); ledgerAdd('triumph',16,{note:'Victor in the arena.'}); return {text:`The crowd roared your name as your opponent fell. You leave the sand alive — and ${cur()}${purse} richer.`,tags:[['good',`Arena victor +${cur()}${purse}`]]}; }
+        chg('health',-rng(20,40)); addTrauma('violence',rng(20,35),'the day the arena nearly killed you'); return {text:`The mob bayed for blood — nearly yours. You were dragged off the sand broken and bleeding, but alive.`,tags:[['bad','Maimed in the arena']]}; }},
+      {label:'Bet on the games', tip:'Gamble', apply:()=>{ const stake=Math.min(S.money,rng(20,120)); money(-stake);
+        if(rng(0,100)<45){ const win=stake*rng(2,3); money(win); return {text:`Your champion triumphed! You collect ${cur()}${win}.`,tags:[['good',`Won ${cur()}${win}`]]}; }
+        return {text:`Your fighter fell in the first bout. The coin is gone.`,tags:[['bad',`Lost ${cur()}${stake}`]]}; }},
+      {label:'Stay well clear', apply:()=>({text:`You watched from afar. Some spectacles are best survived at a distance.`,tags:[['flag','Skipped the games']]})},
+    ]})},
+
+/* The tournament — medieval & renaissance pageantry */
+{ id:'era_tournament', once:true, weight:7, when:S=>eraInRange('medieval','renaissance') && S.age>=16,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Grand Tournament 🏇',
+    text:`Banners snap in the wind. A tournament has come to the realm — jousts, a melee, and a champion's purse of gold.`,
+    choices:[
+      {label:'Enter the lists', tip:'Glory & gold · risk injury', apply:()=>{
+        if(rng(0,100) < 28 + S.stats.health/4 + S.stats.looks/8 + (has('talent_sports')?15:0)){ const purse=rng(200,900); money(purse); S.fame=Math.min(100,(S.fame||0)+rng(8,16)); chg('happy',7); ledgerAdd('triumph',18,{note:'Champion of the tournament.'}); return {text:`Lance after lance, you unhorsed them all. You are the champion — ${cur()}${purse} and a name that will be sung.`,tags:[['good',`Tournament champion +${cur()}${purse}`]]}; }
+        chg('health',-rng(14,30)); addTrauma('injury',rng(10,22),'the joust that nearly broke you'); return {text:`A lance caught you square and the world went white. You woke days later, aching but alive.`,tags:[['bad','Unhorsed & injured']]}; }},
+      {label:'Watch from the stands', apply:()=>{ chg('happy',4); return {text:`You cheered the champions and feasted with the crowd. A fine day.`,tags:[['good','Enjoyed the tourney']]}; }},
+      {label:'Work the crowd as a cutpurse', tip:'Crime', apply:()=>{ karma(-3);
+        if(rng(0,100)<55){ const take=rng(40,260); money(take); return {text:`Amid the cheering you lifted purse after purse — ${cur()}${take} the richer, and no one the wiser.`,tags:[['bad',`Picked pockets +${cur()}${take}`]]}; }
+        chg('happy',-6); setFlag('criminal'); return {text:`A guard caught your hand in a stranger's purse. You spent the tournament in the stocks, pelted with rotten fruit.`,tags:[['bad','Caught thieving']]}; }},
+    ]})},
+
+/* Witch-hunt hysteria — late medieval through early industrial */
+{ id:'era_witch', once:true, weight:6, when:S=>eraInRange('medieval','industrial') && S.age>=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Accusation 🔥',
+    text:`Hysteria grips the town. A neighbor stands accused of witchcraft, and the mob is hungry for names.`,
+    choices:[
+      {label:'Speak in their defense', tip:'Brave · honorable', apply:()=>{ karma(5);
+        if(rng(0,100)<35){ S.rep=clamp((S.rep||0)-6,-100,100); return {text:`You spoke for the accused — and the mob's eyes turned to you. Suspicion clings to your name now.`,tags:[['bad','Suspicion falls on you']]}; }
+        ledgerAdd('charity',16,{note:'Defended the wrongly accused.'}); return {text:`You faced down the mob with reason and shame. The accused walked free — and people remember your courage.`,tags:[['good','Stood for the innocent']]}; }},
+      {label:'Join the mob', tip:'Safe · cruel', apply:()=>{ karma(-5); chg('happy',-3); ledgerAdd('scandal',12,{note:'Joined a witch-hunt.'}); return {text:`You shouted with the rest and pointed when they pointed. The accused was taken. You tell yourself you had no choice.`,tags:[['bad','Joined the hunt']]}; }},
+      {label:'Keep your head down', apply:()=>({text:`You said nothing and slipped away. Some storms are best not stood in.`,tags:[['flag','Stayed silent']]})},
+    ]})},
+
+/* Passage to the New World — age of sail/exploration through the colonies */
+{ id:'era_newworld', once:true, weight:6, when:S=>eraInRange('renaissance','victorian') && S.age>=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Ship to the New World ⛵',
+    text:`Word spreads of fortunes waiting across the ocean. A ship is taking on passengers — and the desperate, and the bold.`,
+    choices:[
+      {label:'Stake everything and sail', tip:'High risk · high reward', apply:()=>{ const stake=Math.min(S.money, Math.round(S.money*0.6)); money(-stake);
+        if(rng(0,100)<48){ const win=stake*rng(2,4)+rng(200,1000); money(win); chg('happy',8); ledgerAdd('triumph',14,{note:'Made a fortune in the New World.'}); setFlag('emigrated'); return {text:`You crossed the ocean and built something from nothing. You came back — or sent word home — ${cur()}${win} the richer.`,tags:[['good',`New-world fortune +${cur()}${win}`]]}; }
+        chg('health',-rng(6,16)); return {text:`The crossing was brutal and the promised riches a mirage. You scraped your way home with little but stories.`,tags:[['bad',`Lost ${cur()}${stake} on the voyage`]]}; }},
+      {label:'Invest in a merchant voyage', tip:'Moderate gamble', apply:()=>{ const stake=Math.min(S.money,rng(50,400)); money(-stake);
+        if(rng(0,100)<55){ const win=Math.round(stake*(1.4+rand())); money(win); return {text:`The ship returned laden with goods. Your share: ${cur()}${win}.`,tags:[['good',`Voyage paid +${cur()}${win}`]]}; }
+        return {text:`The ship never returned. Lost to storm or pirates — and your stake with it.`,tags:[['bad',`Lost ${cur()}${stake}`]]}; }},
+      {label:'Stay on solid ground', apply:()=>({text:`You watched the sails shrink on the horizon and kept the life you knew.`,tags:[['flag','Stayed home']]})},
+    ]})},
+
+/* Factory strike — the industrial age */
+{ id:'era_strike', once:true, weight:6, when:S=>eraIs('industrial','victorian') && S.age>=14,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Workers Strike ⚙️',
+    text:`The mill hands have downed tools — twelve-hour days and starvation wages have finally broken their patience. A picket line forms at the gates.`,
+    choices:[
+      {label:'Join the strike', tip:'Solidarity · risk', apply:()=>{ karma(4);
+        if(rng(0,100)<45){ if(S.job){ S.jobPerf=clamp((S.jobPerf||50)-rng(10,25)); } chg('happy',-4); return {text:`You stood at the gates singing — until the foreman's men waded in with clubs. The strike was broken, and the bosses marked your face.`,tags:[['bad','Strike broken']]}; }
+        ledgerAdd('triumph',12,{note:'Stood with the workers.'}); chg('happy',5); return {text:`You held the line for weeks — and the owners blinked. Shorter hours, better pay. You helped win it.`,tags:[['good','Strike won']]}; }},
+      {label:'Cross the picket for pay', tip:'Money · shame', apply:()=>{ karma(-3); const cash=rng(40,160); money(cash); S.rep=clamp((S.rep||0)-5,-100,100); return {text:`You took the strikebreaker's coin and walked through the jeering crowd. ${cur()}${cash} — and a name as a scab.`,tags:[['bad',`Strikebreaker +${cur()}${cash}`]]}; }},
+      {label:'Stay out of it', apply:()=>({text:`You kept your head down and your opinions to yourself.`,tags:[['flag','Avoided the strike']]})},
+    ]})},
+
+/* Prohibition & the speakeasy — the Roaring Twenties */
+{ id:'era_speakeasy', once:true, weight:7, when:S=>S.era==='roaringTwenties' && S.age>=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Whisper at the Speakeasy 🥃',
+    text:`Liquor's illegal now — which is exactly why there's money in it. A sharp-dressed bootlegger offers you a cut to move a few crates.`,
+    choices:[
+      {label:'Run liquor for the mob', tip:'Big money · heat', apply:()=>{ karma(-2);
+        if(rng(0,100)<60){ const cash=rng(300,1400); money(cash); setFlag('bootlegger'); return {text:`You ran the back roads with the headlights off and the trunk full. Easy money — ${cur()}${cash}.`,tags:[['good',`Bootlegging +${cur()}${cash}`]]}; }
+        const fine=rng(100,500); money(-Math.min(S.money,fine)); setFlag('criminal'); setFlag('arrested'); return {text:`The feds were waiting at the county line. You were hauled in — ${cur()}${fine} gone and a record to show for it.`,tags:[['bad','Busted by the feds']]}; }},
+      {label:'Open your own speakeasy', tip:'Invest', apply:()=>{ const stake=Math.min(S.money,rng(200,800)); money(-stake);
+        if(rng(0,100)<50){ const win=Math.round(stake*(1.6+rand())); money(win); chg('happy',6); return {text:`Jazz, gin and a hidden door. The place was packed every night — you cleared ${cur()}${win}.`,tags:[['good',`Speakeasy boomed +${cur()}${win}`]]}; }
+        return {text:`A raid shut you down inside a month. The stake — and the furniture — went out the door.`,tags:[['bad',`Raided · lost ${cur()}${stake}`]]}; }},
+      {label:'Keep it legal', apply:()=>({text:`You smiled, declined, and kept your nose clean. Plenty of ways to enjoy the Twenties sober-ish.`,tags:[['flag','Stayed legal']]})},
+    ]})},
+
+/* Off-world passage — the Future */
+{ id:'era_offworld', once:true, weight:6, when:S=>S.era==='future' && S.age>=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Berth Off-World 🛸',
+    text:`The orbital lottery just opened a civilian berth on the Mars-cycler. A one-way ticket to the colonies — the frontier of the age.`,
+    choices:[
+      {label:'Buy passage to the colonies', tip:'Costly · life-changing', apply:()=>{ const cost=Math.min(S.money, rng(2000,9000)); money(-cost); S.fame=Math.min(100,(S.fame||0)+rng(4,10)); chg('happy',10); setFlag('offworlder'); ledgerAdd('triumph',16,{note:'Emigrated off-world.'}); return {text:`You watched Earth shrink to a blue marble through the viewport. Whatever comes next, you're a colonist now.`,tags:[['good','Went off-world']]}; }},
+      {label:'Stay on Earth', apply:()=>({text:`You let the berth go to someone else. Earth's old, but it's home.`,tags:[['flag','Stayed planetside']]})},
+    ]})},
+
+/* Neural augmentation — the Future */
+{ id:'era_synthetic', once:true, weight:6, when:S=>S.era==='future' && S.age>=16,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Augment Clinic 🧠',
+    text:`A clinic offers a neural co-processor — instant recall, faster thought. Most people have one now. The fine print mentions "rare integration faults."`,
+    choices:[
+      {label:'Get augmented', tip:'Smarter · small risk', apply:()=>{ const cost=Math.min(S.money,rng(1000,6000)); money(-cost);
+        if(rng(0,100)<82){ chg('smarts',rng(8,18)); setFlag('augmented'); chg('happy',4); return {text:`The implant synced clean. The world feels sharper, faster — you think in fast-forward now.`,tags:[['good','Neural augment installed']]}; }
+        chg('health',-rng(10,22)); addTrauma('medical',rng(12,24),'the augment that went wrong'); return {text:`The integration faulted. Migraines, phantom sensations, a week in recovery — they pulled it back out.`,tags:[['bad','Augment rejected']]}; }},
+      {label:'Stay fully human', apply:()=>{ chg('happy',2); return {text:`You kept your mind your own. Increasingly rare — and you like it that way.`,tags:[['flag','Stayed unaugmented']]}; }},
+    ]})},
 
 /* ============================================================
    THE LEDGER — CALLBACK EVENTS. These QUERY your past deeds, so
@@ -3923,6 +4048,59 @@ const HOME_TYPES=[
   {t:'Lakeside Estate',   br:7, ba:6, base:6400000, up:11000,garage:4, icon:'🏞️'},
   {t:'Country Mansion',   br:9, ba:8, base:11500000,up:19000,garage:6, icon:'🏰'},
 ];
+/* ============================================================
+   ERA HOUSING (era touch) — period homes for sale & rent.
+   Pre-1900s eras swap the modern catalog for era-appropriate
+   dwellings (hovels → castles, insulae → patrician villas).
+   Prices are in era currency units; genHomes' RNG sequence is
+   unchanged per era → replay-safe.
+   ============================================================ */
+const ERA_HOMES={
+  antiquity:[
+    {t:'Mud-Brick Hut',     br:1, ba:0, base:80,     up:1,   garage:0, icon:'🛖'},
+    {t:'Insula Apartment',  br:1, ba:0, base:260,    up:2,   garage:0, icon:'🏚️'},
+    {t:'Town Domus',        br:3, ba:1, base:1600,   up:8,   garage:0, icon:'🏠'},
+    {t:'Villa Rustica',     br:5, ba:2, base:8000,   up:34,  garage:0, icon:'🏡'},
+    {t:'Seaside Villa',     br:6, ba:3, base:26000,  up:95,  garage:0, icon:'🏖️'},
+    {t:'Patrician Estate',  br:9, ba:5, base:120000, up:430, garage:0, icon:'🏛️'},
+  ],
+  medieval:[
+    {t:'Peasant Hovel',     br:1, ba:0, base:120,    up:1,   garage:0, icon:'🛖'},
+    {t:'Timber Cottage',    br:2, ba:0, base:420,    up:3,   garage:0, icon:'🏚️'},
+    {t:'Town House',        br:3, ba:1, base:1300,   up:7,   garage:0, icon:'🏠'},
+    {t:'Merchant’s House',  br:4, ba:1, base:4200,   up:20,  garage:0, icon:'🏘️'},
+    {t:'Manor House',       br:6, ba:2, base:16000,  up:70,  garage:0, icon:'🏡'},
+    {t:'Stone Keep',        br:8, ba:3, base:60000,  up:240, garage:0, icon:'🏯'},
+    {t:'Castle',            br:12,ba:5, base:200000, up:850, garage:0, icon:'🏰'},
+  ],
+  industrial:[
+    {t:'Tenement Room',     br:1, ba:0, base:150,    up:2,   garage:0, icon:'🏚️'},
+    {t:'Terraced House',    br:2, ba:1, base:600,    up:4,   garage:0, icon:'🏘️'},
+    {t:'Townhouse',         br:3, ba:1, base:2500,   up:14,  garage:0, icon:'🏠'},
+    {t:'Villa',             br:5, ba:2, base:12000,  up:60,  garage:0, icon:'🏡'},
+    {t:'Country House',     br:7, ba:3, base:50000,  up:220, garage:0, icon:'🏞️'},
+    {t:'Manor',            br:9, ba:5, base:150000, up:640, garage:0, icon:'🏰'},
+    {t:'Grand Estate',      br:12,ba:7, base:500000, up:2000,garage:0, icon:'🏛️'},
+  ],
+};
+const ERA_RENTAL_HOMES={
+  antiquity:[ {t:'Insula Garret',rent:60,happy:0,icon:'🏚️'}, {t:'Shared Domus',rent:160,happy:2,icon:'🏠'}, {t:'Private Domus',rent:520,happy:5,icon:'🏡'}, {t:'Villa Lodgings',rent:1600,happy:9,icon:'🏛️'} ],
+  medieval:[ {t:'Garret Room',rent:80,happy:0,icon:'🏚️'}, {t:'Cottage Lodging',rent:220,happy:2,icon:'🏠'}, {t:'Town Rooms',rent:640,happy:5,icon:'🏘️'}, {t:'Manor Apartments',rent:1900,happy:9,icon:'🏡'} ],
+  industrial:[ {t:'Boarding Room',rent:90,happy:0,icon:'🏚️'}, {t:'Terraced Let',rent:280,happy:2,icon:'🏘️'}, {t:'Townhouse Flat',rent:850,happy:5,icon:'🏠'}, {t:'Villa Apartments',rent:2400,happy:10,icon:'🏡'} ],
+};
+const ERA_PLACES={
+  antiquity:['the Forum','the Aventine','Vicus Longus','the Subura','the Palatine','by the Tiber','Ostia Road','the Esquiline'],
+  medieval:['Cheapside','Mill Lane','the Market Cross','Cobbler’s Row','by the Abbey','Castle Gate','the Old Bridge','Tanner’s Way'],
+  industrial:['Gasworks Lane','Wharf Road','Coronation St','Albert Terrace','Mill Road','Cathedral Close','Quarry Hill','Station Road'],
+};
+function eraHousingTier(){ const i=ERA_ORDER.indexOf((typeof S!=='undefined'&&S&&S.era)||'modern');
+  if(i<=ERA_ORDER.indexOf('ancient')) return 'antiquity';
+  if(i<=ERA_ORDER.indexOf('renaissance')) return 'medieval';
+  if(i<=ERA_ORDER.indexOf('victorian')) return 'industrial';
+  return null; }   // modern / twenties / future → modern catalog
+function homeTypes(){ const t=eraHousingTier(); return t?ERA_HOMES[t]:HOME_TYPES; }
+function rentalHomeTiers(){ const t=eraHousingTier(); return t?ERA_RENTAL_HOMES[t]:RENTAL_HOMES; }
+function homeAddr(){ const t=eraHousingTier(); if(t) return pick(ERA_PLACES[t]); return `${rng(100,9999)} ${pick(STREETS)}`; }
 // g:true → a road car that needs a garage / parking spot (bikes & scooters don't; boats/planes use marina/hangar)
 const VEHICLES=[
   {name:'City Bicycle',     value:400,     icon:'🚲', lic:null},
@@ -4210,7 +4388,7 @@ function renderShop(){ const v=document.getElementById('shopView'); if(!v||!S)re
     h+=`<div class="card" style="padding:11px 14px"><div class="pf" style="line-height:1.6">Renting costs a recurring fee but <b>no big down payment</b> and <b>no equity</b>. Owning builds wealth; renting keeps cash free.</div></div>`;
     h+=`<div class="genlabel">🏠 Rent a Home${has('owns_home')?' <span>you own a home</span>':S.rentalHome?` <span>now: ${S.rentalHome.name}</span>`:''}</div>`;
     if(has('owns_home')) h+='<p class="log">You own your home — no need to rent.</p>';
-    else h+=RENTAL_HOMES.map((t,i)=>`<div class="platrow" onclick="rentHomeTier(${i})"><div class="picon" style="background:#222b37">${t.icon}</div>
+    else h+=rentalHomeTiers().map((t,i)=>`<div class="platrow" onclick="rentHomeTier(${i})"><div class="picon" style="background:#222b37">${t.icon}</div>
       <div class="pinfo"><div class="pn">${t.t}${S.rentalHome&&S.rentalHome.name===t.t?' ✓':''}</div><div class="pf">${cur()}${t.rent.toLocaleString()}/yr${t.happy?` · +${t.happy} happiness`:''}</div></div><span class="parrow">›</span></div>`).join('');
     if(worldRules.cap('motorVehicles')){
       h+=`<div class="genlabel">🚗 Rent a Car</div>`;
@@ -4224,9 +4402,9 @@ function renderShop(){ const v=document.getElementById('shopView'); if(!v||!S)re
 }
 function openShop(cat){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;} S._shopCat=cat; setTab('shop'); }
 const STREETS=['Wood Pl','Lake Rd','Avant Garde Blvd','Glenn Pl','Miracle Blvd','Cadenza Pl','Sandoval Hwy','View Ct','Park Ave','Crescent Way'];
-function genHomes(){ const cf=colFactor(); S.shopHomes=HOME_TYPES.map(t=>{
+function genHomes(){ const cf=colFactor(); S.shopHomes=homeTypes().map(t=>{
   const cond=rng(45,100), age=rng(0,40), price=Math.round(t.base*cf*(0.85+rand()*0.4)*(0.7+cond/300));
-  return {type:t.t, icon:t.icon, br:t.br, ba:t.ba, garage:t.garage||0, age, condition:cond, price, up:Math.round(t.up*cf), addr:`${rng(100,9999)} ${pick(STREETS)}`}; }); }
+  return {type:t.t, icon:t.icon, br:t.br, ba:t.ba, garage:t.garage||0, age, condition:cond, price, up:Math.round(t.up*cf), addr:homeAddr()}; }); }
 function viewHome(i){ const p=S.shopHomes[i]; if(!p)return;
   logAct('call',{fn:'viewHome',args:[i]});
   openModal({banner:'Property', title:`${p.icon} ${p.type}`, icon:p.icon, closable:true,
@@ -4352,7 +4530,7 @@ function manageUnit(i){ const u=S.storageUnits[i], t=STORAGE_TIERS.find(x=>x.t==
     ]});
 }
 function penniless2(cost, what){ resultModal('Penniless','You’re Broke','💸',[`You don't have enough money to ${what}.`,`<b>Cost:</b> ${cur()}${cost.toLocaleString()}<br><b>Bank Balance:</b> ${cur()}${Math.max(0,S.money).toLocaleString()}`],()=>setTab('shop')); }
-function rentHomeTier(i){ const t=RENTAL_HOMES[i]; if(has('owns_home')){ toast('You already own a home.'); return; }
+function rentHomeTier(i){ const t=rentalHomeTiers()[i]; if(has('owns_home')){ toast('You already own a home.'); return; }
   if(!spend(Math.round(t.rent/12))) return; // first month up front
   logAct('call',{fn:'rentHomeTier',args:[i]});
   S.rentalHome={name:t.t, rent:t.rent, happy:t.happy}; S.housing='renting'; if(t.happy) chg('happy',t.happy);
