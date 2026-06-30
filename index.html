@@ -4523,7 +4523,9 @@ function render(){
     ph+=`<div class="genlabel">${g.label} <span>${late?m.length+' passed':m.length+' living'}</span></div>`+
         `<div class="people">${m.map(personCard).join('')}</div>`;
   }
-  document.getElementById('peopleView').innerHTML=hubBack('people')+ph;
+  const _livingPpl=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used)).length;
+  const _allBtn=_livingPpl>=2 ? hubCard('⏱️','Spend Time With All','Invest in every relationship at once',"spendTimeAll()") : '';
+  document.getElementById('peopleView').innerHTML=hubBack('people')+_allBtn+ph;
   renderCareer();
   renderAssets();
   renderConnections();
@@ -6735,6 +6737,7 @@ function openPerson(id){
   }
   if(p.fam && p.gen>=1 && !p.romantic){             // your child — raise them
     if(p.age<18) ch.push({label:'🧒 Raise Them', alt:true, fn:()=>parentingMenu(id)});   // shape who they'll become
+    if(p.age<18) ch.push({label:'🎂 Celebrate Birthday', alt:true, fn:()=>personAction(id,'birthday')});
     ch.push({label:'💵 Give Allowance', alt:true, fn:()=>personAction(id,'allowance')});
     if(p.age<22) ch.push({label:'📚 Help with School', alt:true, fn:()=>personAction(id,'school')});
   }
@@ -6764,6 +6767,17 @@ function openPerson(id){
       ${barRow('💛 Warmth',npcDial(p,'warmth'),100,{hideMax:true})}${barRow('🛡️ Loyalty',npcDial(p,'loyalty'),100,{hideMax:true})}${barRow('😤 Temper',Math.max(npcDial(p,'petulance'),npcDial(p,'craziness')),100,{hideMax:true,invert:true})}${barRow('🧱 Willpower',npcDial(p,'willpower'),100,{hideMax:true})}</div>`;
   openModal({banner:'Relationship', title:p.name, text:detail, closable:true, choices:ch});
 }
+function spendTimeAll(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  logAct('call',{fn:'spendTimeAll'});
+  const ppl=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used));   // everyone interactable (pets/avoiding-boss excluded)
+  if(ppl.length<2){ resultModal('Relationships','Nobody Around','🤷',[`There's no one to spend time with right now.`],()=>setTab('people')); return; }
+  let invested=0, refused=0;
+  ppl.forEach(p=>{ const willing = rng(0,100) < clamp(66 + (p.affinity-50)*0.5, 22, 96);   // the closer they are, the likelier they're up for it
+    if(willing){ rel(p.id, +rng(3,6), +rng(1,3), 'Spent quality time together.'); invested++; }
+    else { rel(p.id, -1, 0); refused++; } });
+  chg('happy', clamp(Math.round(invested/3),1,8));
+  pushLog(`⏱️ I made the rounds — invested time in <b>${invested}</b> relationship${invested===1?'':'s'}${refused?`, but ${refused} ${refused===1?"wasn't":"weren't"} up for it`:''}.`,[['good',`Spent time · ${invested}`]]);
+  resultModal('Relationships','Quality Time ⏱️','⏱️',[`You invested time in <b>${invested}</b> relationship${invested===1?'':'s'}.`, refused?`<b>${refused}</b> ${refused===1?"wasn't":"weren't"} in the mood — you can't win them all.`:`Everyone was glad to see you. 💛`],()=>setTab('people')); }
 function personAction(id,action){
   const p=S.people[id]; if(!p||!p.alive)return;
   const before=p.affinity, warm=p.affinity>=45;
@@ -6796,6 +6810,9 @@ function personAction(id,action){
     lines=[`You handed ${p.name} a ${cur()}${amt} allowance.`,`Their whole face lit up. 💵`]; }
   else if(action==='school'){ rel(id,+6,+4,'You helped with their schoolwork.'); chg('smarts',1);
     lines=[`You sat down and helped ${p.name} with their homework.`,`It finally clicked for them — and they’re proud of you. 📚`]; }
+  else if(action==='birthday'){ const cost=rng(80,600); if(!spend(cost))return; rel(id,+10,+6,'You threw them a birthday party.'); chg('happy',3); karma(1);
+    const theme=pick(['a cake and a pile of balloons','a party with all their friends','a trip to their favourite place','a surprise party they never saw coming','presents, games and too much cake']);
+    lines=[`You threw ${p.name} a birthday celebration — ${theme} (${cur()}${cost.toLocaleString()}).`,`They had the best day. These are the moments they'll carry forever. 🎂`]; }
   // ---- DEEPER INTERACTIONS — driven by personality dials + shared memory ----
   else if(action==='vent'){ const care=(npcDial(p,'warmth')+npcDial(p,'loyalty'))/2;
     if(care>50){ addStress(-rng(8,16)); addMood(rng(2,6)); rel(id,+4,+4,'You opened up to them.');
