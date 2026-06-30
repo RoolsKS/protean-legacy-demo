@@ -384,6 +384,7 @@
   .tl-age{ font-size:16px;font-weight:800;margin-bottom:4px }
   .tl-line{ font-size:14px;line-height:1.5;color:#dde4f7;margin:2px 0 }
   .tl-line b{ color:#fff;font-weight:700 }
+  .tl-card.tl-now{ border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset,0 6px 18px rgba(91,140,255,.20) }
 
   /* Dock — toolbar panel + Wellbeing panel */
   .dock{ background:linear-gradient(180deg,rgba(16,19,46,0),#120f33 26%);gap:9px;padding:10px 12px calc(12px + env(safe-area-inset-bottom)) }
@@ -4026,7 +4027,7 @@ function render(){
       const tags=(l.tags||[]).map(t=>`<span class="tag ${t[0]}">${t[1]}</span>`).join('');
       return `<div class="tl-line">${l.html}</div>${tags?`<div>${tags}</div>`:''}`;
     }).join('');
-    html+=`<div class="tl-card"><div class="tl-age" style="color:${b[0]}">Age ${g.age}</div>${body}</div>`;
+    html+=`<div class="tl-card${gi===byAge.length-1?' tl-now':''}"><div class="tl-age" style="color:${b[0]}">Age ${g.age}</div>${body}</div>`;
   });
   document.getElementById('lifeView').innerHTML=html||'<p class="tl-line" style="text-align:center;padding:34px 10px">Press <b>Advance Age</b> to begin living.</p>';
   if(pending && !modalOpen()) showEventModal();   // keep the event modal in sync
