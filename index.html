@@ -784,7 +784,7 @@ const pick=a=>a[rng(0,a.length-1)];
 /* Append a player input to the replay tape. Skipped while replaying (the tape IS the source).
    The tape + seed + creation opts let the server re-run the life and verify a leaderboard score. */
 function logAct(t, p){ if(S && S.actions && !S._replaying) S.actions.push(p!==undefined ? {t,p,age:S.age} : {t,age:S.age}); }
-const clamp=(v,lo=0,hi=100)=>Math.max(lo,Math.min(hi,v));
+const clamp=(v,lo=0,hi=100)=>{ v=+v; return Number.isFinite(v)?Math.max(lo,Math.min(hi,v)):lo; };   // NaN/Infinity guard — a stat can never get stuck at NaN
 /* ============================================================
    i18n — UI translation for the hamburger 🌐 Language picker.
    tr(key) returns the active language's string (falls back to English, then the key).
@@ -1257,6 +1257,7 @@ function continueGame(){
     if(!S.era || !ERA_DEFS[S.era]) S.era='modern'; if(!S.worldMode) S.worldMode='fixed'; applyEraTheme(S.era);   // ERA backfill
     if(!WORLD_PACE[S.worldPace]) S.worldPace='balanced'; if(S.startEraIndex==null) S.startEraIndex=ERA_ORDER.indexOf(S.era); if(S.dynastyYears==null) S.dynastyYears=S.age||0; if(!S.chronicle) S.chronicle=[]; if(!S.heirlooms) S.heirlooms=[];   // P3+ world-clock / chronicle / heirloom backfill
     if(!S.ribbons) S.ribbons={}; if(S.ambition===undefined) S.ambition=null; if(S._died===undefined) S._died=!S.alive; if(!S.ambitionsFulfilled) S.ambitionsFulfilled=[]; if(S.honorific===undefined) S.honorific=null;   // RIBBONS backfill
+    if(!S.sm){ S.sm={joined:false,handle:null,sentiment:0,skeletons:[],bannedUntil:null,postsThisYear:0,feed:[],active:null,knownYT:[],platforms:initPlatforms()}; } else { S.sm.platforms=S.sm.platforms||initPlatforms(); S.sm.skeletons=S.sm.skeletons||[]; S.sm.feed=S.sm.feed||[]; S.sm.knownYT=S.sm.knownYT||[]; }   // C1: pre-social-media saves crash renderSocial without this
     if(S.passportApp===undefined) S.passportApp=null;
     if(S.passportExpires===undefined) S.passportExpires = S.passport ? S.age+10 : null;   // grandfather older saves with a fresh 10-yr passport
     if(S.eduUntil===undefined||S.eduUntil===0) S.eduUntil = S.eduLevel==='primary'?12 : S.eduLevel==='high'?18 : S.eduLevel==='college'?(S.age+1) : 0;
@@ -1680,7 +1681,7 @@ function mindTick(){ if(!S.alive)return; const m=mindGet();
 }
 // THE INNER SELF viewer — personality, mental state, traumas
 function mindView(){ if(!S){toast('Start a life first.');return;}
-  mindGet(); logAct('call',{fn:'mindView'});
+  mindGet(); logAct('call',{fn:'mindView'});   // logged so replay reopens THIS modal (its choices are picked via modalpick); it's a pure RNG-free opener, so the harmless double-log when reached via the doctor menu doesn't desync
   const m=S.mind; const mb=mentalBand();
   const axis=d=>{ const v=pers(d.k); const col=d.k==='volatility'?(v>60?'var(--bad)':v>40?'var(--warn)':'var(--good)'):(v>=60?'var(--good)':v>=40?'var(--warn)':'var(--bad)');
     return `<div style="padding:5px 0;border-bottom:1px solid var(--line)">
@@ -1709,7 +1710,7 @@ function mindView(){ if(!S){toast('Start a life first.');return;}
 }
 // THERAPY ARC — a multi-year commitment that heals wounds & relapses if abandoned
 function startTherapy(){ if(!S){return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
-  logAct('call',{fn:'startTherapy'}); const m=mindGet();
+  const m=mindGet();   // reached only via modalpick (doctor/mind menus) → must NOT logAct (modalpick already reproduces it; double-log desyncs RNG)
   const cost=rng(300,1800); if(!spend(cost)){ resultModal('Therapy','Can’t Afford It','🛋️',[`Therapy runs ${cur()}${cost.toLocaleString()} a year and you’re short on cash.`,`Mental health care isn’t free — raise the money and come back.`],()=>setTab('life')); return; }
   m.therapy={active:true, since:S.age, sessions:(m.therapy?m.therapy.sessions:0)+1};
   m.stress=clamp(m.stress-rng(10,20)); addMood(rng(4,9)); addSelfWorth(rng(2,5));
@@ -1777,7 +1778,7 @@ function investMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked(
       {label:'📊 Buy Index Fund', tip:'Steady — rides the whole economy', fn:()=>investBuy('stocks')},
       {label:'🎲 Buy Speculative', alt:true, tip:'High risk — bubbles and crashes', fn:()=>investBuy('spec')},
       {label:'💰 Sell Holdings', alt:true, fn:()=>investSell()},
-      {label:'Back', fn:()=>setTab('activities')},
+      {label:'Back', fn:()=>{ closeModal(); setTab('activities'); }},
     ]});
 }
 function investBuy(kind){ const iv=S.investments=S.investments||{stocks:0,spec:0,cost:0};
@@ -2069,20 +2070,22 @@ function _artFor(w){ return /^[aeiou]/i.test(w)?'an':'a'; }
 const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame', scholar:'mind',genius:'mind',
   powerful:'power',sovereign:'power',self_made_monarch:'power', notorious:'crime',kingpin:'crime',conqueror:'crime',
   saintly:'virtue',devoted:'virtue',redemption:'virtue', dynasty_legend:'dynasty',polymath_founder:'dynasty',matriarch:'dynasty',
-  centenarian:'health', pioneer:'era' };
+  centenarian:'health', pioneer:'era', deviant:'vice' };
+  // renaissance_soul is intentionally themeless — a combo of wealth+mind+fame; it advances via all three and the milestone tracker, not one opportunity event.
 function ambTheme(){ return (S&&S.ambition)?(RIBBON_THEME[S.ambition]||null):null; }
-function ambHint(rb){ return ({ wealth:' Keep building your fortune.', fame:' Chase the spotlight.', mind:' Hit the books.', power:' Climb toward high office.', crime:' The underworld is calling.', virtue:' Keep doing good.', dynasty:' Grow the family line.', era:' Live to see the age turn.', health:' Stay healthy and live long.' }[RIBBON_THEME[rb.id]]||''); }
+function ambHint(rb){ return ({ wealth:' Keep building your fortune.', fame:' Chase the spotlight.', mind:' Hit the books.', power:' Climb toward high office.', crime:' The underworld is calling.', virtue:' Keep doing good.', dynasty:' Grow the family line.', era:' Live to see the age turn.', health:' Stay healthy and live long.', vice:' Court a little scandal.' }[RIBBON_THEME[rb.id]]||''); }
 // Per-year feed nudge toward the declared ambition (PURE — no RNG; only latching flags). Called from ageUp.
 function ambitionNudge(){
   if(!S || !S.ambition) return; const rb=ribbonDef(S.ambition); if(!rb) return;
   const st=ribbonStatus(rb);
-  if(st.q>=1){ if(!S._ambDone){ S._ambDone=true; fulfillAmbition(rb); } return; }
+  if(st.q>=1){ fulfillAmbition(rb); return; }
   const m=[90,75,50,25].find(x=>st.pct>=x);
   if(m && (S._ambMark||0)<m){ S._ambMark=m; pushLog(`🎯 <span style="color:var(--accent)">Ambition: ${rb.icon} ${rb.name}</span> — you're <b>${st.pct}%</b> of the way there.${ambHint(rb)}`,[['flag','Ambition progress']]); }
 }
 // Deeper ambition reward bundle (PURE — no RNG): a lasting legacy bonus, an honorific title, a commemorative heirloom, and a dynasty tally.
 const AMB_REWARD={ common:80, rare:160, epic:280, legendary:450 };
 function fulfillAmbition(rb){
+  if(S._ambDone) return; S._ambDone=true;   // idempotent — fulfill exactly once per life (latch lives here, not in the caller)
   (S.ambitionsFulfilled=S.ambitionsFulfilled||[]).push({ id:rb.id, name:rb.name, icon:rb.icon, gen:S.legacyGen||1, age:S.age, era:S.era });
   S.honorific='the '+rb.name;   // an earned epithet, shown on the profile & gravestone
   setFlag('fulfilled_ambition');
@@ -2137,9 +2140,9 @@ function ribbonsView(){ if(!S){toast('Start a life first.');return;} closeModal(
 function _fmtRec(track,v){ if(track==='maxNetWorth') return '⊙'+(v>=1e6?(v/1e6).toFixed(1)+'M':Math.round(v/1000)+'k'); if(track==='maxAge')return v+' yrs'; if(track==='maxChildren')return v+' kids'; if(track==='maxFame')return v+' fame'; if(track==='maxGen')return 'Gen '+v; return ''+v; }
 /* ---- Optional Life Ambition (Fix 3) — declare a target; still EARNED through play ---- */
 function chooseAmbition(){ closeModal();
-  const r=lifeRecord(); const order={legendary:0,epic:1,rare:2,common:3};
-  const pickable=RIBBONS.filter(rb=>!rb.secret).sort((a,b)=>(order[a.rarity]-order[b.rarity]));
-  const choices=pickable.slice(0,9).map(rb=>({label:`${rb.icon} ${rb.name}`, tip:rb.desc, alt:true, fn:()=>setAmbition(rb.id)}));
+  const r=lifeRecord(); const order={common:0,rare:1,epic:2,legendary:3};
+  const pickable=RIBBONS.filter(rb=>!rb.secret).sort((a,b)=>(order[a.rarity]-order[b.rarity])||(a.priority-b.priority));   // ALL non-secret ribbons (achievable first) — every theme must be pickable so its opportunity events can fire
+  const choices=pickable.map(rb=>({label:`${rb.icon} ${rb.name}`, tip:rb.desc, alt:true, fn:()=>setAmbition(rb.id)}));
   if(S.ambition) choices.push({label:'✖ Clear ambition', fn:()=>setAmbition(null)});
   choices.push({label:'‹ Back', fn:ribbonsView});
   openModal({banner:'Ambition', title:'🎯 Choose a Life Ambition', icon:'🎯', closable:true,
@@ -2383,6 +2386,14 @@ const EVENTS = [
       {label:'Give generously', tip:'Karma ↑↑', apply:()=>{ const amt=Math.min(Math.max(S.money,0),Math.round(Math.max(S.money,0)*0.1)+rng(200,2000)); money(-amt); karma(4); ledgerAdd('charity',rng(10,18),{note:'Gave generously to those in need.'}); chg('happy',4); return {text:`You gave <b>${cur()}${amt.toLocaleString()}</b> and asked nothing back. It mattered.`,tags:[['good','Gave generously']]}; }},
       {label:'Give a little', apply:()=>{ const amt=Math.min(Math.max(S.money,0),rng(50,500)); money(-amt); karma(2); ledgerAdd('charity',rng(3,7),{note:'A small kindness.'}); return {text:`A small gift — every bit helps.`,tags:[['good','A kindness']]}; }},
       {label:'Not today', apply:()=>({text:`You walked on by. Maybe next time.`,tags:[['flag','Passed']]})},
+    ] };}},
+{ id:'amb_vice', once:false, weight:15, when:S=>ambTheme()==='vice' && S.age>=16 && (S.age-(S._ambOpp||-99)>=5),
+  build:S=>{ S._ambOpp=S.age; return { yr:`Age ${S.age}`, title:'A Wild Invitation 🍸',
+    text:`A night of pure decadence is on offer — the kind of scene that gets people talking. Notoriety is its own kind of fame.`,
+    choices:[
+      {label:'Go all in', tip:'Scandal ↑↑', apply:()=>{ karma(-2); chg('happy',rng(2,6)); ledgerAdd('scandal',rng(8,16),{note:'A scandalous night that set tongues wagging.'}); S.rep=clamp((S.rep||0)-rng(2,6),-100,100); return {text:`You made the night legendary — and the gossip will outlive it.`,tags:[['bad','Courted scandal']]}; }},
+      {label:'Dip a toe in', apply:()=>{ chg('happy',rng(1,4)); ledgerAdd('scandal',rng(2,6),{note:'A mildly scandalous evening.'}); return {text:`You let loose a little. A few raised eyebrows, nothing ruinous.`,tags:[['flag','A little scandal']]}; }},
+      {label:'Stay respectable', apply:()=>({text:`You kept your reputation spotless. How dull.`,tags:[['flag','Stayed proper']]})},
     ] };}},
 
 /* ============================================================
@@ -3498,19 +3509,19 @@ const SCHEDULED = {
         return {text:`That cigarette at thirteen, finally collecting. Health takes a heavy hit.`,
           tags:[['echo','ECHO of "smoker" (age 13)'],['bad','Health −35']]};}}]}),
 
-  sam_returns:S=>({
-    yr:`Age ${S.age}`, title:`${P('sam')?P('sam').name:'An old friend'} Comes Back`,
-    text: P('sam')&&P('sam').trust>=70
-      ? `${P('sam').name} made it big — and never forgot the $500 you lent them years ago.`
-      : `${P('sam').name} resurfaces, but the warmth between you faded long ago.`,
+  sam_returns:S=>{ const sam=P('sam'), nm=sam?sam.name:'An old friend'; return {
+    yr:`Age ${S.age}`, title:`${nm} Comes Back`,
+    text: sam&&sam.trust>=70
+      ? `${nm} made it big — and never forgot the $500 you lent them years ago.`
+      : `${nm} resurfaces, but the warmth between you faded long ago.`,
     choices:[{label:'See what they do',
       apply:()=>{
-        if(P('sam')&&P('sam').trust>=70){ money(25000); chg('happy',15);
+        if(sam&&sam.trust>=70){ money(25000); chg('happy',15);
           return {text:`"You believed in me when no one did." They hand you $25,000. Loyalty, compounded.`,
             tags:[['echo','ECHO of lending Sam (age ~22)'],['good','+$25,000']]};}
         chg('happy',-4);
         return {text:`A quick hello, a hollow handshake. What you didn't tend, didn't grow.`,
-          tags:[['bad','A friendship left to wither']]};}}]}),
+          tags:[['bad','A friendship left to wither']]};}}]}; },
 
   startup_fate:S=>{
     const win=(S.stats.smarts+S.rep/2+rng(-20,30))>60;
@@ -4055,12 +4066,12 @@ function hobbiesMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked
   // a couple of fresh hobbies to pick up — the ones you'd be best at (talent-suggested), then any
   const fresh=HOBBIES.filter(h=>!S.hobbies[h.k]).sort((a,b)=>hobbyAffinity(b)-hobbyAffinity(a));
   fresh.slice(0,5).forEach(h=>{ const aff=hobbyAffinity(h); choices.push({label:`➕ Take up ${h.icon} ${h.name}${aff>1.5?' ✨ (a natural fit)':''}`, alt:true, fn:()=>practiceHobby(h.k)}); });
-  choices.push({label:'Back', alt:true, fn:()=>setTab('activities')});
+  choices.push({label:'Back', alt:true, fn:()=>{ closeModal(); setTab('activities'); }});
   openModal({banner:'Passions', title:'🎨 Hobbies & Passions', icon:'🎨', closable:true,
     text:mine.length?`Practice a passion to grow your skill — and find some calm.`:`Pick something up. Hobbies relieve stress, can earn money, and mastering one becomes part of your legacy. Your <b>talents</b> (genes + temperament) make some come easier.`,
     choices});
 }
-function practiceHobby(k){ const h=hobbyDef(k); if(!h)return; logAct('call',{fn:'practiceHobby',args:[k]}); closeModal();
+function practiceHobby(k){ const h=hobbyDef(k); if(!h)return; closeModal();   // reached only via modalpick → must NOT logAct (it mutates + consumes rng; double-log double-executes on replay)
   S.hobbies=S.hobbies||{}; const isNew=!S.hobbies[k]; const r=S.hobbies[k]=S.hobbies[k]||{level:0,since:S.age,sold:0,viral:false};
   const gain=Math.max(1,Math.min(16, Math.round(rng(3,7)+hobbyAffinity(h)))); const before=r.level; r.level=Math.min(100, r.level+gain);
   // the inner reward — passions are good for the soul
@@ -4081,7 +4092,7 @@ function practiceHobby(k){ const h=hobbyDef(k); if(!h)return; logAct('call',{fn:
   ch.push({label:'Done', alt:true, fn:()=>setTab('life')});
   resultModal('Passions', h.name, h.icon, [`A year of ${h.name.toLowerCase()}. You're <b>${hobbyTier(r.level)}</b> (${r.level}%).`, `It eased your mind${extra?' — '+extra.replace(/<[^>]+>/g,'').trim():''}.`, canSell?`Your skill is good enough to <b>earn from it</b> now.`:''].filter(Boolean), ()=>{ openModal({banner:'Passions',title:h.name,icon:h.icon,closable:true,text:`What next?`,choices:ch}); });
 }
-function sellHobby(k){ const h=hobbyDef(k), r=S.hobbies&&S.hobbies[k]; if(!h||!r||!h.sell){ closeModal(); return; } logAct('call',{fn:'sellHobby',args:[k]}); closeModal();
+function sellHobby(k){ const h=hobbyDef(k), r=S.hobbies&&S.hobbies[k]; if(!h||!r||!h.sell){ closeModal(); return; } closeModal();   // reached only via modalpick → must NOT logAct (mutates money/followers + rng; double-log double-executes on replay)
   if(r.level<40){ toast('Build your skill higher first.'); return; }
   const base=Math.round(r.level*r.level/4 * (0.5+rand()) * priceMult());   // income scales with skill² and inflation
   let income=Math.max(20, base), line, viral=false;
@@ -4178,6 +4189,9 @@ function continueAsHeir(id){
     if(p.memory&&p.memory.length){ p.summary=((p.summary?p.summary+' ':'')+p.memory.map(m=>m.note).slice(-3).join(' ')).slice(-380); p.memory=[]; }
     keyMoment(p,'milestone',(p.affinity-50)*2,`Inherited from ${oldName}: ${p.affinity>=55?'a bond they cherished':p.affinity<35?'bad blood that still lingers':'a complicated history'}.`);
   }
+  // Bound very long dynasties: drop deeply-removed dead ancestors (gen<=-4) nothing still references, so S.people can't grow forever (pure → replay-safe).
+  { const keep=new Set(); for(const f of (S.feuds||[])) if(f.who) keep.add(f.who); for(const f of (S.ledger||[])) if(f.who) keep.add(f.who);
+    for(const k in S.people){ const p=S.people[k]; if(p && !p.alive && !p.pet && p.fam && p.gen<=-4 && !keep.has(k)) delete S.people[k]; } }
   const gn=S.legacyGen||1;
   const pid='ancestor'+gn;                             // the late protagonist becomes the heir's parent
   S.people[pid]=person(pid, oldName, oldGender==='f'?'Mother':'Father', 80, 80, {gender:oldGender,gen:-1,fam:true});
@@ -6474,7 +6488,7 @@ function underworldMenu(){ if(!S){toast('Start a life first.');return;} if(isLoc
   if(u.rank>=0) ch.push({label:'💼 Do a Job for the Crew', alt:true, fn:crewJob});
   if(u.rank>=2) ch.push({label:'💰 Extort a Business', alt:true, fn:()=>commitCrime('extort')});
   if(u.heat>=25) ch.push({label:'🤫 Lie Low', alt:true, fn:lieLow});
-  ch.push({label:'Back', alt:true, fn:()=>setTab('activities')});
+  ch.push({label:'Back', alt:true, fn:()=>{ closeModal(); setTab('activities'); }});
   openModal({banner:'The Underworld', title:'🔫 The Underworld', icon:'🔫', closable:true,
     text:`<div style="text-align:left">Status: <b>${rankLine}</b>${u.jobs?` · ${u.jobs} jobs`:''}
       <div class="relbars" style="margin:7px 0">${barRow('💀 Street Rep',u.rep,120)}${barRow('🔥 Police Heat',u.heat,100,{invert:true})}</div>
@@ -7790,7 +7804,7 @@ function scenarioMenu(){ if(!S){toast('Start a life first.');return;} if(typeof 
   logAct('call',{fn:'scenarioMenu'}); S.scenario=S.scenario||{key:null,completed:{}};
   const choices=SCENARIOS.map(sc=>{ const done=S.scenario.completed[sc.k], active=S.scenario.key===sc.k;
     return {label:`${done?'✅ ':active?'▶ ':''}${sc.icon} ${sc.name}`, tip:sc.blurb, alt:!active, fn:()=>scenarioView(sc.k)}; });
-  choices.push({label:'Back', alt:true, fn:()=>setTab('connections')});
+  choices.push({label:'Back', alt:true, fn:()=>{ closeModal(); setTab('connections'); }});
   const beaten=Object.keys(S.scenario.completed||{}).length;
   openModal({banner:'Scenarios', title:'🎯 Scenario Packs', icon:'🎯', closable:true,
     text:`Take on a <b>themed challenge</b> for your dynasty — beat all its objectives across the generations for a permanent badge and a legacy boost. ${beaten?`<br>Beaten: <b>${beaten}/${SCENARIOS.length}</b>.`:''}${S.scenario.key?`<br>Active: <b>${scenarioDef(S.scenario.key).icon} ${scenarioDef(S.scenario.key).name}</b>.`:''}`,
