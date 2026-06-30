@@ -2012,6 +2012,7 @@ function lifeRecord(){
     clubOwner:has('club_owner'), clubDynastyGens:(S.soccer&&S.soccer.owned&&S.soccer.owned.gensWon)?S.soccer.owned.gensWon.length:0,
     scholarship:has('athletic_scholarship'), schoolCaptain:has('school_captain'),
     baller:has('basketballer'), bballRings:(S.bball&&S.bball.trophies)?S.bball.trophies.length:0, bballMVP:has('bball_mvp'),
+    franchiseOwner:has('franchise_owner'), franchiseDynastyGens:(S.bball&&S.bball.owned&&S.bball.owned.gensWon)?S.bball.owned.gensWon.length:0,
     famBondLow: famAlive.length>0 && famAlive.every(p=>(p.affinity||0)<25),
   };
 }
@@ -2063,6 +2064,8 @@ const RIBBONS=[
   {id:'baller', name:'Baller', icon:'🏀', rarity:'rare', priority:6, desc:'Make it to the pro basketball league.', q:r=>r.baller?1:0},
   {id:'ring_chaser', name:'Champion', icon:'💍', rarity:'epic', priority:8, desc:'Win a basketball championship.', q:r=>r.bballRings>=1?1:0},
   {id:'hoops_goat', name:'Hardwood Legend', icon:'🐐', rarity:'legendary', priority:9, desc:'Be named League MVP.', q:r=>r.bballMVP?1:0},
+  {id:'franchise_owner', name:'Franchise Owner', icon:'🏀', rarity:'rare', priority:6, desc:'Own a pro basketball franchise.', q:r=>r.franchiseOwner?1:0},
+  {id:'dynasty_franchise', name:'Dynasty Franchise', icon:'👑', rarity:'legendary', priority:10, desc:'Build a family franchise that wins across generations.', q:r=>r.franchiseDynastyGens>=2?1:0},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
@@ -2101,7 +2104,7 @@ const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame
   powerful:'power',sovereign:'power',self_made_monarch:'power', notorious:'crime',kingpin:'crime',conqueror:'crime',
   saintly:'virtue',devoted:'virtue',redemption:'virtue', dynasty_legend:'dynasty',polymath_founder:'dynasty',matriarch:'dynasty',
   centenarian:'health', pioneer:'era', deviant:'vice',
-  pro_footballer:'fame', silverware:'fame', football_legend:'fame', club_owner:'wealth', dynasty_club:'dynasty', full_ride:'mind', school_mvp:'fame', baller:'fame', ring_chaser:'fame', hoops_goat:'fame' };
+  pro_footballer:'fame', silverware:'fame', football_legend:'fame', club_owner:'wealth', dynasty_club:'dynasty', full_ride:'mind', school_mvp:'fame', baller:'fame', ring_chaser:'fame', hoops_goat:'fame', franchise_owner:'wealth', dynasty_franchise:'dynasty' };
   // renaissance_soul is intentionally themeless — a combo of wealth+mind+fame; it advances via all three and the milestone tracker, not one opportunity event.
 function ambTheme(){ return (S&&S.ambition)?(RIBBON_THEME[S.ambition]||null):null; }
 function ambHint(rb){ return ({ wealth:' Keep building your fortune.', fame:' Chase the spotlight.', mind:' Hit the books.', power:' Climb toward high office.', crime:' The underworld is calling.', virtue:' Keep doing good.', dynasty:' Grow the family line.', era:' Live to see the age turn.', health:' Stay healthy and live long.', vice:' Court a little scandal.' }[RIBBON_THEME[rb.id]]||''); }
@@ -3738,6 +3741,7 @@ function ageUp(){
   if(S.soccer && S.soccer.owned) socOwnerSeason();                   // 🏟️ run the owned club's season (deterministic, feed-only)
   if(S.bball && S.bball.youth && S.bball.youth.onTeam) bbYouthSeason();   // 🏀 school/college hoops season (deterministic)
   if(typeof bbActive==='function' && bbActive()) bbSeasonEnd();      // 🏀 conclude the pro basketball season (deterministic)
+  if(S.bball && S.bball.owned) bbOwnerSeason();                      // 🏀 run the owned franchise's season (deterministic, feed-only)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -4333,7 +4337,9 @@ function continueAsHeir(id){
   if(S.soccer && S.soccer.owned){ S._inheritedClub=S.soccer.world.clubs[S.soccer.owned.clubId]?S.soccer.world.clubs[S.soccer.owned.clubId].name:'the family club'; S.soccer={ world:S.soccer.world, owned:S.soccer.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'', seasonsPlayed:0 }; }
   else S.soccer=null;
   S.schoolSport=null;   // ⚽ heir starts their own school-sports journey (inherits the athletic GENES → school prodigy)
-  S.bball=null;         // 🏀 heir starts their own hoops journey (athletic genes inherit)
+  // 🏀 heir starts a fresh PLAYING career (inherits the athletic genes) but INHERITS the family FRANCHISE (arena, banners, finances compound across generations)
+  if(S.bball && S.bball.owned){ const _ft=S.bball.world&&S.bball.world.teams[S.bball.owned.teamId]; S._inheritedFranchise=_ft?_ft.name:'the family franchise'; S.bball={ world:S.bball.world, owned:S.bball.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'' }; }
+  else S.bball=null;
   S.stats={health:rng(78,100), happy:rng(70,95), smarts:rng(40,85), looks:rng(40,90)};
   S.genome = heir.genome || rollGenome(S.genome, null); applyGenomeToStats();   // GENETICS: the heir IS your child — your genes live on
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
@@ -5433,6 +5439,7 @@ function bbHub(){ const b=bb(); if(!b||!b.player){ bballMenuRoute(); return; } c
   const ch=[]; const senior=!p.retired;
   if(senior){ ch.push({label:`🏀 Play a Game${b._gamedThisSeason?` (${b._gamedThisSeason})`:''}`, alt:true, fn:bbPlayGame}); ch.push({label:'🏋️ Train', alt:true, fn:bbProTrain}); }
   if((b.trophies||[]).length||(b.awards||[]).length) ch.push({label:'🏆 Trophy Cabinet', alt:true, fn:bbCabinet});
+  if(!b.owned && S.age>=18) ch.push({label:`🏟️ Buy a Franchise${p.retired?'':' (own & run)'}`, alt:true, fn:()=>{ const min=Math.round(3000000*priceMult()); if(netWorth()<min){ toast(`Need ${fcm(min)}+ net worth to buy a franchise.`); bbHub(); return; } bbBuyFranchisePrompt(); }});
   if(senior && S.age>=31) ch.push({label:'🚪 Retire', alt:true, fn:bbRetirePrompt});
   ch.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
   openModal({banner:'Basketball', title:'🏀 My Career', icon:'🏀', closable:true, text:body, choices:ch}); }
@@ -5496,11 +5503,110 @@ function bbRetirePrompt(){ openModal({banner:'Basketball', title:'🚪 Retire?',
 function bbAutoRetire(){ bbDoRetire(true); }
 function bbDoRetire(forced){ const b=bb(),p=b&&b.player; if(!p||p.retired)return; p.retired=true; p.onAllStar=false; setFlag('bball_retired'); bbKeyMoment('retirement','Retired from basketball.'); gainFame(rng(1,3));
   pushLog(`🏀 I retired from basketball${forced?' — the body gave out':''}. <b>${p.careerStats.seasons}</b> seasons, <b>${(b.trophies||[]).length}</b> rings, <b>${(b.awards||[]).length}</b> awards. 🎖️`,[['echo','Retired from basketball']]); }
+/* ---- 🏀 OWNER MODE — buy/inherit a franchise, run finances, build the ARENA,
+   sign players, win titles. Family franchise across generations. Deterministic. ---- */
+function bbFranchiseValue(t){ return Math.round((t.strength*t.strength*1800 + t.prestige*55000 + 1200000) * priceMult()); }
+function bbBuyFranchisePrompt(){ const world=(S.bball&&S.bball.world)||bbBuildWorld(); const nw=netWorth();
+  const all=Object.values(world.teams).map(t=>({t,price:bbFranchiseValue(t)})).sort((a,b)=>a.price-b.price).filter(x=>x.price<=nw);
+  if(!all.length){ resultModal('Basketball','Out of Reach 🏀','🏀',[`Even the cheapest franchise is beyond your means right now.`,`Build your fortune and come back.`],()=>setTab('activities')); return; }
+  const picks=[], seen={}; [all[0],all[Math.floor(all.length/2)],all[all.length-1]].forEach(x=>{ if(x&&!seen[x.t.id]){seen[x.t.id]=1;picks.push(x);} });
+  if(!S.bball) S.bball={ world, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'' }; else if(!S.bball.world) S.bball.world=world;
+  openModal({banner:'Basketball', title:'🏀 Buy a Franchise', icon:'🏀', closable:true,
+    text:`Buy a pro basketball franchise and run it — finances, the roster and the arena. A stronger, bigger-market team costs more but starts better. Net worth: <b>${fcm(nw)}</b>.`,
+    choices: picks.map(x=>({label:`${x.t.name} (${x.t.conf})`, tip:`STR ${x.t.strength} · ${fcm(x.price)}`, alt:true, fn:()=>bbBuyFranchise(x.t.id,x.price)})).concat([{label:'‹ Back', fn:()=>{closeModal();setTab('activities');}}]) }); }
+function bbBuyFranchise(teamId,price){ if(S.money<price){ toast(`You can’t afford ${fcm(price)}.`); return; } spend(price);
+  const b=S.bball, team=b.world.teams[teamId]; team.ownedByPlayer=true; const cap=clamp(Math.round(team.fanbase*0.9+6000),9000,21000);
+  b.owned={ teamId, foundedGen:S.legacyGen||1, seasonsOwned:0, gensWon:[],
+    finances:{ cashBalance:Math.round(price*0.15), capSpace:Math.round(price*0.14), salaryBudget:Math.round(team.strength*45000*priceMult()) },
+    arena:{ name:team.name.split(' ')[0]+' Arena', capacity:cap, tier:1, facilities:1 }, trophies:[], boardObj:bbNewBoardObj(team), _lastRev:null, _lastExp:null };
+  setFlag('franchise_owner'); gainFame(rng(2,5)); bbKeyMoment('boughtClub',`Bought the ${team.name} for ${fcm(price)}.`);
+  pushLog(`🏀 I bought the <b>${team.name}</b> for <b>${fcm(price)}</b>. The franchise is mine — time to chase a title.`,[['good','Bought a basketball franchise']]);
+  resultModal('Basketball','Franchise Bought 🏀','🏀',[`The <b>${team.name}</b> are yours — strength ${team.strength}, a ${cap.toLocaleString()}-seat arena.`,`Board objective: <b>${bbBoardObjText(b.owned.boardObj)}</b>.`,`Each year your team plays a season — reinvest in players, the arena and facilities.`],()=>bbOwnerHub()); }
+function bbNewBoardObj(team){ const r=rng(0,100); if(r<50) return {type:'playoffs'}; if(r<80) return {type:'win', target:rng(42,52)}; return {type:'profit'}; }
+function bbBoardObjText(o){ return o.type==='playoffs'?'Make the playoffs' : o.type==='win'?`Win ${o.target}+ games` : 'Stay profitable (positive cash)'; }
+function bbFranchiseTrophy(name){ const own=bb().owned; (own.trophies=own.trophies||[]).push({name,gen:S.legacyGen||1,age:S.age}); own.gensWon=own.gensWon||[]; if(own.gensWon.indexOf(S.legacyGen||1)<0) own.gensWon.push(S.legacyGen||1); }
+function bbOwnerHub(){ const b=bb(); if(!b||!b.owned){ bballMenuRoute(); return; }
+  const own=b.owned, team=b.world.teams[own.teamId], ar=own.arena, fin=own.finances;
+  const rev=own._lastRev||{gate:0,tv:0,commercial:0,prize:0}, exp=own._lastExp||{salaries:0,upkeep:0,staff:0};
+  const totRev=rev.gate+rev.tv+rev.commercial+rev.prize, totExp=exp.salaries+exp.upkeep+exp.staff;
+  let body=`<div style="text-align:left"><div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between"><b style="font-size:15px">🏀 ${team.name}</b><span style="color:var(--dim);font-size:12px">${team.conf} Conference</span></div>
+    <div style="font-size:12px;color:var(--dim);margin-top:3px">STR ${team.strength} · Prestige ${team.prestige} · 👥 ${fc(team.fanbase)} fans · 🏟️ ${ar.capacity.toLocaleString()} seats</div></div>
+    <div class="relbars" style="margin-bottom:8px">${pbar('Roster Strength',team.strength)}${pbar('Prestige',team.prestige)}${pbar('Arena',Math.round(ar.capacity/21000*100))}${pbar('Facilities',ar.facilities*20)}</div>
+    <div class="genlabel" style="margin:2px 0 4px">💰 Finances ${own.seasonsOwned?'<span>last season</span>':''}</div>
+    ${socStatLine('Cash balance',(fin.cashBalance<0?'-':'')+cur()+Math.abs(fin.cashBalance).toLocaleString())}
+    ${socStatLine('Cap space',cur()+fin.capSpace.toLocaleString())}
+    ${own.seasonsOwned?socStatLine('Revenue (gate)',`${cur()}${totRev.toLocaleString()} (${cur()}${rev.gate.toLocaleString()})`):''}
+    ${own.seasonsOwned?socStatLine('Costs',cur()+totExp.toLocaleString()):''}
+    ${own.seasonsOwned?socStatLine('Net last season',`${totRev-totExp>=0?'+':''}${cur()}${(totRev-totExp).toLocaleString()}`):''}
+    <div class="genlabel" style="margin:8px 0 4px">🎯 Board · 🏆 Banners</div>
+    ${socStatLine('Objective',bbBoardObjText(own.boardObj))}
+    ${socStatLine('Titles',`🏆 ${(own.trophies||[]).length}${(own.gensWon||[]).length>1?` · 👑 across ${own.gensWon.length} generations`:''}`)}
+    <p style="color:var(--dim);font-size:11px;margin-top:8px">Gate revenue scales with your arena and big winning seasons. Invest, win banners, and the family franchise compounds across generations.</p></div>`;
+  const ch=[ {label:`🛒 Sign a Free Agent`, alt:true, fn:bbSignFreeAgent}, {label:`🏟️ Expand Arena`, alt:true, fn:bbUpgradeArena}, {label:`🎓 Upgrade Facilities`, alt:true, fn:bbUpgradeFacilities} ];
+  if((own.trophies||[]).length) ch.push({label:'🏆 Franchise Banners', alt:true, fn:bbFranchiseHonors});
+  ch.push({label:'‹ Back', fn:()=>{closeModal();setTab('activities');}});
+  openModal({banner:'Basketball', title:'🏀 My Franchise', icon:'🏀', closable:true, text:body, choices:ch}); }
+function bbSignFreeAgent(){ const b=bb(), own=b.owned, fin=own.finances; const minFee=Math.round(60000*priceMult());
+  if(fin.capSpace<minFee){ resultModal('Free Agency','No Cap Space 🛒','🛒',[`Your cap space is ${fcm(fin.capSpace)} — not enough for a real signing.`,`Win games, grow the gate, free up money.`],()=>bbOwnerHub()); return; }
+  const opts=[{lab:'Role player',f:0.3,g:[1,3]},{lab:'Solid starter',f:0.6,g:[2,5]},{lab:'Marquee star',f:0.95,g:[4,8]}].map(o=>({lab:o.lab,cost:Math.round(fin.capSpace*o.f),g:o.g})).filter(o=>o.cost>=minFee&&o.cost<=fin.capSpace);
+  openModal({banner:'Free Agency', title:'🛒 Sign a Player', icon:'🛒', closable:true, text:`Spend from your <b>${fcm(fin.capSpace)}</b> cap space to upgrade the roster. Bigger contracts buy bigger talent.`,
+    choices: opts.map(o=>({label:`${o.lab} — ${fcm(o.cost)}`, alt:true, fn:()=>bbDoSignFA(o.cost,o.g)})).concat([{label:'‹ Back', fn:bbOwnerHub}]) }); }
+function bbDoSignFA(cost,g){ const b=bb(), own=b.owned, team=b.world.teams[own.teamId]; own.finances.capSpace-=cost; own.finances.cashBalance-=cost; const gain=rng(g[0],g[1]); team.strength=clamp(team.strength+gain,40,99); own.finances.salaryBudget+=Math.round(cost*0.15);
+  pushLog(`🛒 The ${team.name} signed a player for ${fcm(cost)} — roster strength +${gain} (now ${team.strength}).`,[['good',`+${gain} roster`]]);
+  resultModal('Free Agency','Signed ✍️','✍️',[`A ${fcm(cost)} signing lifts roster strength by <b>${gain}</b> to <b>${team.strength}</b>.`],()=>bbOwnerHub()); }
+function bbUpgradeArena(){ const own=bb().owned, ar=own.arena; if(ar.capacity>=21000){ resultModal('Arena','Sold Out 🏟️','🏟️',[`Your ${ar.capacity.toLocaleString()}-seat arena is already among the league's biggest.`],()=>bbOwnerHub()); return; }
+  const addCap=2000+ar.tier*1000, cost=Math.round(addCap*2200*priceMult());
+  openModal({banner:'Arena', title:'🏟️ Expand the Arena', icon:'🏟️', closable:true,
+    text:`Add <b>${addCap.toLocaleString()} seats</b> → ${(ar.capacity+addCap).toLocaleString()} for <b>${fcm(cost)}</b>. More seats = bigger gate income, biggest on the playoff nights. Cash: <b>${fcm(own.finances.cashBalance)}</b>.`,
+    choices:[{label:`Build it (${fcm(cost)})`, alt:true, fn:()=>bbDoArena(cost,addCap)},{label:'‹ Back', fn:bbOwnerHub}] }); }
+function bbDoArena(cost,addCap){ const own=bb().owned; if(own.finances.cashBalance<cost){ toast(`Not enough cash — need ${fcm(cost)}.`); return; }
+  own.finances.cashBalance-=cost; own.arena.capacity=clamp(own.arena.capacity+addCap,9000,21000); own.arena.tier++;
+  pushLog(`🏟️ Expanded the arena to <b>${own.arena.capacity.toLocaleString()}</b> seats (${fcm(cost)}).`,[['good','Arena expanded']]);
+  resultModal('Arena','Bigger & Louder 🏟️','🏟️',[`Capacity is now <b>${own.arena.capacity.toLocaleString()}</b> — expect a gate bump, biggest on the big nights.`],()=>bbOwnerHub()); }
+function bbUpgradeFacilities(){ const own=bb().owned; if(own.arena.facilities>=5){ resultModal('Facilities','Elite 🎓','🎓',[`Your training facilities are already elite.`],()=>bbOwnerHub()); return; }
+  const cost=Math.round(own.arena.facilities*450000*priceMult());
+  openModal({banner:'Facilities', title:'🎓 Upgrade Facilities', icon:'🎓', closable:true, text:`Better training & development facilities (level ${own.arena.facilities}→${own.arena.facilities+1}) grow your roster faster every season. Cost <b>${fcm(cost)}</b>. Cash: <b>${fcm(own.finances.cashBalance)}</b>.`,
+    choices:[{label:`Invest (${fcm(cost)})`, alt:true, fn:()=>bbDoFacilities(cost)},{label:'‹ Back', fn:bbOwnerHub}] }); }
+function bbDoFacilities(cost){ const own=bb().owned; if(own.finances.cashBalance<cost){ toast(`Not enough cash.`); return; } own.finances.cashBalance-=cost; own.arena.facilities++;
+  pushLog(`🎓 Upgraded facilities to level ${own.arena.facilities} (${fcm(cost)}).`,[['good','Facilities upgraded']]);
+  resultModal('Facilities','Built for the Future 🎓','🎓',[`Facilities at level <b>${own.arena.facilities}</b> — your roster will improve faster each season.`],()=>bbOwnerHub()); }
+function bbFranchiseHonors(){ const own=bb().owned, tr=(own.trophies||[]).slice().reverse();
+  let body=`<div style="text-align:left"><div class="genlabel" style="margin:2px 0 4px">🏆 Championship Banners <span>${tr.length}${(own.gensWon||[]).length>1?` · 👑 ${own.gensWon.length} gens`:''}</span></div>`;
+  body+= tr.length? tr.map(t=>`<div style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)">🏆 <b>${t.name}</b> <span style="color:var(--dim);font-size:11px">· Gen ${t.gen} · age ${t.age}</span></div>`).join('') : `<p style="color:var(--dim)">No banners yet.</p>`;
+  body+=`</div>`; openModal({banner:'Basketball', title:'🏆 Franchise Banners', icon:'🏆', closable:true, text:body, choices:[{label:'‹ Back', fn:bbOwnerHub},{label:'Close', fn:closeModal}]}); }
+function bbOwnerSeason(){ const b=bb(); if(!b||!b.owned||S.age<18) return; const own=b.owned, team=b.world.teams[own.teamId], ar=own.arena, fin=own.finances; if(!team) return;
+  let lines=[], wonRing=false;
+  const wins=clamp(Math.round(20 + (team.strength-60)*1.1 + rng(-8,8)), 12, 70);
+  const made = wins>=42;
+  if(made){ lines.push(`Made the playoffs (${wins} wins).`); const runs=clamp(Math.round((team.strength-72)/6 + rng(-1,3)),0,4);
+    if(runs>=4 && rng(0,100)<30+(team.strength-70)){ wonRing=true; bbFranchiseTrophy('League Championship'); team.prestige=clamp(team.prestige+rng(2,5)); team.fanbase=Math.round(team.fanbase*1.06); lines.push(`🏆 <b>CHAMPIONS!</b>`); }
+    else lines.push(`Out in the ${['first round','semis','conf finals','Finals'][clamp(runs,0,3)]}.`);
+  } else lines.push(`Missed the playoffs (${wins} wins).`);
+  // ARENA gate revenue — capacity × attendance(success/prestige) × ticket × 41 home games
+  const succ = wins>=55?1.0 : wins>=46?0.88 : wins>=38?0.74 : 0.6;
+  const attPct = clamp(0.5 + team.prestige/240 + succ*0.28, 0.35, 1.0); const att=Math.round(ar.capacity*attPct);
+  const ticket=Math.round(38*priceMult()); const gate=att*ticket*41;
+  const tv=Math.round((40000000 + team.prestige*250000) * priceMult());   // big league TV money (shared)
+  const commercial=Math.round(team.prestige*team.fanbase*2.2*priceMult());
+  const prize=Math.round(((wonRing?2.5:0)+(made?1:0)+Math.max(0,wins-30)/10) * 1500000 * priceMult());
+  const revenue=gate+tv+commercial+prize;
+  const salaries=Math.round(team.strength*team.strength*7000*priceMult()), upkeep=Math.round(ar.capacity*120*priceMult()), staff=Math.round((400000+ar.facilities*200000)*priceMult());
+  const expenses=salaries+upkeep+staff;
+  fin.cashBalance += revenue-expenses; fin.capSpace=Math.max(0,Math.round(Math.max(0,fin.cashBalance)*0.5 + revenue*0.12));
+  own._lastRev={gate,tv,commercial,prize}; own._lastExp={salaries,upkeep,staff};
+  const grow=(ar.facilities>=3?rng(0,2):ar.facilities>=2?rng(0,1):0) - (rng(0,100)<25?1:0); team.strength=clamp(team.strength+grow,40,99);
+  const ob=own.boardObj, met = ob.type==='playoffs'?made : ob.type==='win'?(wins>=ob.target) : (revenue>expenses);
+  if(met) gainFame(rng(1,3)); own.boardObj=bbNewBoardObj(team); own.seasonsOwned++;
+  bbRecent(`Franchise S${own.seasonsOwned}: ${team.name} ${wins}W, net ${revenue-expenses>=0?'+':''}${fcm(revenue-expenses)}.`);
+  pushLog(`🏀 <b>${team.name}</b> · ${lines.join(' ')} Revenue ${fcm(revenue)} − costs ${fcm(expenses)} = <b>${revenue-expenses>=0?'+':''}${fcm(revenue-expenses)}</b> (cash ${fcm(fin.cashBalance)})${fin.cashBalance<0?' ⚠️':''}.`, (wonRing||made)?[['good','🏀 Franchise season']]:[['flag','🏀 Franchise season']]); }
 function bballMenuRoute(){ const b=S.bball;
+  if(b && b.owned){ bbOwnerHub(); return; }
   if(b && b.player){ bbHub(); return; }
   if(b && b.youth){ bbYouthHub(); return; }
   if(bballEligibleYouth()){ bbYouthStartPrompt(); return; }
-  resultModal('Basketball','Past the Window 🏀','🏀',[`Pro basketball starts young — you've aged out of the path this life.`],()=>setTab('activities')); }
+  if(S.age>=18 && netWorth()>=Math.round(3000000*priceMult())){ bbBuyFranchisePrompt(); return; }   // out of the playing window but rich → buy a franchise
+  resultModal('Basketball','Past the Window 🏀','🏀',[`Pro basketball starts young — you've aged out of the playing path. Build wealth and you could buy a franchise instead.`],()=>setTab('activities')); }
 function basketballMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;} if(!bballEraOK()){ toast('Organized basketball doesn’t exist in this era yet.'); return; } logAct('call',{fn:'basketballMenu'}); bballMenuRoute(); }
 /* Real-world star names for rivals & flavor references (user-accepted IP risk; NOT store-safe — see notes).
    Used to name your rival and to colour scenario text across sports. */
