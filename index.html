@@ -431,6 +431,9 @@
   <div id="create" class="create-screen" style="display:none">
     <div class="ctitle" data-i18n="ctitle">✨ Create a Life</div>
     <div class="csub">Every choice will be remembered.</div>
+    <div class="fld"><span>🌍 Choose Your Era <span id="cEraName" style="opacity:.7;font-weight:700"></span></span>
+      <div id="cEraRow" style="display:flex;gap:9px;overflow-x:auto;padding:4px 2px 8px;-webkit-overflow-scrolling:touch"></div>
+      <div id="cEraBlurb" style="font-size:12px;color:var(--dim);min-height:16px"></div></div>
     <div class="fld"><span>🔤 First Name</span>
       <div class="namerow"><input id="cFirst" type="text" maxlength="20" autocomplete="off"><button class="reroll" onclick="rerollName()">🎲</button></div></div>
     <div class="fld"><span>➕ Middle Name <span style="opacity:.55">(optional)</span></span><input id="cMiddle" type="text" maxlength="20" autocomplete="off"></div>
@@ -496,6 +499,7 @@
     <button class="mi" onclick="leaderboardView()">🏆 Legacy Leaderboard</button>
     <button class="mi" onclick="closeMenu();exportSaga()">📤 Share My Saga</button>
     <button class="mi" onclick="importSagaPrompt()">📜 Load a Saga</button>
+    <button class="mi" id="hapticMi" onclick="toggleHaptics()">📳 Haptics: On</button>
     <button class="mi" data-i18n="menu_language" onclick="languageMenu()">🌐 Language</button>
     <button class="mi" data-i18n="menu_close" onclick="closeMenu()">✖ Close</button>
     <div class="ver">v0.1 prototype · 56 countries</div>
@@ -641,7 +645,24 @@ function showCreate(){
     cs.innerHTML=Object.entries(COUNTRIES).map(([k,c])=>`<option value="${k}">${c.flag} ${c.name}</option>`).join('');
     document.getElementById('cTalent').innerHTML=TALENTS.map(t=>`<option value="${t.k}">${t.icon} ${t.name}</option>`).join('');
   }
-  fillCities(); createSex='m'; syncSex(); rerollName();
+  fillCities(); createSex='m'; syncSex(); renderEraPicker(); pickEra(createEra); rerollName();
+}
+function renderEraPicker(){ const row=document.getElementById('cEraRow'); if(!row) return;
+  row.innerHTML=ERA_ORDER.map(id=>{ const e=ERA_DEFS[id], sel=id===createEra, locked=!canUseEra(e);
+    return `<div class="erapick" data-era="${id}" onclick="pickEra('${id}')" style="flex:0 0 auto;width:106px;cursor:pointer;border:2px solid ${sel?'var(--accent)':'var(--line)'};border-radius:12px;padding:9px 7px;text-align:center;background:${sel?'rgba(91,140,255,.14)':'rgba(255,255,255,.03)'};opacity:${locked?'.55':'1'}">
+      <div style="font-size:26px">${e.icon}</div>
+      <div style="font-weight:800;font-size:11.5px;margin-top:3px">${e.displayName}</div>
+      <div style="font-size:9.5px;color:var(--dim);margin-top:2px">${e.currency?e.currency.symbol+' '+e.currency.name:'Local money'}</div>
+      ${(e.tier==='premium'&&locked)?`<div style="font-size:9px;color:var(--accent2);margin-top:2px">🔒 Premium</div>`:''}
+    </div>`; }).join('');
+}
+function pickEra(id){ const e=ERA_DEFS[id]; if(!e) return;
+  if(!canUseEra(e)){ if(typeof haptics!=='undefined') haptics.warning(); if(typeof openPremium==='function') openPremium(); return; }   // only reachable when monetization is on
+  createEra=id; if(typeof haptics!=='undefined') haptics.select(); applyEraTheme(id); renderEraPicker();
+  const nmEl=document.getElementById('cEraName'); if(nmEl) nmEl.textContent='· '+e.displayName;
+  const yrs=(e.yearStart<0?Math.abs(e.yearStart)+' BC':e.yearStart)+'–'+e.yearEnd;
+  const bl=document.getElementById('cEraBlurb'); if(bl) bl.textContent=`${e.blurb}  ·  ${yrs}`;
+  rerollName();   // suggest an era-appropriate name
 }
 function fillCities(){ const c=COUNTRIES[document.getElementById('cCountry').value];
   document.getElementById('cCity').innerHTML=c.cities.map(ct=>`<option>${ct}</option>`).join(''); }
@@ -670,6 +691,7 @@ function beginLife(origin){
   startLife({ gender:createSex, name:[first,mid,last].filter(Boolean).join(' '), middle:mid,
     country:document.getElementById('cCountry').value, city:document.getElementById('cCity').value,
     talent:document.getElementById('cTalent').value, rich:document.getElementById('cRich').checked,
+    era:createEra,   // ERA — the chosen world ruleset (captured in birthOpts → replay-safe)
     origin: typeof origin==='string'?origin:'normal' });
 }
 function surpriseMe(){ randomizeCreate();
@@ -713,7 +735,9 @@ function rand(){                             // mulberry32 — reads/writes S._r
   if(typeof S!=='undefined' && S && S._rng!=null) S._rng = s; else _rng = s;
   return out;
 }
-const nm=g=>g==='m'?pick(MALE):g==='f'?pick(FEMALE):pick(FIRST);
+const nm=g=>{ const en=(typeof worldRules!=='undefined')?worldRules.names():null;   // era-appropriate names (one pick → same RNG draw, replay-safe)
+  if(en) return g==='f'?pick(en.f):pick(en.m);
+  return g==='m'?pick(MALE):g==='f'?pick(FEMALE):pick(FIRST); };
 const rng=(a,b)=>Math.floor(rand()*(b-a+1))+a;
 const pick=a=>a[rng(0,a.length-1)];
 /* Append a player input to the replay tape. Skipped while replaying (the tape IS the source).
@@ -795,6 +819,135 @@ function languageMenu(){ if(typeof closeMenu==='function') closeMenu();
   openModal({banner:tr('word_language'), title:'🌐 '+tr('lang_title'), closable:true,
     choices: LANGS.map(l=>({label:(l.c===LANG?'✓ ':'')+l.f+' '+l.n, alt:l.c!==LANG, fn:()=>{ closeModal(); setLang(l.c); }})) }); }
 function initLang(){ let saved='en'; try{ saved=localStorage.getItem('protean_lang')||'en'; }catch(e){} setLang(saved); }
+
+/* ============================================================
+   HAPTICS — light vibration feedback for the mobile build. Uses the
+   web Vibration API (works in the Capacitor Android wrap & Android
+   Chrome; safely no-ops on desktop & iOS Safari, which lack it).
+   One util the whole app calls — never navigator.vibrate() directly.
+   Pure side-effect, no RNG/state, and SKIPPED during replay → it can
+   never affect the deterministic leaderboard validation.
+   ============================================================ */
+let _haptics=true; try{ _haptics = localStorage.getItem('protean_haptics')!=='0'; }catch(e){}
+function setHaptics(v){ _haptics=!!v; try{ localStorage.setItem('protean_haptics', v?'1':'0'); }catch(e){} }
+function _vib(pattern){ if(!_haptics) return; if(typeof S!=='undefined' && S && S._replaying) return;   // never buzz during headless replay
+  try{ if(typeof navigator!=='undefined' && navigator.vibrate) navigator.vibrate(pattern); }catch(e){} }
+const haptics = {
+  tap:    ()=>_vib(10),                 // standard buttons
+  press:  ()=>_vib(22),                 // significant actions (age-up, confirm)
+  heavy:  ()=>_vib([30,20,45]),         // major / irreversible (death, marriage, big purchase)
+  success:()=>_vib([14,40,16]),
+  warning:()=>_vib([22,60,22]),
+  error:  ()=>_vib([40,30,40,30,40]),
+  select: ()=>_vib(7),                  // pickers / carousels
+};
+function toggleHaptics(){ setHaptics(!_haptics); if(_haptics) haptics.success(); const b=document.getElementById('hapticMi'); if(b) b.textContent=`📳 Haptics: ${_haptics?'On':'Off'}`; if(typeof toast==='function') toast(`Haptics ${_haptics?'on':'off'}.`); }
+// one delegated listener gives every button/card a tap; the age-up button gets a firmer press
+function initHaptics(){ try{
+  document.addEventListener('click', function(e){
+    const t = e.target && e.target.closest && e.target.closest('button, .tb-btn, .mi, .platrow, [onclick]');
+    if(!t) return;
+    if(t.id==='ageBtn') haptics.press(); else haptics.tap();
+  }, true);
+  const b=document.getElementById('hapticMi'); if(b) b.textContent=`📳 Haptics: ${_haptics?'On':'Off'}`;
+}catch(e){} }
+
+/* ============================================================
+   ERA / WORLD SYSTEM (foundation) — the ACTIVE era is one data-driven
+   ruleset every system queries via `worldRules`, so the world stays
+   period-consistent (no anachronisms). The chosen era is captured in
+   birthOpts → fully replay-safe & deterministic.
+   PHASE 1 (this build): data model, worldRules service, entitlement
+   scaffold, era-selection + theming, and currency / life-expectancy /
+   name wiring. PHASES 2+ gate careers, assets, politics, prison,
+   health, social — each system refactored to read worldRules.
+   EraDef = { id, displayName, icon, yearStart, yearEnd, tier:'free'|'premium',
+     currency:{name,symbol,toBaseUnit}|null, capabilities:{...10 flags},
+     governmentForm, lifeExpectancyModifier, namePool, themeTokens, blurb }
+   ============================================================ */
+const ERA_ORDER=['oldWorld','ancient','medieval','renaissance','industrial','victorian','roaringTwenties','modern','future'];
+let createEra='modern';   // the era chosen on the creation screen (before a life exists)
+function _caps(o){ return Object.assign({socialMedia:false,internet:false,telephone:false,telegraph:false,postalMail:false,motorVehicles:false,horses:false,airTravel:false,modernMedicine:false,electricity:false}, o); }
+const ERA_DEFS={
+  oldWorld:{ id:'oldWorld', displayName:'The Old World', icon:'🏺', yearStart:-3000, yearEnd:1400, tier:'free',
+    currency:{name:'Gold Coins', symbol:'⊙', toBaseUnit:40},
+    capabilities:_caps({postalMail:true,horses:true}), governmentForm:'monarchy', lifeExpectancyModifier:-28, namePool:'ancient', themeTokens:'sepia',
+    blurb:'Horses · Gold · Kings · messengers' },
+  ancient:{ id:'ancient', displayName:'Ancient Empires', icon:'🏛️', yearStart:-800, yearEnd:476, tier:'premium',
+    currency:{name:'Denarii', symbol:'₯', toBaseUnit:30},
+    capabilities:_caps({postalMail:true,horses:true}), governmentForm:'empire', lifeExpectancyModifier:-26, namePool:'ancient', themeTokens:'marble',
+    blurb:'Empire · Denarii · Chariots · legions' },
+  medieval:{ id:'medieval', displayName:'The Middle Ages', icon:'⚔️', yearStart:476, yearEnd:1400, tier:'premium',
+    currency:{name:'Gold Florins', symbol:'ƒ', toBaseUnit:35},
+    capabilities:_caps({postalMail:true,horses:true}), governmentForm:'monarchy', lifeExpectancyModifier:-25, namePool:'medieval', themeTokens:'iron',
+    blurb:'Knights · Florins · Castles · plague' },
+  renaissance:{ id:'renaissance', displayName:'The Renaissance', icon:'🎨', yearStart:1400, yearEnd:1600, tier:'premium',
+    currency:{name:'Ducats', symbol:'Đ', toBaseUnit:25},
+    capabilities:_caps({postalMail:true,horses:true}), governmentForm:'republic', lifeExpectancyModifier:-20, namePool:'medieval', themeTokens:'gold',
+    blurb:'Art · Ducats · City-states · discovery' },
+  industrial:{ id:'industrial', displayName:'The Industrial Age', icon:'⚙️', yearStart:1760, yearEnd:1840, tier:'premium',
+    currency:{name:'Sterling', symbol:'£', toBaseUnit:8},
+    capabilities:_caps({postalMail:true,horses:true,telegraph:true,electricity:false}), governmentForm:'monarchy', lifeExpectancyModifier:-15, namePool:'victorian', themeTokens:'soot',
+    blurb:'Factories · Steam · Telegraph · coal' },
+  victorian:{ id:'victorian', displayName:'The Victorian Era', icon:'🎩', yearStart:1837, yearEnd:1901, tier:'premium',
+    currency:{name:'Pounds', symbol:'£', toBaseUnit:6},
+    capabilities:_caps({postalMail:true,horses:true,telegraph:true,telephone:true,electricity:true,modernMedicine:false}), governmentForm:'monarchy', lifeExpectancyModifier:-12, namePool:'victorian', themeTokens:'gaslight',
+    blurb:'Gaslight · Pounds · Telegraph · trains' },
+  roaringTwenties:{ id:'roaringTwenties', displayName:'The Roaring Twenties', icon:'🥂', yearStart:1920, yearEnd:1929, tier:'premium',
+    currency:{name:'Dollars', symbol:'$', toBaseUnit:1.5},
+    capabilities:_caps({postalMail:true,telephone:true,motorVehicles:true,airTravel:true,electricity:true,modernMedicine:true}), governmentForm:'democracy', lifeExpectancyModifier:-8, namePool:'twenties', themeTokens:'jazz',
+    blurb:'Jazz · Cars · Telephone · prohibition' },
+  modern:{ id:'modern', displayName:'Modern Day', icon:'📱', yearStart:1990, yearEnd:2035, tier:'free',
+    currency:null,   // null → use the player's real country currency (the current game)
+    capabilities:_caps({socialMedia:true,internet:true,telephone:true,postalMail:true,motorVehicles:true,airTravel:true,modernMedicine:true,electricity:true}), governmentForm:'democracy', lifeExpectancyModifier:0, namePool:'modern', themeTokens:'default',
+    blurb:'Cars · Internet · Social media · digital money' },
+  future:{ id:'future', displayName:'The Future', icon:'🛸', yearStart:2035, yearEnd:2200, tier:'premium',
+    currency:{name:'Credits', symbol:'₡', toBaseUnit:0.5},
+    capabilities:_caps({socialMedia:true,internet:true,telephone:true,motorVehicles:true,airTravel:true,modernMedicine:true,electricity:true}), governmentForm:'democracy', lifeExpectancyModifier:12, namePool:'future', themeTokens:'neon',
+    blurb:'AI · Credits · Off-world · synthetic life' },
+};
+/* Entitlement scaffold — monetization can flip on later with ONE flag; nothing is locked now. */
+const ENTITLEMENTS={ unlockAllEras:true /* TODO(monetization): set false at launch, then gate by real purchase state via isPremium() */ };
+function canUsePremium(){ return ENTITLEMENTS.unlockAllEras || (typeof isPremium==='function' && isPremium()); }
+function canUseEra(era){ const e=(typeof era==='string')?ERA_DEFS[era]:era; if(!e) return false; return e.tier==='free' || canUsePremium(); }
+function activeEra(){ const id=(typeof S!=='undefined'&&S&&S.era) || createEra || 'modern'; return ERA_DEFS[id] || ERA_DEFS.modern; }
+// era-appropriate name pools (in-game NPCs/heirs); modern → null = use the default name lists
+const ERA_NAMES={
+  ancient:{ m:['Marcus','Gaius','Lucius','Cassius','Atticus','Darius','Tiberius','Hadrian'], f:['Livia','Octavia','Aurelia','Cassia','Helena','Junia','Drusilla','Valeria'], last:['Aurelius','Severus','Cato','Magnus','Maximus','of Rome','Tacitus','Cornelius'] },
+  medieval:{ m:['Aldric','Godwin','Edmund','Rowan','Cedric','Bran','Alaric','Roland'], f:['Rowena','Maud','Edith','Isolde','Beatrix','Elewyn','Adela','Cecily'], last:['Blackwood','Fletcher','Stone','of Ashford','of York','the Smith','Hartwell','Thorne'] },
+  victorian:{ m:['Albert','Edmund','Percival','Reginald','Cornelius','Horace','Bartholomew','Nigel'], f:['Beatrice','Constance','Eleanor','Florence','Adelaide','Millicent','Prudence','Augusta'], last:['Ashby','Pennington','Whitlock','Carrington','Hargrove','Fairfax','Pemberton','Blackwood'] },
+  twenties:{ m:['Vincent','Arthur','Walter','Charlie','Frankie','Gus','Sal','Roy'], f:['Mabel','Dorothy','Ruby','Vivian','Pearl','Hazel','Edna','Loretta'], last:['Calloway','Marchetti','Sullivan','Capello','Donovan','Russo','Sterling','Vance'] },
+  future:{ m:['Zane','Kael','Orion','Axl','Cyrus','Jax','Ryker','Nyx'], f:['Nova','Lyra','Vega','Aria','Eris','Zola','Astra','Wren'], last:['Vex','Cael','Kade','Ardent','Soren','Quill','Drift','Halcyon'] },
+};
+const worldRules={
+  era:()=>activeEra(),
+  currency:()=>{ const e=activeEra(); if(e.currency) return e.currency; const c=(typeof S!=='undefined'&&S&&typeof COUNTRIES!=='undefined'&&COUNTRIES[S.country])?COUNTRIES[S.country]:null; return {name:(c?c.name+' currency':'Dollars'), symbol:(c?c.cur:'$'), toBaseUnit:1}; },
+  cap:(flag)=>!!activeEra().capabilities[flag],
+  govForm:()=>activeEra().governmentForm,
+  theme:()=>activeEra().themeTokens,
+  lifeExpMod:()=>activeEra().lifeExpectancyModifier||0,
+  names:()=>{ const np=activeEra().namePool; return (np && np!=='modern' && ERA_NAMES[np]) ? ERA_NAMES[np] : null; },
+  isAvailable:(item)=>{ if(!item) return true; const cur=(typeof S!=='undefined'&&S&&S.era)||'modern'; const i=ERA_ORDER.indexOf(cur); if(i<0) return true;
+    if(item.eras) return item.eras.indexOf(cur)>=0;
+    if(item.minEra!=null && i<ERA_ORDER.indexOf(item.minEra)) return false;
+    if(item.maxEra!=null && i>ERA_ORDER.indexOf(item.maxEra)) return false;
+    return true; },
+};
+/* Era visual themes — CSS variable overrides; applied on era pick & at startLife. DOM-safe (no-ops headless). */
+const ERA_THEMES={
+  sepia:{'--accent':'#c79a4b','--accent2':'#9c7b3a'}, marble:{'--accent':'#cdb892','--accent2':'#a89a7d'},
+  iron:{'--accent':'#8a94a6','--accent2':'#5e6672'}, gold:{'--accent':'#d4af37','--accent2':'#b8860b'},
+  soot:{'--accent':'#9a7b5a','--accent2':'#6b5641'}, gaslight:{'--accent':'#c9a25e','--accent2':'#7d6a4a'},
+  jazz:{'--accent':'#d9b44a','--accent2':'#b5651d'}, neon:{'--accent':'#19e6c8','--accent2':'#b14bff'},
+  default:{},
+};
+function applyEraTheme(eraId){ try{
+  const root = (typeof document!=='undefined') && document.documentElement;
+  if(!root || !root.style || typeof root.style.setProperty!=='function') return;   // headless replay / Node validator → no-op
+  const e=ERA_DEFS[eraId]||ERA_DEFS.modern, t=ERA_THEMES[e.themeTokens]||{};
+  ['--accent','--accent2'].forEach(k=>{ try{ root.style.removeProperty(k); }catch(_){}});
+  for(const k in t){ try{ root.style.setProperty(k,t[k]); }catch(_){}}
+}catch(e){} }
 
 /* ---- iOS-style emoji everywhere ----
    Apple devices already render the latest iOS emoji natively, so we leave them be.
@@ -881,6 +1034,9 @@ function startLife(opts){
   };
   S._rng = _rng;   // hand the literal's advanced PRNG state to S → the stream continues seamlessly in-life
   S.birthOpts = Object.assign({}, opts, {seed:_seed});   // exact creation inputs — server replays startLife(birthOpts)
+  S.era = (opts.era && ERA_DEFS[opts.era]) ? opts.era : 'modern';   // ERA — set BEFORE any name generation so the family uses era names (replay-safe; era is in birthOpts)
+  S.worldMode = opts.worldMode==='living' ? 'living' : 'fixed';     // fixed era vs Living Timeline (Living engine: phase 3)
+  applyEraTheme(S.era);
   // Build a full, living family tree (grandparents → cousins → siblings)
   buildFamily(opts.gender);
   // GENETICS — your parents carry genomes; you inherit a roll of theirs, which nudges your starting stats
@@ -969,6 +1125,7 @@ function continueGame(){
     S.underworld=S.underworld||{rep:0,rank:-1,crew:null,heat:0,jobs:0,busts:0,jailUntil:0};   // UNDERWORLD backfill
     if(S.fame===undefined) S.fame=0;   // FAME backfill
     S.scenario=S.scenario||{key:null,completed:{}}; S.dynastyStats=S.dynastyStats||{officesWon:0,pandemics:0};   // SCENARIOS backfill
+    if(!S.era || !ERA_DEFS[S.era]) S.era='modern'; if(!S.worldMode) S.worldMode='fixed'; applyEraTheme(S.era);   // ERA backfill
     if(S.passportApp===undefined) S.passportApp=null;
     if(S.passportExpires===undefined) S.passportExpires = S.passport ? S.age+10 : null;   // grandfather older saves with a fresh 10-yr passport
     if(S.eduUntil===undefined||S.eduUntil===0) S.eduUntil = S.eduLevel==='primary'?12 : S.eduLevel==='high'?18 : S.eduLevel==='college'?(S.age+1) : 0;
@@ -1073,7 +1230,8 @@ function onRelativeDeath(p){
 
 /* ---------- mutation helpers (the "memory writers") ---------- */
 function chg(stat,d){S.stats[stat]=clamp(S.stats[stat]+d)}
-function cur(){ return (S&&COUNTRIES[S.country])?COUNTRIES[S.country].cur:'$'; }
+function cur(){ if(S&&S.era){ const e=ERA_DEFS[S.era]; if(e&&e.currency) return e.currency.symbol; }   // era currency (gold/denarii/credits); modern → country currency
+  return (S&&COUNTRIES[S.country])?COUNTRIES[S.country].cur:'$'; }
 function overdraftFloor(){ return -(500+(S.peakMoney||0)*0.1); }   // can dip negative, more if you were rich
 function money(d){ S.money=Math.max(overdraftFloor(),Math.round(S.money+d)); if(S.money>(S.peakMoney||0))S.peakMoney=S.money; }
 function rep(d){S.rep=clamp(S.rep+d,-100,100)}
@@ -3118,8 +3276,8 @@ function ageUp(){
   // DEATH CHECK — from this year's drains or old age. MUST come BEFORE event selection:
   // if you die this year, no random event is picked (death is the year's event), so the
   // ghost/death modal never collides with a dangling pending event (a replay-safety fix).
-  if(S.stats.health<=0 || S.age>=(hasLongevity()?99:92)){    // longevity genes can buy you extra years
-    S.alive=false;
+  if(S.stats.health<=0 || S.age>=Math.max(35,(hasLongevity()?99:92)+worldRules.lifeExpMod())){    // era life-expectancy + longevity genes set the natural cap
+    S.alive=false; haptics.heavy();   // the big, irreversible moment
     pushLog(`<b>${S.name} has died at ${S.age}.</b> ${legacyLine()}`);
     setTab('life'); offerGhost(); return;
   }
@@ -7576,6 +7734,7 @@ function passAgeGate(){ try{ localStorage.setItem(AGE_GATE_KEY,'1'); }catch(e){}
 function failAgeGate(){ const g=document.getElementById('ageGate'); if(g) g.style.display='none'; const b=document.getElementById('ageGateBlock'); if(b) b.style.display='flex'; }
 function checkAgeGate(){ let ok=false; try{ ok=localStorage.getItem(AGE_GATE_KEY)==='1'; }catch(e){ ok=true; } if(!ok){ const g=document.getElementById('ageGate'); if(g) g.style.display='block'; } }
 try{ initLang(); }catch(e){}      // apply saved UI language on load
+try{ initHaptics(); }catch(e){}   // delegated tap-feedback + sync the settings toggle label
 try{ checkAgeGate(); }catch(e){}
 try{ showContinueIfSaved(); }catch(e){}   // on load, offer Continue if a saved life exists
 </script>
