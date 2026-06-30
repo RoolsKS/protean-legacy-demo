@@ -165,6 +165,8 @@
   .platrow .pf{font-size:12px;color:var(--dim);margin-top:2px}
   .platrow .parrow{font-size:24px;color:var(--accent);font-weight:700}
   .backbtn{background:none;border:none;color:var(--accent);font-size:14px;font-weight:700;cursor:pointer;padding:2px 0 10px}
+  .xbtn{float:right;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--panel2,#1a2030);border:1px solid var(--line);color:var(--text);font-size:16px;font-weight:800;line-height:1;cursor:pointer;margin:0 0 8px 8px}
+  .xbtn:active{transform:scale(.92)}
   .verifybtn{margin-top:12px;width:100%;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer}
   .delacct{width:100%;border:1px solid var(--bad);background:rgba(229,72,77,.08);color:var(--bad);border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer}
   .delhint{color:var(--dim);font-size:11px;text-align:center;margin-top:6px}
@@ -3965,6 +3967,8 @@ function setTab(t){
     people:'peopleView', social:'socialView', stars:'starsView', events:'eventsView', school:'schoolView', job:'jobView', gigs:'gigsView', licenses:'licensesView', shop:'shopView',
     careersdex:'careersdexView', achievements:'achievementsView', business:'businessView'};
   for(const k in views){ const el=document.getElementById(views[k]); if(el) el.style.display = (t===k)?'block':'none'; }
+  // The dock (nav + Advance Age + wellbeing bars) belongs to the Feed only — sub-pages stay clean and use the ✕ to return.
+  const dock=document.getElementById('dock'); if(dock) dock.style.display = (t==='life') ? 'flex' : 'none';
   // highlight the parent hub (sub-pages light up their hub button)
   const map={ career:0,job:0,school:0,gigs:0,careersdex:0,achievements:0,business:0,  assets:1,social:1,shop:1,  connections:2,people:2,stars:2,  activities:3,events:3,licenses:3 };
   document.querySelectorAll('#toolbar .tb-btn').forEach((b,i)=>b.classList.toggle('on',map[t]===i));
@@ -4091,6 +4095,7 @@ function hubCard(icon,title,sub,onclick){
     <div class="pinfo"><div class="pn">${title}</div><div class="pf">${sub}</div></div><span class="parrow">›</span></div>`;
 }
 // a back link from a sub-page to its parent hub
+function feedX(){ return `<button class="xbtn" onclick="setTab('life')" aria-label="Back to feed">✕</button>`; }
 function hubBack(view){
   const par={job:'career',school:'career',gigs:'career',careersdex:'career',achievements:'career',business:'career',social:'assets',stars:'connections',events:'activities',people:'connections',licenses:'activities',shop:'assets'}[view];
   if(!par) return '';
@@ -4098,7 +4103,7 @@ function hubBack(view){
   return `<button class="backbtn" onclick="setTab('${par}')">‹ ${lbl}</button>`;
 }
 function renderCareer(){ const v=document.getElementById('careerView'); if(!v||!S)return;
-  let h=`<button class="backbtn" onclick="setTab('life')">‹ Life Story</button><div class="genlabel">💼 Career & Education</div>`;
+  let h=`${feedX()}<div class="genlabel">💼 Career & Education</div>`;
   h+=hubCard('💼','Job', S.job?`${jobTitle(S.job)} · ${cur()}${S.job.salary.toLocaleString()}/yr`:'Find work & climb the ladder', "setTab('job')");
   h+=hubCard('🎓','School', statusText().includes('Student')?statusText():(has('graduated_college')?'Graduate':'Education & enrollment'), "setTab('school')");
   if(S.age>=12) h+=hubCard('💸','Side Hustles', `Quick gigs for fast cash${S.gigs?` · ${S.gigs.filter(g=>!g.done).length} open`:''}`, "setTab('gigs')");
@@ -4109,7 +4114,7 @@ function renderCareer(){ const v=document.getElementById('careerView'); if(!v||!
 }
 function renderAssets(){ const v=document.getElementById('assetsView'); if(!v||!S)return;
   const nw=netWorth();
-  let h=`<button class="backbtn" onclick="setTab('life')">‹ Life Story</button>`;
+  let h=`${feedX()}`;
   h+=`<div class="card profile"><div class="handle">💰 Net Worth ${fcm(nw)}</div>
     <div class="counts">
       <div><b style="color:${S.money<0?'var(--bad)':'var(--good)'}">${(S.money<0?'-':'')+cur()+Math.abs(S.money).toLocaleString()}</b><span>Cash</span></div>
@@ -4845,7 +4850,7 @@ function copOutcome(how, severe){ closeModal();
 function renderConnections(){ const v=document.getElementById('connectionsView'); if(!v||!S)return;
   const fam=Object.values(S.people).filter(p=>p.alive&&!p.pet).length;
   const met=S.celebs?Object.values(S.celebs).filter(c=>c.met).length:0;
-  let h=`<button class="backbtn" onclick="setTab('life')">‹ Life Story</button><div class="genlabel">🤝 Connections</div>`;
+  let h=`${feedX()}<div class="genlabel">🤝 Connections</div>`;
   { const arch=legacyArchetype(); h+=hubCard('👑','Dynasty Legacy', `Score ${legacyScore().toLocaleString()} · ${arch.icon} ${arch.name} · Gen ${S.legacyGen||1}`, "legacyView()"); }
   { const dn=Object.keys(S.goalsAchieved||{}).length; h+=hubCard('🎯','Life Goals', `${dn} of ${LIFEGOALS.length} fulfilled · your bucket list`, "lifeGoalsView()"); }
   { const sc=S.scenario||{completed:{}}, beaten=Object.keys(sc.completed||{}).length; h+=hubCard('🎬','Scenario Packs', sc.key?`▶ ${scenarioDef(sc.key).name} (active)`:(beaten?`${beaten}/${SCENARIOS.length} beaten · take on a challenge`:'Themed dynasty challenges'), "scenarioMenu()"); }
@@ -4862,7 +4867,7 @@ function renderConnections(){ const v=document.getElementById('connectionsView')
   v.innerHTML=h;
 }
 function renderActivities(){ const v=document.getElementById('activitiesView'); if(!v||!S)return;
-  let h=`<button class="backbtn" onclick="setTab('life')">‹ Life Story</button><div class="genlabel">⚛️ Activities</div>`;
+  let h=`${feedX()}<div class="genlabel">⚛️ Activities</div>`;
   h+=hubCard('🎟️','Go Out','Events, nightlife, find love', "setTab('events')");
   h+=hubCard('✈️','Take a Trip','Hotels worldwide, rent a car, ball out', "takeTrip()");
   h+=hubCard('🧘','Mind & Body','Gym, diet, meditation, therapy', "mindBody()");
