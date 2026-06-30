@@ -2007,6 +2007,8 @@ function lifeRecord(){
     eraIdx:ERA_ORDER.indexOf(S.era), startEraIdx:startIdx, worldTurned:ERA_ORDER.indexOf(S.era)>startIdx,
     govForm:worldRules.govForm(), heirlooms:(S.heirlooms||[]).length,
     ghost:has('became_ghost'),
+    footballer:has('footballer'), worldPlayer:has('world_player'),
+    soccerTrophies:(S.soccer&&S.soccer.trophies)?S.soccer.trophies.length:0,
     famBondLow: famAlive.length>0 && famAlive.every(p=>(p.affinity||0)<25),
   };
 }
@@ -2047,9 +2049,13 @@ const RIBBONS=[
   // Luck-flavored, but with a real path (Fix 4) — secret so the live tracker never tells you to chase death
   {id:'cut_short', name:'Cut Short', icon:'⏳', rarity:'rare', priority:2, secret:true, desc:'A life ended before its time.', q:r=>r.age<40?1:0},
   {id:'restless', name:'Restless Spirit', icon:'👻', rarity:'epic', priority:6, secret:true, desc:'Refuse to rest — rise as a ghost.', q:r=>r.ghost?1:0},
+  // ⚽ Soccer pack
+  {id:'pro_footballer', name:'Footballer', icon:'⚽', rarity:'rare', priority:5, desc:'Make it as a professional footballer.', q:r=>r.footballer?1:0},
+  {id:'silverware', name:'Silverware', icon:'🏆', rarity:'epic', priority:7, track:'maxTrophies', desc:'Win 10 football trophies in a career.', q:r=>_frac(r.soccerTrophies,10)},
+  {id:'football_legend', name:'Footballing Legend', icon:'🌟', rarity:'legendary', priority:9, desc:'Be crowned World Player of the Year.', q:r=>r.worldPlayer?1:0},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
-function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen})[track]||0; }
+function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
 // Live status of a ribbon for the in-life tracker (Fix 2): earned/close/onTrack/locked + % + hint.
 function ribbonStatus(rb, r){ r=r||lifeRecord(); let q; try{ q=rb.q(r); }catch(e){ q=0; } q=Math.max(0,Math.min(1,q));
   return { q, pct:Math.round(q*100), status: q>=1?'earned': q>=0.66?'close': q>=0.33?'onTrack':'locked' }; }
@@ -2084,7 +2090,8 @@ function _artFor(w){ return /^[aeiou]/i.test(w)?'an':'a'; }
 const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame', scholar:'mind',genius:'mind',
   powerful:'power',sovereign:'power',self_made_monarch:'power', notorious:'crime',kingpin:'crime',conqueror:'crime',
   saintly:'virtue',devoted:'virtue',redemption:'virtue', dynasty_legend:'dynasty',polymath_founder:'dynasty',matriarch:'dynasty',
-  centenarian:'health', pioneer:'era', deviant:'vice' };
+  centenarian:'health', pioneer:'era', deviant:'vice',
+  pro_footballer:'fame', silverware:'fame', football_legend:'fame' };
   // renaissance_soul is intentionally themeless — a combo of wealth+mind+fame; it advances via all three and the milestone tracker, not one opportunity event.
 function ambTheme(){ return (S&&S.ambition)?(RIBBON_THEME[S.ambition]||null):null; }
 function ambHint(rb){ return ({ wealth:' Keep building your fortune.', fame:' Chase the spotlight.', mind:' Hit the books.', power:' Climb toward high office.', crime:' The underworld is calling.', virtue:' Keep doing good.', dynasty:' Grow the family line.', era:' Live to see the age turn.', health:' Stay healthy and live long.', vice:' Court a little scandal.' }[RIBBON_THEME[rb.id]]||''); }
@@ -3627,6 +3634,7 @@ function ageUp(){
     }
   }
   ambitionNudge();   // RIBBONS: surface progress toward a declared Life Ambition (pure — no RNG)
+  if(typeof socActive==='function' && socActive()) socSeasonEnd();   // ⚽ conclude the football season (deterministic, feed-only)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -4218,6 +4226,7 @@ function continueAsHeir(id){
   if(S.office){ if(!S.dynastyOffice || officeRank(S.office.tier)>=officeRank(S.dynastyOffice)){ S.dynastyOffice=S.office.tier; S.dynastyApproval=S.office.approval; } }
   const _dynImpeached = has('impeached')||has('dynasty_impeached');
   S.alive=true; S.ghost=false; S.exorcised=false; S.hauntCount=0; S._died=false; S._deathRibbons=null; S._ambMark=0; S._ambDone=false; S._ambOpp=-99; S.honorific=null;   // RIBBONS: heir starts a fresh life (codex S.ribbons, ambition & fulfilled-tally carry on; per-life nudge state + honorific reset)
+  S.soccer=null;   // ⚽ heir starts with no football career of their own — but inherits the athletic GENES (socGenAttributes reads the genome) → a footballing dynasty
   S.stats={health:rng(78,100), happy:rng(70,95), smarts:rng(40,85), looks:rng(40,90)};
   S.genome = heir.genome || rollGenome(S.genome, null); applyGenomeToStats();   // GENETICS: the heir IS your child — your genes live on
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
@@ -5198,8 +5207,265 @@ function renderConnections(){ const v=document.getElementById('connectionsView')
     h+=hubCard('🧠','Inner Self', `${mb.icon} ${mb.label}${wounds?` · 🩹 ${wounds} unhealed`:''}`, "mindView()"); }
   v.innerHTML=h;
 }
+/* ============================================================
+   ⚽ SOCCER PACK — Phase 1: PLAYER CAREER (adapted from the RN/TS
+   spec to this deterministic single-file engine). DETERMINISTIC
+   LAYER owns every number (world, attributes, matches, fees,
+   trophies) via seeded rng() → replay-safe. AI flavor (press/
+   negotiation) is Phase 3. ALL names FICTIONAL (no real clubs/
+   leagues/awards). Era-gated minEra 'industrial'. Owner mode = P2.
+   ============================================================ */
+const SOC_CLUB_PRE=['Riverside','Kingsbridge','Vale','Ashford','Northgate','Hollowmoor','Stonebury','Whitcombe','Marsh End','Ironside','Castleton','Fairwater','Oldcastle','Brackenhill','Eastvale','Westmere','Thornwick','Greyhaven','Sandford','Lakeside','Cresthill','Dunmoor','Pinehurst','Redford','Calderbrook','Hartwell','Wexley','Moorside'];
+const SOC_CLUB_SUF=['FC','United','Athletic','City','Rovers','Wanderers','Town','Albion','County','Rangers','Dynamo','Borough'];
+const SOC_TIERS=[{name:'Premier Division',pres:90,emoji:'🥇'},{name:'The Championship',pres:62,emoji:'🥈'},{name:'League One',pres:38,emoji:'🥉'}];
+const SOC_COMPS={ natCup:'The National Cup', contCup:'Continental Masters Cup', worldCup:'Global Club Championship', nations:'The Nations Trophy' };
+const SOC_AWARDS={ worldPlayer:'World Player of the Year', goldenBoot:'The Golden Boot', poty:'Player of the Season', young:'Young Player of the Year' };
+const SOC_POS=['GK','DEF','MID','FWD'];
+const SOC_POS_NAME={GK:'Goalkeeper',DEF:'Defender',MID:'Midfielder',FWD:'Forward'};
+// position weighting for the single Overall rating (deterministic)
+const SOC_POS_W={
+  GK: {pace:.05,shooting:.02,passing:.13,dribbling:.05,defending:.40,physical:.35},
+  DEF:{pace:.16,shooting:.04,passing:.14,dribbling:.08,defending:.36,physical:.22},
+  MID:{pace:.14,shooting:.14,passing:.28,dribbling:.22,defending:.10,physical:.12},
+  FWD:{pace:.22,shooting:.34,passing:.12,dribbling:.22,defending:.02,physical:.08},
+};
+function soccerEraOK(){ return ERA_ORDER.indexOf((S&&S.era)||'modern') >= ERA_ORDER.indexOf('industrial'); }   // organized pro football: industrial age onward
+function socOverall(p){ const w=SOC_POS_W[p.position]||SOC_POS_W.MID, a=p.attributes; let s=0; for(const k in w) s+=(a[k]||40)*w[k]; return clamp(Math.round(s),1,99); }
+function socClubName(){ return pick(SOC_CLUB_PRE)+' '+pick(SOC_CLUB_SUF); }
+// Build the league pyramid for the player's nation ONCE, deterministically (clubs persist for the dynasty).
+function socBuildWorld(){
+  const clubs={}, divisions=[]; let n=0;
+  const used={};
+  for(let t=0;t<SOC_TIERS.length;t++){ const ids=[];
+    for(let i=0;i<12;i++){ let nm; let tries=0; do{ nm=socClubName(); tries++; }while(used[nm]&&tries<8); used[nm]=1;
+      const id='c'+(n++); const base=SOC_TIERS[t].pres; const strength=clamp(base - 18 + rng(0,26) - i, 8, 96);
+      clubs[id]={id, name:nm, tier:t, strength, prestige:clamp(base-10+rng(0,20),5,99), fanbase:clamp(base*1000+rng(0,40000),2000,90000)};
+      ids.push(id); }
+    ids.sort((a,b)=>clubs[b].strength-clubs[a].strength); divisions.push(ids);
+  }
+  return {clubs, divisions};
+}
+// Generate the player's starting attributes — blended with genome (vitality/looks) + sports talent → DYNASTY potential.
+function socGenAttributes(position){
+  const ath = Math.round((geneVal('vitality')*0.5 + (S.stats.health||60)*0.3 + (S.stats.looks||50)*0.2));   // athletic base
+  const tal = has('talent_sports') ? 12 : 0;
+  const base = clamp(38 + Math.round((ath-50)*0.5) + tal + rng(-6,6), 30, 70);
+  const A=k=>clamp(base + rng(-10,12), 20, 80);
+  const a={ pace:A(), shooting:A(), passing:A(), dribbling:A(), defending:A(), physical:A() };
+  // bias toward the position's key stats so a young pro has a believable shape
+  const w=SOC_POS_W[position]; for(const k in w){ if(w[k]>=0.2) a[k]=clamp(a[k]+rng(4,12),20,84); }
+  return a;
+}
+function socPotential(){ const ath=Math.round(geneVal('vitality')*0.6 + (S.stats.health||60)*0.2 + (has('talent_sports')?16:0) + rng(-3,10)); return clamp(67 + Math.round((ath-50)*0.85), 62, 95); }
+function soc(){ return S.soccer; }
+function socClub(){ const sc=soc(); return sc && sc.world && sc.world.clubs[sc.player.clubId]; }
+function socActive(){ return !!(S.soccer && S.soccer.player && !S.soccer.player.retired); }
+// ---- Go pro: join an academy (era-gated, choose a position). Logged action. ----
+function footballMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  if(!soccerEraOK()){ toast('Organized football doesn’t exist in this era yet.'); return; }
+  logAct('call',{fn:'footballMenu'});
+  if(!S.soccer || !S.soccer.player){ socJoinPrompt(); return; }
+  socHub();
+}
+function socJoinPrompt(){
+  if(S.age<8){ resultModal('Football','Too Young ⚽','⚽',[`You’re still a kid — academies scout from about age 8.`,`Keep kicking a ball around and come back.`],()=>setTab('activities')); return; }
+  if(S.age>24){ resultModal('Football','Past the Academy Age ⚽','⚽',[`At ${S.age}, the academy route has closed — clubs scout teens.`,`This dream needed an earlier start.`],()=>setTab('activities')); return; }
+  const ath=Math.round((geneVal('vitality')*0.5+(S.stats.health||60)*0.3+(S.stats.looks||50)*0.2));
+  openModal({banner:'Football', title:'⚽ Join a Football Academy', icon:'⚽', closable:true,
+    text:`A scout spotted you at a youth match. Pick your position and sign youth forms — your <b>athleticism is ${ath>=70?'elite':ath>=55?'promising':'modest'}</b>${has('talent_sports')?' and you’ve a <b>natural gift for sport</b>':''}. Skill grows with training and peaks in your late 20s.`,
+    choices: SOC_POS.map(pos=>({label:`${({GK:'🧤',DEF:'🛡️',MID:'🎯',FWD:'⚽'})[pos]} ${SOC_POS_NAME[pos]}`, alt:true, fn:()=>socJoin(pos)}))
+      .concat([{label:'Maybe later', fn:closeModal}]) });
+}
+function socJoin(position){   // modalpick-reached → no logAct
+  if(!S.soccer) S.soccer={};
+  const world = (S.soccer.world) || socBuildWorld();
+  const attributes = socGenAttributes(position);
+  // start in the bottom tier at a club near the player's level
+  const div=world.divisions[2]; const clubId=div[rng(4,div.length-1)];
+  S.soccer = { world, seasonsPlayed:0,
+    player:{ position, attributes, potential:socPotential(), form:62, fitness:90, morale:70,
+      clubId, onNationalTeam:false, retired:false,
+      contract:{ wagePerYear: Math.round((6000+rng(0,8000))*priceMult()), yearsRemaining:rng(2,4) },
+      seasonStats:{apps:0,goals:0,assists:0,ratingSum:0,ratingN:0}, careerStats:{apps:0,goals:0,assists:0,seasons:0} },
+    trophies:[], awards:[], _matchedThisSeason:0,
+    summary:'', keyMoments:[], recentEvents:[] };
+  const ov=socOverall(S.soccer.player);
+  socKeyMoment('debut', `Signed youth forms with ${world.clubs[clubId].name} as a ${SOC_POS_NAME[position]} (OVR ${ov}).`);
+  gainFame(rng(1,3)); setFlag('footballer');
+  pushLog(`⚽ I joined the <b>${world.clubs[clubId].name}</b> academy as a <b>${SOC_POS_NAME[position]}</b> (OVR ${ov}). A football dream begins.`,[['good','Joined an academy']]);
+  resultModal('Football','Academy Signed ⚽','⚽',[`You’re a <b>${SOC_POS_NAME[position]}</b> at <b>${world.clubs[clubId].name}</b> — Overall <b>${ov}</b>, potential <b>${S.soccer.player.potential}</b>.`,`Train hard, break into the senior side, and the matches will come each season.`],()=>socHub()); }
+function socKeyMoment(type, description){ const sc=soc(); if(!sc) return; (sc.keyMoments=sc.keyMoments||[]).push({type, age:S.age, description}); }
+function socStatLine(label,v){ return `<div style="display:flex;justify-content:space-between;font-size:12px;margin:2px 0"><span style="color:var(--dim)">${label}</span><b>${v}</b></div>`; }
+// ---- Player hub (pure render — reached via footballMenu/result modals) ----
+function socHub(){ if(!S){toast('Start a life first.');return;} const sc=soc(); if(!sc||!sc.player){ socJoinPrompt(); return; }
+  const p=sc.player, club=socClub(), ov=socOverall(p), a=p.attributes;
+  const senior = S.age>=16 && !p.retired;
+  const ss=p.seasonStats, cs=p.careerStats; const avg = ss.ratingN?(ss.ratingSum/ss.ratingN).toFixed(1):'—';
+  const bars = [['Pace','pace'],['Shooting','shooting'],['Passing','passing'],['Dribbling','dribbling'],['Defending','defending'],['Physical','physical']]
+    .map(([lab,k])=>pbar(lab,a[k])).join('');
+  let body=`<div style="text-align:left">
+    <div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><b style="font-size:16px">${({GK:'🧤',DEF:'🛡️',MID:'🎯',FWD:'⚽'})[p.position]} ${SOC_POS_NAME[p.position]}</b>
+          <div style="font-size:12px;color:var(--dim)">${club?club.name:'Free agent'}${p.onNationalTeam?' · 🌍 National Team':''}${p.retired?' · Retired':''}</div></div>
+        <div style="text-align:right"><div style="font-size:26px;font-weight:900;color:var(--gold,#f5c451)">${ov}</div><div style="font-size:9px;color:var(--dim);letter-spacing:.5px">OVERALL</div></div>
+      </div></div>
+    <div class="relbars" style="margin-bottom:6px">${bars}</div>
+    <div class="relbars" style="margin-bottom:8px">${pbar('Form',p.form)}${pbar('Fitness',p.fitness)}${pbar('Morale',p.morale)}</div>
+    <div class="genlabel" style="margin:2px 0 4px">This Season</div>
+    ${socStatLine('Appearances',ss.apps)}${socStatLine('Goals',ss.goals)}${socStatLine('Assists',ss.assists)}${socStatLine('Avg rating',avg)}
+    <div class="genlabel" style="margin:8px 0 4px">Career <span>${cs.seasons} season${cs.seasons===1?'':'s'}</span></div>
+    ${socStatLine('Apps · Goals · Assists',`${cs.apps} · ${cs.goals} · ${cs.assists}`)}
+    ${socStatLine('Trophies · Awards',`🏆 ${(sc.trophies||[]).length} · 🏅 ${(sc.awards||[]).length}`)}
+    ${p.contract?socStatLine('Contract',`${cur()}${p.contract.wagePerYear.toLocaleString()}/yr · ${p.contract.yearsRemaining}yr left`):''}
+    <p style="color:var(--dim);font-size:11px;margin-top:8px">Each year is a season: play through key matches, then the campaign concludes — table, cups, transfers and awards.</p></div>`;
+  const choices=[];
+  if(senior){ choices.push({label:`⚽ Play a Match${sc._matchedThisSeason?` (${sc._matchedThisSeason} played)`:''}`, alt:true, fn:socPlayMatch});
+    choices.push({label:'🏋️ Train', alt:true, fn:socTrain}); }
+  else if(!p.retired){ choices.push({label:'🧒 Still in the academy', fn:socHub, tip:`Senior football from age 16 (you're ${S.age})`}); }
+  if((sc.trophies||[]).length||(sc.awards||[]).length) choices.push({label:'🏆 Trophy Cabinet', alt:true, fn:socCabinet});
+  if(senior && S.age>=30) choices.push({label:'🚪 Retire from playing', alt:true, fn:socRetirePrompt});
+  choices.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
+  openModal({banner:'Football', title:'⚽ My Career', icon:'⚽', closable:true, text:body, choices});
+}
+function socCabinet(){ const sc=soc(); if(!sc){socHub();return;}
+  const tr=(sc.trophies||[]).slice().reverse(), aw=(sc.awards||[]).slice().reverse();
+  let body=`<div style="text-align:left">`;
+  body+=`<div class="genlabel" style="margin:2px 0 4px">🏆 Trophies <span>${tr.length}</span></div>`;
+  body+= tr.length? tr.map(t=>`<div style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)">🏆 <b>${t.competitionName}</b> <span style="color:var(--dim);font-size:11px">· ${t.clubName} · age ${t.age}</span></div>`).join('') : `<p style="color:var(--dim);font-size:12px">No trophies yet — keep winning.</p>`;
+  body+=`<div class="genlabel" style="margin:10px 0 4px">🏅 Individual Awards <span>${aw.length}</span></div>`;
+  body+= aw.length? aw.map(x=>`<div style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)">🏅 <b>${x.name}</b> <span style="color:var(--dim);font-size:11px">· age ${x.age}</span></div>`).join('') : `<p style="color:var(--dim);font-size:12px">No individual awards yet.</p>`;
+  body+=`</div>`;
+  openModal({banner:'Football', title:'🏆 Trophy Cabinet', icon:'🏆', closable:true, text:body, choices:[{label:'‹ Back', fn:socHub},{label:'Close', fn:closeModal}]});
+}
+// ---- Interactive match (a key decision resolved by attributes) — reached via modalpick ----
+const SOC_MATCH_SCENES={
+  FWD:[ {t:'⚽ Clean through, one-on-one with the keeper.', cs:[['Smash it low',['shooting','goal']],['Round the keeper',['dribbling','goal']],['Square it to a teammate',['passing','assist']]]},
+        {t:'🎯 The ball drops to you on the edge of the box.', cs:[['First-time volley',['shooting','goal']],['Take a touch and curl it',['dribbling','goal']],['Lay it off',['passing','assist']]]} ],
+  MID:[ {t:'🎯 Space opens up in midfield, the striker makes a run.', cs:[['Thread it through',['passing','assist']],['Drive forward yourself',['dribbling','goal']],['Switch the play',['passing','assist']]]},
+        {t:'⚔️ Their playmaker is running at your defence.', cs:[['Step in and tackle',['defending','stop']],['Shepherd them wide',['physical','stop']],['Drop off and screen',['defending','stop']]]} ],
+  DEF:[ {t:'🛡️ Their winger bursts past — last man back.', cs:[['Slide tackle',['defending','stop']],['Jockey & contain',['pace','stop']],['Shoulder them off',['physical','stop']]]},
+        {t:'⚽ A corner swings in to the near post.', cs:[['Attack it and head clear',['physical','stop']],['Mark your man tight',['defending','stop']],['Gamble for a header at goal',['physical','goal']]]} ],
+  GK:[  {t:'🧤 A rocket flies in toward the top corner.', cs:[['Full-stretch save',['defending','stop']],['Strong wrists, parry clear',['physical','stop']],['Stay big and block',['defending','stop']]]},
+        {t:'🧤 A striker is clean through on you.', cs:[['Rush out and smother',['physical','stop']],['Stand tall, make yourself big',['defending','stop']],['Wait and react',['defending','stop']]]} ],
+};
+function socPlayMatch(){ const sc=soc(); const p=sc&&sc.player; if(!p||p.retired){ socHub(); return; }
+  if(S.age<16){ toast('Senior matches start at 16.'); socHub(); return; }
+  const club=socClub(), opp=socRandomOpponent();
+  const scenes=SOC_MATCH_SCENES[p.position]||SOC_MATCH_SCENES.MID; const sc2=pick(scenes);
+  openModal({banner:'Matchday', title:`⚽ vs ${opp.name}`, icon:'⚽', closable:false,
+    text:`<b>${club?club.name:'Your club'}</b> take the field. ${sc2.t} <span style="color:var(--dim)">It’s on you.</span>`,
+    choices: sc2.cs.map(c=>({label:c[0], alt:true, fn:()=>socResolveMatch(c[1][0], c[1][1], opp)})) });
+}
+function socRandomOpponent(){ const sc=soc(); const t=socClub()?socClub().tier:2; const div=sc.world.divisions[t]||sc.world.divisions[2]; const pool=div.filter(x=>x!==sc.player.clubId); const id=pool.length?pick(pool):div[0]; return sc.world.clubs[id]||{name:'the opposition',strength:50}; }
+function socTrophy(compName, clubName){ const sc=soc(); (sc.trophies=sc.trophies||[]).push({competitionName:compName, clubName, age:S.age, season:sc.seasonsPlayed}); }
+function socAward(name){ const sc=soc(); (sc.awards=sc.awards||[]).push({name, age:S.age}); }
+function socRecent(s){ const sc=soc(); if(!sc)return; (sc.recentEvents=sc.recentEvents||[]).push({age:S.age,event:s}); if(sc.recentEvents.length>6){ sc.summary=((sc.summary?sc.summary+' ':'')+sc.recentEvents.shift().event).slice(-600); } }   // bounded FIFO → summary (AI compaction deferred to P3)
+function socAgeCurve(p){ const A=p.attributes;   // rise toward potential when young; decline after ~31 (pure age math)
+  for(const k in A){ let d=0;
+    if(S.age<=27){ const room=p.potential-A[k]; d = room>0 ? clamp(rng(1,3) + (room>14?1:0), 0, 5) : 0; }
+    else if(S.age>=31){ d = -(rng(1,3) + Math.max(0,Math.floor((S.age-31)/2))); }
+    A[k]=clamp(A[k]+d,15,99);
+  } }
+function socTransferWindow(ov, avg){ const sc=soc(), p=sc.player, world=sc.world, club=world.clubs[p.clubId];
+  // a stronger club buys you when you've outgrown your current side (a star at a small club gets bought) OR you're simply good
+  if(S.age<=31 && (ov >= club.strength+6 || (ov>=66 && avg>=6.6)) && rng(0,100) < clamp(ov-38,12,88)){
+    const cands=Object.values(world.clubs).filter(c=>c.id!==club.id && c.strength>club.strength+4 && c.strength<=ov+13);
+    if(cands.length){ cands.sort((a,b)=>b.strength-a.strength); const dest=cands[rng(0,Math.min(3,cands.length-1))];
+      const fee=Math.round((ov*ov*40 + rng(0,250000))*priceMult());
+      p.clubId=dest.id; const oldW=p.contract?p.contract.wagePerYear:8000; p.contract={wagePerYear:Math.round(oldW*(1.3+rand()*0.7)), yearsRemaining:rng(3,5)};
+      socKeyMoment('transfer', `Transferred to ${dest.name} for ${cur()}${fee.toLocaleString()}.`); gainFame(rng(2,6));
+      return `🔁 Transferred to <b>${dest.name}</b> (${SOC_TIERS[dest.tier].name}) for <b>${cur()}${fee.toLocaleString()}</b>.`;
+    }
+  }
+  return ''; }
+// ---- The whole season, concluded deterministically each ageUp (FEED-only — no modal, never collides with ageUp's event/death flow) ----
+function socSeasonEnd(){
+  const sc=soc(); if(!sc||!socActive()||S.age<16) return;
+  const p=sc.player, world=sc.world; const club=world.clubs[p.clubId]; if(!club) return;
+  const ov=socOverall(p); let lines=[], injured=false;
+  if(rng(0,100) < Math.max(3, 20 - p.fitness/7)){ injured=true; const sev=rng(1,3);
+    p.fitness=clamp(p.fitness - rng(15,30)); p.form=clamp(p.form-rng(8,16)); chg('health',-rng(2,8));
+    socKeyMoment('injury', `Lost time to a ${['knock','injury','serious injury'][sev-1]}.`);
+    lines.push(`🩹 An injury cost you part of the season.`); }
+  const fitF = 0.5 + p.fitness/200 + p.morale/300;
+  const simApps = injured ? rng(6,18) : Math.round(rng(22,36)*fitF);
+  const apps = p.seasonStats.apps + simApps;
+  const posGoal={FWD:0.55,MID:0.26,DEF:0.06,GK:0.0}[p.position]||0.2, posAst={FWD:0.20,MID:0.34,DEF:0.10,GK:0.02}[p.position]||0.2;
+  const q=(ov/100)*(0.7+p.form/200);
+  const goals = p.seasonStats.goals + Math.round(simApps*posGoal*q*(0.6+rand()*0.8));
+  const assists = p.seasonStats.assists + Math.round(simApps*posAst*q*(0.6+rand()*0.8));
+  const avg = p.seasonStats.ratingN ? (p.seasonStats.ratingSum/p.seasonStats.ratingN) : (6.0 + (ov-60)/20 + (p.form-50)/50);
+  // league finish (approx: how many clubs in your tier outrank your power)
+  const div=world.divisions[club.tier]||[]; const myPower=club.strength + (ov-club.strength)*0.25 + (p.form-50)*0.1 + goals*0.3;
+  let rank=1; for(const id of div){ if(id===club.id) continue; if((world.clubs[id].strength + rng(-10,10)) > myPower) rank++; } rank=clamp(rank,1,Math.max(div.length,8));
+  const tierName=SOC_TIERS[club.tier].name;
+  if(rank===1){ socTrophy(tierName+' Title', club.name); club.strength=clamp(club.strength+rng(1,3)); gainFame(rng(3,7));
+    if(club.tier>0){ club.tier=club.tier-1; lines.push(`🏆 <b>${tierName} Champions</b> — promoted to the ${SOC_TIERS[club.tier].name}!`); }
+    else { lines.push(`🏆 <b>${tierName} Champions!</b>`); if(rng(0,100)<55){ socTrophy(SOC_COMPS.contCup, club.name); gainFame(rng(4,9)); socKeyMoment('trophy',`Won the ${SOC_COMPS.contCup}.`); lines.push(`🌍 Lifted the <b>${SOC_COMPS.contCup}</b>!`); } }
+  } else if(rank>=Math.max(div.length-2,9) && club.tier<SOC_TIERS.length-1){ club.tier=club.tier+1; lines.push(`📉 Relegated to the ${SOC_TIERS[club.tier].name} (${_ord(rank)}).`); }
+  else { lines.push(`📊 Finished <b>${_ord(rank)}</b> in the ${tierName}.`); }
+  if(rng(0,100) < 10 + ov/7){ socTrophy(SOC_COMPS.natCup, club.name); gainFame(rng(2,5)); socKeyMoment('trophy',`Won the ${SOC_COMPS.natCup}.`); lines.push(`🏆 Won the <b>${SOC_COMPS.natCup}</b>!`); }
+  const wonSomethingThisYear = (sc.trophies||[]).some(t=>t.age===S.age);
+  if(p.position!=='GK' && goals>=22 && club.tier===0){ socAward(SOC_AWARDS.goldenBoot); gainFame(rng(3,6)); lines.push(`🏅 <b>${SOC_AWARDS.goldenBoot}</b> (${goals} goals).`); }
+  if(avg>=7.6 && club.tier===0 && wonSomethingThisYear){ socAward(SOC_AWARDS.poty); gainFame(rng(4,8)); lines.push(`🏅 <b>${SOC_AWARDS.poty}</b>.`); }
+  if(avg>=8.0 && ov>=85 && club.tier===0 && rank<=2){ socAward(SOC_AWARDS.worldPlayer); gainFame(rng(8,14)); setFlag('world_player'); socKeyMoment('award','World Player of the Year.'); lines.push(`🌟 Crowned <b>${SOC_AWARDS.worldPlayer}</b>!`); }
+  if(S.age<=21 && avg>=7.4 && ov>=72){ socAward(SOC_AWARDS.young); gainFame(rng(2,5)); }
+  money(p.contract?p.contract.wagePerYear:8000);   // wages → net worth
+  socAgeCurve(p);
+  if(!p.onNationalTeam && ov>=78){ p.onNationalTeam=true; socKeyMoment('nationalCallup','Called up to the national team.'); gainFame(rng(4,8)); lines.push(`🌍 Called up to the <b>national team</b>!`); }
+  if(p.onNationalTeam && rng(0,100)<16){ socTrophy(SOC_COMPS.nations,'National Team'); gainFame(rng(6,12)); socKeyMoment('trophy',`Won the ${SOC_COMPS.nations}.`); lines.push(`🌍🏆 Won the <b>${SOC_COMPS.nations}</b> with your country!`); }
+  p.careerStats.apps+=apps; p.careerStats.goals+=goals; p.careerStats.assists+=assists; p.careerStats.seasons++; sc.seasonsPlayed++;
+  socRecent(`S${sc.seasonsPlayed}: ${apps} apps ${goals}g ${assists}a · ${club.name} ${_ord(rank)} ${SOC_TIERS[club.tier].name}.`);
+  const tl=socTransferWindow(ov, avg); if(tl) lines.push(tl);
+  if(p.contract){ p.contract.yearsRemaining--; if(p.contract.yearsRemaining<=0){ p.contract.yearsRemaining=rng(2,4); p.contract.wagePerYear=Math.round(p.contract.wagePerYear*(1+(ov>=82?0.5:ov>=72?0.25:0.05))); } }
+  p.fitness=clamp(p.fitness+rng(20,40)); p.morale=clamp(p.morale + (rank<=3?rng(2,6):-rng(0,4)));
+  p.seasonStats={apps:0,goals:0,assists:0,ratingSum:0,ratingN:0}; sc._matchedThisSeason=0;
+  if(S.age>=38 || (injured && S.age>=34 && rng(0,100)<45)){ socDoRetire(true); lines.unshift(`🚪 The body said no — you hung up your boots.`); }
+  pushLog(`⚽ <b>Season ${sc.seasonsPlayed}</b> · ${club.name}: <b>${apps}</b> apps, <b>${goals}</b> goals, <b>${assists}</b> assists (avg ${avg.toFixed(1)}). ${lines.join(' ')}`, /🏆|🌟|🌍🏆/.test(lines.join(''))?[['good','⚽ Season']]:[['flag','⚽ Season']]);
+}
+function socRetirePrompt(){ const sc=soc(),p=sc&&sc.player; if(!p){socHub();return;}
+  openModal({banner:'Football', title:'🚪 Hang Up Your Boots?', icon:'🚪', closable:true,
+    text:`You’re ${S.age} — ${p.careerStats.seasons} seasons, ${p.careerStats.goals} goals, ${(sc.trophies||[]).length} trophies, ${(sc.awards||[]).length} awards. Retire from playing? <span style="color:var(--dim)">Club ownership/management opens in Phase 2.</span>`,
+    choices:[{label:'🚪 Retire now', alt:true, fn:()=>{ socDoRetire(false); closeModal(); setTab('life'); }},{label:'Play on', fn:socHub}] });
+}
+function socDoRetire(forced){ const sc=soc(),p=sc&&sc.player; if(!p||p.retired)return; p.retired=true; p.onNationalTeam=false;
+  socKeyMoment('retirement', `Retired: ${p.careerStats.seasons} seasons, ${p.careerStats.goals} goals, ${(sc.trophies||[]).length} trophies.`);
+  setFlag('retired_footballer');
+  pushLog(`⚽ I retired from football${forced?' — the body finally gave out':''}. <b>${p.careerStats.seasons}</b> seasons, <b>${p.careerStats.goals}</b> goals, <b>${(sc.trophies||[]).length}</b> trophies. 🎖️`,[['echo','Retired from football']]); }
+function socResolveMatch(attr, kind, opp){   // modalpick-reached → no logAct; deterministic via rng
+  const sc=soc(), p=sc.player; const a=p.attributes[attr]||50;
+  const edge = a - (opp.strength||50)*0.4 + (p.form-50)*0.3 + rng(-22,22);
+  const win = edge>0; sc._matchedThisSeason=(sc._matchedThisSeason||0)+1;
+  let rating=6.2 + edge/22 + rng(0,8)/10; rating=Math.max(4.5,Math.min(9.8,rating));
+  let line, tag;
+  if(win && kind==='goal'){ p.seasonStats.goals++; p.morale=clamp(p.morale+rng(3,7)); rating=Math.max(rating,7.4); line=`You ${attr==='shooting'?'buried it':'finished brilliantly'} — <b>GOAL!</b> Rating ${rating.toFixed(1)}.`; tag=['good','⚽ Goal']; socKeyMoment(p.careerStats.goals+p.seasonStats.goals===1?'firstGoal':'trophy', `Scored vs ${opp.name}.`); }
+  else if(win && kind==='assist'){ p.seasonStats.assists++; p.morale=clamp(p.morale+rng(2,5)); rating=Math.max(rating,7.1); line=`Perfect ball — your teammate scores. <b>Assist!</b> Rating ${rating.toFixed(1)}.`; tag=['good','🅰️ Assist']; }
+  else if(win && kind==='stop'){ p.morale=clamp(p.morale+rng(2,5)); rating=Math.max(rating,7.0); line=`Crucial ${p.position==='GK'?'save':'block'} — you kept them out. Rating ${rating.toFixed(1)}.`; tag=['good','🛡️ Stopped them']; }
+  else { p.morale=clamp(p.morale-rng(1,4)); rating=Math.min(rating,6.3); line=`It didn’t come off this time. Rating ${rating.toFixed(1)}.`; tag=['flag','Held']; }
+  p.seasonStats.apps++; p.seasonStats.ratingSum+=rating; p.seasonStats.ratingN++;
+  p.form=clamp(p.form + (win?rng(2,6):-rng(1,4))); p.fitness=clamp(p.fitness-rng(2,5));
+  pushLog(`⚽ Match vs <b>${opp.name}</b>: ${win?(kind==='goal'?'I scored!':kind==='assist'?'I set one up!':'I stood firm.'):'a quiet game.'} (rating ${rating.toFixed(1)})`,[tag]);
+  resultModal('Matchday', win?'Big Moment ⚽':'Full Time', ({goal:'⚽',assist:'🅰️',stop:'🛡️'})[kind]||'⚽', [line, `Form ${p.form} · Fitness ${p.fitness}.`], ()=>socHub());
+}
+function socTrain(){ const sc=soc(), p=sc&&sc.player; if(!p){socHub();return;}
+  openModal({banner:'Training', title:'🏋️ Focus Your Training', icon:'🏋️', closable:true,
+    text:`Pour the off-pitch work into one area. Gains are bigger when you’re young and below your potential (<b>${p.potential}</b>); they slow with age. Costs a little fitness now.`,
+    choices:[['pace','Pace 🏃'],['shooting','Shooting 🎯'],['passing','Passing 🅰️'],['dribbling','Dribbling ✨'],['defending','Defending 🛡️'],['physical','Physical 💪']]
+      .map(([k,lab])=>({label:lab, alt:true, fn:()=>socDoTrain(k)})).concat([{label:'‹ Back', fn:socHub}]) });
+}
+function socDoTrain(attr){   // modalpick-reached → no logAct
+  const sc=soc(), p=sc.player; const cur0=p.attributes[attr]||40;
+  const youth = S.age<=23?1.3 : S.age<=29?1.0 : 0.5;
+  const room = Math.max(0, p.potential - cur0);
+  const gain = clamp(Math.round((rng(0,3)+ (room>0?rng(1,3):0)) * youth), 0, 6);
+  p.attributes[attr]=clamp(cur0+gain, 20, 99); p.fitness=clamp(p.fitness-rng(3,7));
+  const ov=socOverall(p);
+  pushLog(`🏋️ I drilled my <b>${attr}</b> this year${gain>0?` (+${gain}).`:` — but it barely moved.`} OVR ${ov}.`,[gain>0?['good',`+${gain} ${attr}`]:['flag','Plateau']]);
+  resultModal('Training', gain>0?'Sharper 🏋️':'A Grind 🏋️', '🏋️', [gain>0?`Your <b>${attr}</b> rose to <b>${p.attributes[attr]}</b> (OVR ${ov}).`:`Your <b>${attr}</b> wouldn’t budge — age and your ceiling are catching up.`], ()=>socHub()); }
 function renderActivities(){ const v=document.getElementById('activitiesView'); if(!v||!S)return;
   let h=`${feedX('Activities')}`;
+  if(soccerEraOK() && S.age>=8){ const sub = (S.soccer&&S.soccer.player) ? (S.soccer.player.retired?`Retired · ${(S.soccer.trophies||[]).length} trophies`:`${SOC_POS_NAME[S.soccer.player.position]} · ${socClub()?socClub().name:'—'} · OVR ${socOverall(S.soccer.player)}`) : 'Join an academy & go pro'; h+=hubCard('⚽','Football', sub, "footballMenu()"); }
   h+=hubCard('🎟️','Go Out','Events, nightlife, find love', "setTab('events')");
   h+=hubCard('✈️','Take a Trip','Hotels worldwide, rent a car, ball out', "takeTrip()");
   h+=hubCard('🧘','Mind & Body','Gym, diet, meditation, therapy', "mindBody()");
