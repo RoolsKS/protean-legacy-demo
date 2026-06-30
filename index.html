@@ -167,6 +167,8 @@
   .backbtn{background:none;border:none;color:var(--accent);font-size:14px;font-weight:700;cursor:pointer;padding:2px 0 10px}
   .xbtn{float:right;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--panel2,#1a2030);border:1px solid var(--line);color:var(--text);font-size:16px;font-weight:800;line-height:1;cursor:pointer;margin:0 0 8px 8px}
   .xbtn:active{transform:scale(.92)}
+  .fab-age{position:fixed;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));width:60px;height:60px;border-radius:50%;border:none;background:radial-gradient(circle at 50% 34%,#46e06d,#1f9e40);color:#fff;font-size:30px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 22px rgba(0,0,0,.45),0 0 0 4px rgba(20,160,70,.18);cursor:pointer;z-index:60}
+  .fab-age:active{transform:scale(.92)}
   .verifybtn{margin-top:12px;width:100%;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer}
   .delacct{width:100%;border:1px solid var(--bad);background:rgba(229,72,77,.08);color:var(--bad);border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer}
   .delhint{color:var(--dim);font-size:11px;text-align:center;margin-top:6px}
@@ -541,6 +543,7 @@
       <div class="stats" id="stats"></div>
     </div>
   </div>
+  <button id="fabAge" class="fab-age" style="display:none" aria-label="Advance Age">＋</button>
 </div>
 
 <script>
@@ -1193,6 +1196,7 @@ function resetLife(skipConfirm){ if(skipConfirm || confirm('Abandon this life an
   document.getElementById('hud').style.display='none';
   document.getElementById('feed').style.display='none';
   document.getElementById('dock').style.display='none';
+  document.getElementById('fabAge').style.display='none';
   showContinueIfSaved();
 }}
 
@@ -3995,6 +3999,10 @@ function render(){
   if(S.ghost){ ab.disabled=false; ab.style.opacity='1'; if(abP)abP.textContent='👻'; if(abL)abL.textContent='Haunt'; ab.onclick=hauntMenu; }
   else if(isLocked()){ ab.disabled=false; ab.style.opacity='1'; if(abP)abP.textContent='⚰️'; if(abL)abL.textContent='Legacy'; ab.onclick=deathHub; }
   else { ab.disabled=!S.alive; ab.style.opacity=S.alive?'1':'.45'; if(abP)abP.textContent='＋'; if(abL)abL.textContent=tr('tab_age'); ab.onclick=ageUp; }
+  // Floating Advance-Age button — mirrors the dock button so you can advance from any sub-page (the dock is Feed-only).
+  const fab=document.getElementById('fabAge');
+  if(fab){ fab.textContent = (abP?abP.textContent:'＋'); fab.onclick = ab.onclick;
+    fab.style.display = (curTab!=='life') ? 'flex' : 'none'; }   // dead/ghost are forced to the Feed, so this only surfaces on live sub-pages
   // once you're dead, the tabs are locked — a ghost only haunts; a corpse only has the Legacy hub
   const navLocked = !S.alive;
   document.querySelectorAll('#dock .tb-btn').forEach(b=>{ b.disabled=navLocked; b.style.opacity=navLocked?'.35':'1'; });
