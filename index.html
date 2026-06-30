@@ -1162,6 +1162,7 @@ function startLife(opts){
   S.ribbons = {};         // RIBBONS: per-dynasty codex (id → {count,best,bestBy,bestGen}); persists across heirs
   S.ambition = null;      // optional Life Ambition (a target ribbon id)
   S._died = false;        // death-chokepoint guard (die() runs awardRibbons once)
+  S._ambMark = 0; S._ambDone = false; S._ambOpp = -99;   // per-life ambition nudge state (feed milestones + opportunity-event cooldown)
   applyEraTheme(S.era);
   // Build a full, living family tree (grandparents → cousins → siblings)
   buildFamily(opts.gender);
@@ -2062,6 +2063,21 @@ function _eulogy(r, earned, headline){
 }
 function _ord(n){ return n+({1:'st',2:'nd',3:'rd'}[n%10>3||(n%100>=11&&n%100<=13)?0:n%10]||'th'); }
 function _artFor(w){ return /^[aeiou]/i.test(w)?'an':'a'; }
+// Ambition nudge plumbing (Fix 3) — which broad theme an ambition belongs to, so events & feed tips can surface toward it.
+const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame', scholar:'mind',genius:'mind',
+  powerful:'power',sovereign:'power',self_made_monarch:'power', notorious:'crime',kingpin:'crime',conqueror:'crime',
+  saintly:'virtue',devoted:'virtue',redemption:'virtue', dynasty_legend:'dynasty',polymath_founder:'dynasty',matriarch:'dynasty',
+  centenarian:'health', pioneer:'era' };
+function ambTheme(){ return (S&&S.ambition)?(RIBBON_THEME[S.ambition]||null):null; }
+function ambHint(rb){ return ({ wealth:' Keep building your fortune.', fame:' Chase the spotlight.', mind:' Hit the books.', power:' Climb toward high office.', crime:' The underworld is calling.', virtue:' Keep doing good.', dynasty:' Grow the family line.', era:' Live to see the age turn.', health:' Stay healthy and live long.' }[RIBBON_THEME[rb.id]]||''); }
+// Per-year feed nudge toward the declared ambition (PURE — no RNG; only latching flags). Called from ageUp.
+function ambitionNudge(){
+  if(!S || !S.ambition) return; const rb=ribbonDef(S.ambition); if(!rb) return;
+  const st=ribbonStatus(rb);
+  if(st.q>=1){ if(!S._ambDone){ S._ambDone=true; pushLog(`🎯 <b>Ambition fulfilled — ${rb.icon} ${rb.name}!</b> You set out to earn it, and you did. <span style="color:var(--dim)">(legacy bonus secured)</span>`,[['echo','Ambition fulfilled']]); } return; }
+  const m=[90,75,50,25].find(x=>st.pct>=x);
+  if(m && (S._ambMark||0)<m){ S._ambMark=m; pushLog(`🎯 <span style="color:var(--accent)">Ambition: ${rb.icon} ${rb.name}</span> — you're <b>${st.pct}%</b> of the way there.${ambHint(rb)}`,[['flag','Ambition progress']]); }
+}
 function ribbonLegacyBonus(){ let s=0; const codex=S.ribbons||{}; const wt={common:8,rare:18,epic:40,legendary:90};
   for(const id in codex){ const rb=ribbonDef(id); if(rb) s+=(wt[rb.rarity]||10)*(codex[id].count||1); }
   if(S.ambition){ const rb=ribbonDef(S.ambition); if(rb){ const st=ribbonStatus(rb); if(st.q>=1) s+=120; } }   // Ambition completion reward (Fix 3)
@@ -2292,6 +2308,65 @@ const EVENTS = [
         chg('health',-rng(10,22)); addTrauma('medical',rng(12,24),'the augment that went wrong'); return {text:`The integration faulted. Migraines, phantom sensations, a week in recovery — they pulled it back out.`,tags:[['bad','Augment rejected']]}; }},
       {label:'Stay fully human', apply:()=>{ chg('happy',2); return {text:`You kept your mind your own. Increasingly rare — and you like it that way.`,tags:[['flag','Stayed unaugmented']]}; }},
     ]})},
+
+/* ============================================================
+   AMBITION NUDGES (Fix 3) — when you've declared a Life Ambition,
+   relevant OPPORTUNITIES surface to help you EARN it (never handed
+   out). Gated on ambTheme() (pure read of S.ambition) + a shared
+   5-year cooldown (S._ambOpp, set in build → deterministic/replay-safe).
+   ============================================================ */
+{ id:'amb_wealth', once:false, weight:15, when:S=>ambTheme()==='wealth' && S.age>=18 && (S.age-(S._ambOpp||-99)>=5),
+  build:S=>{ S._ambOpp=S.age; return { yr:`Age ${S.age}`, title:'A Hot Tip 📈',
+    text:`Word reaches you of an investment with serious upside — just the break your ambition needs. It could multiply your money… or sink a chunk of it.`,
+    choices:[
+      {label:'Go big', tip:'High risk · high reward', apply:()=>{ const stake=Math.round(Math.max(S.money,0)*0.5); money(-stake);
+        if(rng(0,100)<52){ const win=Math.round(stake*(1.8+rand()*1.4)); money(win); return {text:`The bet paid off — you turned it into <b>${cur()}${win.toLocaleString()}</b>.`,tags:[['good',`+${cur()}${win.toLocaleString()}`]]}; }
+        return {text:`It went south. The stake is gone.`,tags:[['bad',`-${cur()}${stake.toLocaleString()}`]]}; }},
+      {label:'Invest modestly', tip:'Slow & steady', apply:()=>{ const stake=Math.round(Math.max(S.money,0)*0.15); money(-stake); const win=Math.round(stake*(1.1+rand()*0.5)); money(win); return {text:`A measured move — a little richer, no drama.`,tags:[['good',`+${cur()}${Math.max(0,win-stake).toLocaleString()}`]]}; }},
+      {label:'Pass on it', apply:()=>({text:`You let it go by. Not every tip is worth chasing.`,tags:[['flag','Passed it up']]})},
+    ] };}},
+{ id:'amb_fame', once:false, weight:15, when:S=>ambTheme()==='fame' && S.age>=14 && (S.age-(S._ambOpp||-99)>=5),
+  build:S=>{ S._ambOpp=S.age; return { yr:`Age ${S.age}`, title:'A Talent Scout 🎬',
+    text:`A scout slides you a card — there's a shot at real exposure here. The kind of moment that makes a name… if you don't freeze.`,
+    choices:[
+      {label:'Take the shot', tip:'Make or break', apply:()=>{ if(rng(0,100) < 45 + S.stats.looks/4){ const f=rng(8,18); S.fame=Math.min(100,(S.fame||0)+f); S.peakFame=Math.max(S.peakFame||0,S.fame); chg('happy',5); return {text:`You owned the moment — your name is on more lips now (+${f} fame).`,tags:[['good',`+${f} fame`]]}; }
+        chg('happy',-4); return {text:`Nerves got the better of you. The scout moved on.`,tags:[['bad','Flopped the audition']]}; }},
+      {label:'Build it slowly', apply:()=>{ const f=rng(2,6); S.fame=Math.min(100,(S.fame||0)+f); S.peakFame=Math.max(S.peakFame||0,S.fame); return {text:`You take the steady route — a few more fans, no risk.`,tags:[['good',`+${f} fame`]]}; }},
+      {label:'Not now', apply:()=>({text:`You weren't ready. There'll be other chances.`,tags:[['flag','Declined']]})},
+    ] };}},
+{ id:'amb_mind', once:false, weight:15, when:S=>ambTheme()==='mind' && S.age>=10 && (S.age-(S._ambOpp||-99)>=5),
+  build:S=>{ S._ambOpp=S.age; return { yr:`Age ${S.age}`, title:'A Mentor Appears 📚',
+    text:`A brilliant mentor offers to take you under their wing — exactly the spark a sharp mind needs.`,
+    choices:[
+      {label:'Throw yourself in', tip:'Smarts ↑↑', apply:()=>{ const g=rng(6,13); chg('smarts',g); chg('happy',-2); return {text:`Late nights, hard problems, real growth (+${g} smarts).`,tags:[['good',`+${g} smarts`]]}; }},
+      {label:'Learn at your pace', apply:()=>{ const g=rng(2,6); chg('smarts',g); return {text:`A steady bit of learning (+${g} smarts).`,tags:[['good',`+${g} smarts`]]}; }},
+      {label:'Decline', apply:()=>({text:`You let the chance pass.`,tags:[['flag','Declined']]})},
+    ] };}},
+{ id:'amb_power', once:false, weight:15, when:S=>ambTheme()==='power' && S.age>=18 && (S.age-(S._ambOpp||-99)>=5),
+  build:S=>{ S._ambOpp=S.age; return { yr:`Age ${S.age}`, title:'A Door Opens 🚪',
+    text:`An influential figure takes an interest in you. The right connections are how power is really won — and you've just been offered one.`,
+    choices:[
+      {label:'Seize the connection', tip:'Boost your standing', apply:()=>{ setFlag('connected'); chg('looks',rng(1,3)); chg('smarts',rng(1,3)); S.fame=Math.min(100,(S.fame||0)+rng(2,6)); S.rep=clamp((S.rep||0)+rng(4,9),-100,100); return {text:`You shook the right hand. Doors that were closed are open now — try running for office (Activities → Politics).`,tags:[['good','Well-connected']]}; }},
+      {label:'Network slowly', apply:()=>{ S.rep=clamp((S.rep||0)+rng(2,4),-100,100); return {text:`You work the room politely. A little goodwill banked.`,tags:[['good','Made an ally']]}; }},
+      {label:'Keep your distance', apply:()=>({text:`You stayed out of it. Power can wait.`,tags:[['flag','Stayed out']]})},
+    ] };}},
+{ id:'amb_crime', once:false, weight:15, when:S=>ambTheme()==='crime' && S.age>=16 && (S.age-(S._ambOpp||-99)>=5),
+  build:S=>{ S._ambOpp=S.age; return { yr:`Age ${S.age}`, title:'The Underworld Beckons 🌃',
+    text:`A made acquaintance offers you a piece of work — risky, but it's how a name gets feared on these streets.`,
+    choices:[
+      {label:'Take the job', tip:'Rep ↑ · heat ↑', apply:()=>{ karma(-3); if(rng(0,100)<62){ const cash=rng(2000,12000); money(cash); ledgerAdd('crime',rng(10,18),{note:'Pulled off a job for the outfit.'}); if(S.underworld){ S.underworld.rep=(S.underworld.rep||0)+rng(6,14); } setFlag('criminal'); return {text:`Clean work. The coin's good (${cur()}${cash.toLocaleString()}) and your name carries weight now.`,tags:[['bad',`Crime +${cur()}${cash.toLocaleString()}`]]}; }
+        setFlag('criminal'); setFlag('arrested'); const fine=rng(500,4000); money(-Math.min(S.money,fine)); return {text:`It went sideways — you were nicked. ${cur()}${fine.toLocaleString()} gone and a record to show for it.`,tags:[['bad','Busted']]}; }},
+      {label:'Small-time only', apply:()=>{ karma(-1); const cash=rng(200,1200); money(cash); return {text:`You keep it petty — a little cash, little risk.`,tags:[['bad',`+${cur()}${cash.toLocaleString()}`]]}; }},
+      {label:'Walk away', apply:()=>({text:`You walk. That life isn't worth it today.`,tags:[['flag','Walked away']]})},
+    ] };}},
+{ id:'amb_virtue', once:false, weight:15, when:S=>ambTheme()==='virtue' && S.age>=12 && (S.age-(S._ambOpp||-99)>=5),
+  build:S=>{ S._ambOpp=S.age; return { yr:`Age ${S.age}`, title:'A Chance to Give 🤲',
+    text:`A real need crosses your path — a chance to do genuine good, the kind a life of grace is built on.`,
+    choices:[
+      {label:'Give generously', tip:'Karma ↑↑', apply:()=>{ const amt=Math.min(Math.max(S.money,0),Math.round(Math.max(S.money,0)*0.1)+rng(200,2000)); money(-amt); karma(4); ledgerAdd('charity',rng(10,18),{note:'Gave generously to those in need.'}); chg('happy',4); return {text:`You gave <b>${cur()}${amt.toLocaleString()}</b> and asked nothing back. It mattered.`,tags:[['good','Gave generously']]}; }},
+      {label:'Give a little', apply:()=>{ const amt=Math.min(Math.max(S.money,0),rng(50,500)); money(-amt); karma(2); ledgerAdd('charity',rng(3,7),{note:'A small kindness.'}); return {text:`A small gift — every bit helps.`,tags:[['good','A kindness']]}; }},
+      {label:'Not today', apply:()=>({text:`You walked on by. Maybe next time.`,tags:[['flag','Passed']]})},
+    ] };}},
 
 /* ============================================================
    THE LEDGER — CALLBACK EVENTS. These QUERY your past deeds, so
@@ -3509,6 +3584,7 @@ function ageUp(){
       pushLog(`🌍 <b>THE WORLD TURNS.</b> The age of <b>${ERA_DEFS[_jump.from].displayName}</b> gives way to the <b>${b.displayName}</b> ${b.icon} — ${b.blurb.toLowerCase()}. The world changes around you; your wealth is revalued into <b>${worldRules.currency().name}</b>.`,[['echo',b.displayName]]);
     }
   }
+  ambitionNudge();   // RIBBONS: surface progress toward a declared Life Ambition (pure — no RNG)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -4089,7 +4165,7 @@ function continueAsHeir(id){
   // POLITICS dynasty — the heir inherits NAME RECOGNITION (and any family disgrace), not the office itself
   if(S.office){ if(!S.dynastyOffice || officeRank(S.office.tier)>=officeRank(S.dynastyOffice)){ S.dynastyOffice=S.office.tier; S.dynastyApproval=S.office.approval; } }
   const _dynImpeached = has('impeached')||has('dynasty_impeached');
-  S.alive=true; S.ghost=false; S.exorcised=false; S.hauntCount=0; S._died=false; S._deathRibbons=null;   // RIBBONS: heir starts a fresh life (codex S.ribbons & ambition carry on)
+  S.alive=true; S.ghost=false; S.exorcised=false; S.hauntCount=0; S._died=false; S._deathRibbons=null; S._ambMark=0; S._ambDone=false; S._ambOpp=-99;   // RIBBONS: heir starts a fresh life (codex S.ribbons & ambition carry on; per-life nudge state resets)
   S.stats={health:rng(78,100), happy:rng(70,95), smarts:rng(40,85), looks:rng(40,90)};
   S.genome = heir.genome || rollGenome(S.genome, null); applyGenomeToStats();   // GENETICS: the heir IS your child — your genes live on
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
