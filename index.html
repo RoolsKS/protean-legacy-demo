@@ -871,8 +871,22 @@ function initLang(){ let saved='en'; try{ saved=localStorage.getItem('protean_la
    ============================================================ */
 let _haptics=true; try{ _haptics = localStorage.getItem('protean_haptics')!=='0'; }catch(e){}
 function setHaptics(v){ _haptics=!!v; try{ localStorage.setItem('protean_haptics', v?'1':'0'); }catch(e){} }
+/* iOS Safari has NO navigator.vibrate. The one web path to a real system haptic on iPhone (Safari 17.4+,
+   with Settings → Sounds & Haptics → System Haptics ON) is to toggle a hidden <input type="checkbox" switch>
+   by clicking its <label> inside a user gesture. Single fixed tick (can't vary intensity), but it's real feedback. */
+let _hapticSwitch=null;
+function _hapticSwitchEl(){ if(_hapticSwitch!==null) return _hapticSwitch; _hapticSwitch=false;
+  try{ if(typeof document!=='undefined' && document.body){
+    const label=document.createElement('label'); label.setAttribute('aria-hidden','true');
+    label.style.cssText='position:fixed;top:-100px;left:-100px;width:0;height:0;opacity:0;pointer-events:none;z-index:-1';
+    const inp=document.createElement('input'); inp.type='checkbox'; inp.setAttribute('switch','');   // iOS toggle-switch checkbox
+    label.appendChild(inp); document.body.appendChild(label); _hapticSwitch=label;
+  }}catch(e){} return _hapticSwitch; }
 function _vib(pattern){ if(!_haptics) return; if(typeof S!=='undefined' && S && S._replaying) return;   // never buzz during headless replay
-  try{ if(typeof navigator!=='undefined' && navigator.vibrate) navigator.vibrate(pattern); }catch(e){} }
+  try{
+    if(typeof navigator!=='undefined' && navigator.vibrate){ navigator.vibrate(pattern); return; }   // Android Chrome / Capacitor
+    const el=_hapticSwitchEl(); if(el && el.click) el.click();                                        // iOS Safari fallback (one system tick)
+  }catch(e){} }
 const haptics = {
   tap:    ()=>_vib(10),                 // standard buttons
   press:  ()=>_vib(22),                 // significant actions (age-up, confirm)
