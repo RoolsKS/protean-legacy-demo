@@ -168,10 +168,11 @@
   .platrow .pf{font-size:12px;color:var(--dim);margin-top:2px}
   .platrow .parrow{font-size:24px;color:var(--accent);font-weight:700}
   .backbtn{background:none;border:none;color:var(--accent);font-size:14px;font-weight:700;cursor:pointer;padding:2px 0 10px}
-  .xbtn{float:right;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--panel2,#1a2030);border:1px solid var(--line);color:var(--text);font-size:16px;font-weight:800;line-height:1;cursor:pointer;margin:0 0 8px 8px}
-  .xbtn:active{transform:scale(.92)}
-  .fab-age{position:fixed;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));width:60px;height:60px;border-radius:50%;border:none;background:radial-gradient(circle at 50% 34%,#46e06d,#1f9e40);color:#fff;font-size:30px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 22px rgba(0,0,0,.45),0 0 0 4px rgba(20,160,70,.18);cursor:pointer;z-index:60}
-  .fab-age:active{transform:scale(.92)}
+  /* Sub-page header bar — circular back/✕ on the left + centered title (the Feed is the only "home"). */
+  .pagehead{display:flex;align-items:center;gap:12px;margin:-12px -14px 14px;padding:11px 14px;background:linear-gradient(180deg,var(--panel2),var(--panel));border-bottom:1px solid var(--line);position:sticky;top:0;z-index:15}
+  .pagehead-btn{width:38px;height:38px;border-radius:50%;border:2px solid var(--accent);background:transparent;color:var(--accent);font-size:19px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;padding:0}
+  .pagehead-btn:active{transform:scale(.92)}
+  .pagehead-title{flex:1;text-align:center;font-weight:800;font-size:16px;letter-spacing:1px;text-transform:uppercase;color:var(--text);padding-right:38px}
   .verifybtn{margin-top:12px;width:100%;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer}
   .delacct{width:100%;border:1px solid var(--bad);background:rgba(229,72,77,.08);color:var(--bad);border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer}
   .delhint{color:var(--dim);font-size:11px;text-align:center;margin-top:6px}
@@ -546,7 +547,6 @@
       <div class="stats" id="stats"></div>
     </div>
   </div>
-  <button id="fabAge" class="fab-age" style="display:none" aria-label="Advance Age">＋</button>
 </div>
 
 <script>
@@ -1199,7 +1199,6 @@ function resetLife(skipConfirm){ if(skipConfirm || confirm('Abandon this life an
   document.getElementById('hud').style.display='none';
   document.getElementById('feed').style.display='none';
   document.getElementById('dock').style.display='none';
-  document.getElementById('fabAge').style.display='none';
   showContinueIfSaved();
 }}
 
@@ -4002,10 +4001,6 @@ function render(){
   if(S.ghost){ ab.disabled=false; ab.style.opacity='1'; if(abP)abP.textContent='👻'; if(abL)abL.textContent='Haunt'; ab.onclick=hauntMenu; }
   else if(isLocked()){ ab.disabled=false; ab.style.opacity='1'; if(abP)abP.textContent='⚰️'; if(abL)abL.textContent='Legacy'; ab.onclick=deathHub; }
   else { ab.disabled=!S.alive; ab.style.opacity=S.alive?'1':'.45'; if(abP)abP.textContent='＋'; if(abL)abL.textContent=tr('tab_age'); ab.onclick=ageUp; }
-  // Floating Advance-Age button — mirrors the dock button so you can advance from any sub-page (the dock is Feed-only).
-  const fab=document.getElementById('fabAge');
-  if(fab){ fab.textContent = (abP?abP.textContent:'＋'); fab.onclick = ab.onclick;
-    fab.style.display = (curTab!=='life') ? 'flex' : 'none'; }   // dead/ghost are forced to the Feed, so this only surfaces on live sub-pages
   // once you're dead, the tabs are locked — a ghost only haunts; a corpse only has the Legacy hub
   const navLocked = !S.alive;
   document.querySelectorAll('#dock .tb-btn').forEach(b=>{ b.disabled=navLocked; b.style.opacity=navLocked?'.35':'1'; });
@@ -4106,15 +4101,19 @@ function hubCard(icon,title,sub,onclick){
     <div class="pinfo"><div class="pn">${title}</div><div class="pf">${sub}</div></div><span class="parrow">›</span></div>`;
 }
 // a back link from a sub-page to its parent hub
-function feedX(){ return `<button class="xbtn" onclick="setTab('life')" aria-label="Back to feed">✕</button>`; }
+// Sub-page header bar: circular button (✕ to Feed for hubs, ‹ to parent for deeper pages) + centered title.
+function pageHead(title, action, icon){
+  return `<div class="pagehead"><button class="pagehead-btn" onclick="${action}" aria-label="Back">${icon||'‹'}</button><div class="pagehead-title">${title||''}</div></div>`;
+}
+function feedX(title){ return pageHead(title||'', "setTab('life')", '✕'); }   // top-level hub header (✕ closes to the Feed)
+const VIEW_TITLES={ job:'Occupation', school:'Education', gigs:'Side Hustles', careersdex:'Careers', achievements:'Achievements', business:'My Business', social:'Social Media', shop:'Shopping', stars:'Celebrities', people:'Relationships', events:'Go Out', licenses:'Licenses' };
 function hubBack(view){
   const par={job:'career',school:'career',gigs:'career',careersdex:'career',achievements:'career',business:'career',social:'assets',stars:'connections',events:'activities',people:'connections',licenses:'activities',shop:'assets'}[view];
   if(!par) return '';
-  const lbl={career:'Career',assets:'Assets',connections:'Connections',activities:'Activities'}[par];
-  return `<button class="backbtn" onclick="setTab('${par}')">‹ ${lbl}</button>`;
+  return pageHead(VIEW_TITLES[view]||'', `setTab('${par}')`, '‹');   // deeper page header (‹ goes back to the parent hub)
 }
 function renderCareer(){ const v=document.getElementById('careerView'); if(!v||!S)return;
-  let h=`${feedX()}<div class="genlabel">💼 Career & Education</div>`;
+  let h=`${feedX('Career')}`;
   h+=hubCard('💼','Job', S.job?`${jobTitle(S.job)} · ${cur()}${S.job.salary.toLocaleString()}/yr`:'Find work & climb the ladder', "setTab('job')");
   h+=hubCard('🎓','School', statusText().includes('Student')?statusText():(has('graduated_college')?'Graduate':'Education & enrollment'), "setTab('school')");
   if(S.age>=12) h+=hubCard('💸','Side Hustles', `Quick gigs for fast cash${S.gigs?` · ${S.gigs.filter(g=>!g.done).length} open`:''}`, "setTab('gigs')");
@@ -4125,7 +4124,7 @@ function renderCareer(){ const v=document.getElementById('careerView'); if(!v||!
 }
 function renderAssets(){ const v=document.getElementById('assetsView'); if(!v||!S)return;
   const nw=netWorth();
-  let h=`${feedX()}`;
+  let h=`${feedX('Assets')}`;
   h+=`<div class="card profile"><div class="handle">💰 Net Worth ${fcm(nw)}</div>
     <div class="counts">
       <div><b style="color:${S.money<0?'var(--bad)':'var(--good)'}">${(S.money<0?'-':'')+cur()+Math.abs(S.money).toLocaleString()}</b><span>Cash</span></div>
@@ -4861,7 +4860,7 @@ function copOutcome(how, severe){ closeModal();
 function renderConnections(){ const v=document.getElementById('connectionsView'); if(!v||!S)return;
   const fam=Object.values(S.people).filter(p=>p.alive&&!p.pet).length;
   const met=S.celebs?Object.values(S.celebs).filter(c=>c.met).length:0;
-  let h=`${feedX()}<div class="genlabel">🤝 Connections</div>`;
+  let h=`${feedX('Connections')}`;
   { const arch=legacyArchetype(); h+=hubCard('👑','Dynasty Legacy', `Score ${legacyScore().toLocaleString()} · ${arch.icon} ${arch.name} · Gen ${S.legacyGen||1}`, "legacyView()"); }
   { const dn=Object.keys(S.goalsAchieved||{}).length; h+=hubCard('🎯','Life Goals', `${dn} of ${LIFEGOALS.length} fulfilled · your bucket list`, "lifeGoalsView()"); }
   { const sc=S.scenario||{completed:{}}, beaten=Object.keys(sc.completed||{}).length; h+=hubCard('🎬','Scenario Packs', sc.key?`▶ ${scenarioDef(sc.key).name} (active)`:(beaten?`${beaten}/${SCENARIOS.length} beaten · take on a challenge`:'Themed dynasty challenges'), "scenarioMenu()"); }
@@ -4878,7 +4877,7 @@ function renderConnections(){ const v=document.getElementById('connectionsView')
   v.innerHTML=h;
 }
 function renderActivities(){ const v=document.getElementById('activitiesView'); if(!v||!S)return;
-  let h=`${feedX()}<div class="genlabel">⚛️ Activities</div>`;
+  let h=`${feedX('Activities')}`;
   h+=hubCard('🎟️','Go Out','Events, nightlife, find love', "setTab('events')");
   h+=hubCard('✈️','Take a Trip','Hotels worldwide, rent a car, ball out', "takeTrip()");
   h+=hubCard('🧘','Mind & Body','Gym, diet, meditation, therapy', "mindBody()");
