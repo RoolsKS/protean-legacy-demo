@@ -5660,8 +5660,35 @@ const GOV_ISSUES={
   empire:   ['Grain Supply','The Legions','Public Games','Roads & Aqueducts','Taxes','The Provinces','The Senate','Citizenship'],
   republic: ['Commerce & Trade','City Defenses','Public Works','Taxes','The Arts','Rival City-States','The Guilds','Banking'],
 };
+// Era-flavored "debate" questions — democracies hold debates; monarchies/empires sway the court, republics the council.
+// Same 4-answer shape & scoring (s:2 statesmanlike · s:1 hollow · s:0 ruinous) as POLI_Q → identical RNG/modalpick on replay.
+const GOV_Q={
+  democracy: POLI_Q,
+  monarchy: [
+    {q:'How will you serve the Crown?', a:[{t:'Loyally — with counsel and duty',s:2},{t:'Bleed the treasury for myself',s:0},{t:'Plot quietly against the throne',s:0},{t:'However the wind blows',s:1}]},
+    {q:'The peasants are restless over taxes. Your answer?', a:[{t:'Ease their burden in lean years',s:2},{t:'Tax them harder — they’ll endure',s:0},{t:'Send soldiers to silence them',s:0},{t:'Promise much, deliver little',s:1}]},
+    {q:'How will you keep the realm safe?', a:[{t:'A strong, well-fed garrison',s:2},{t:'Cheap mercenaries will do',s:0},{t:'Let the villages fend for themselves',s:0},{t:'Pray and hope for the best',s:1}]},
+    {q:'On matters of the Church?', a:[{t:'Respect it and keep the peace',s:2},{t:'Seize its lands and gold',s:0},{t:'Defy the bishops openly',s:0},{t:'Tell the bishop whatever he wants',s:1}]},
+    {q:'A rival noble insults your house. You…', a:[{t:'Answer with honor and restraint',s:2},{t:'Burn his lands to the ground',s:0},{t:'Have him quietly poisoned',s:0},{t:'Pretend not to notice',s:1}]},
+  ],
+  empire: [
+    {q:'How will you win the favor of the people?', a:[{t:'Bread and fair games',s:2},{t:'Empty promises and bribes',s:0},{t:'Crush all dissent with the legions',s:0},{t:'Grand speeches, little else',s:1}]},
+    {q:'The legions demand their pay. Your stance?', a:[{t:'Pay them fairly and on time',s:2},{t:'Withhold it for myself',s:0},{t:'March them off to a pointless war',s:0},{t:'Stall and make excuses',s:1}]},
+    {q:'On the grain supply to the city?', a:[{t:'Keep the granaries full for all',s:2},{t:'Hoard it and sell it dear',s:0},{t:'Let the mob go hungry',s:0},{t:'Blame the provinces',s:1}]},
+    {q:'A senator opposes you in the forum. You…', a:[{t:'Best him with reason and rhetoric',s:2},{t:'Have him quietly removed',s:0},{t:'Buy his silence with gold',s:0},{t:'Avoid the forum entirely',s:1}]},
+    {q:'Your true ambition?', a:[{t:'Serve the empire with honor',s:2},{t:'Seize absolute power',s:0},{t:'Enrich my family above all',s:0},{t:'Simply survive the year',s:1}]},
+  ],
+  republic: [
+    {q:'How will you grow the city’s wealth?', a:[{t:'Foster trade and the guilds',s:2},{t:'Tax the merchants to ruin',s:0},{t:'Seize a rival’s warehouses',s:0},{t:'A clever, tangled scheme',s:1}]},
+    {q:'On commissioning the arts?', a:[{t:'Patronize the great masters',s:2},{t:'Spend nothing — it’s frivolous',s:0},{t:'Take credit for others’ work',s:0},{t:'Promise patronage, pay late',s:1}]},
+    {q:'A rival city-state threatens war. You…', a:[{t:'Shore up the walls and negotiate',s:2},{t:'Hire the costliest condottieri',s:0},{t:'Strike first, without warning',s:0},{t:'Hope it blows over',s:1}]},
+    {q:'The guilds want more say on the council. Your answer?', a:[{t:'Give them a fair voice',s:2},{t:'Crush their influence',s:0},{t:'Play them against each other',s:0},{t:'Bury it in committees',s:1}]},
+    {q:'What guides your time in office?', a:[{t:'The good of the Republic',s:2},{t:'My family’s banking interests',s:0},{t:'Settling old vendettas',s:0},{t:'Staying popular at any cost',s:1}]},
+  ],
+};
 function activeOffices(){ return GOV_OFFICES[worldRules.govForm()] || OFFICES; }
 function activeIssues(){ return GOV_ISSUES[worldRules.govForm()] || POLI_ISSUES; }
+function activeQ(){ return GOV_Q[worldRules.govForm()] || POLI_Q; }
 const _ALL_OFFICE_SETS=()=>[GOV_OFFICES.democracy, GOV_OFFICES.monarchy, GOV_OFFICES.empire, GOV_OFFICES.republic];
 function officeDef(tier){ for(const set of _ALL_OFFICE_SETS()){ const o=set.find(x=>x.tier===tier); if(o) return o; } return null; }
 function officeRank(tier){ const a=activeOffices().findIndex(o=>o.tier===tier); if(a>=0) return a;
@@ -5699,9 +5726,13 @@ function campaignStart(tier){ const o=officeDef(tier); const spends=campaignSpen
     choices:spends.map((s,i)=>({label:`${['🥉 Shoestring','🥈 Solid','🥇 All-out'][i]||'Spend'} — ${cur()}${s.toLocaleString()}`, alt:true, fn:()=>{ if(!spend(s))return; S._campaign={tier, spend:s, debate:0, q:0}; politicalDebate(); }})).concat([{label:'Back', fn:()=>politics()}]) });
 }
 function politicalDebate(){ const c=S._campaign; if(!c) return; if(c.q>=3) return resolveElection(); closeModal();
-  const Q=pick(POLI_Q);
-  openModal({banner:'Debate', title:`🎤 The Debate (${c.q+1}/3)`, icon:'🎤', closable:false,
-    text:`On stage against your opponent:<br><br><b>${Q.q}</b>`,
+  const Q=pick(activeQ());
+  const gf=worldRules.govForm(), monarchic=(gf==='monarchy'||gf==='empire');
+  const banner=monarchic?'Audience':(gf==='republic'?'Council':'Debate');
+  const title=monarchic?`👑 Before the Court (${c.q+1}/3)`:(gf==='republic'?`🏛️ Before the Council (${c.q+1}/3)`:`🎤 The Debate (${c.q+1}/3)`);
+  const lead=monarchic?'The court watches as you are questioned:':(gf==='republic'?'The council leans in to hear you:':'On stage against your opponent:');
+  openModal({banner:banner, title:title, icon:monarchic?'👑':'🎤', closable:false,
+    text:`${lead}<br><br><b>${Q.q}</b>`,
     choices:Q.a.map(ans=>({label:ans.t, alt:true, fn:()=>{ c.debate+=ans.s; c.q++; politicalDebate(); }})) });
 }
 function resolveElection(){ const c=S._campaign; if(!c) return; closeModal(); const o=officeDef(c.tier);
