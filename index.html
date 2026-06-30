@@ -1163,6 +1163,8 @@ function startLife(opts){
   S.ambition = null;      // optional Life Ambition (a target ribbon id)
   S._died = false;        // death-chokepoint guard (die() runs awardRibbons once)
   S._ambMark = 0; S._ambDone = false; S._ambOpp = -99;   // per-life ambition nudge state (feed milestones + opportunity-event cooldown)
+  S.ambitionsFulfilled = [];   // dynasty tally of fulfilled ambitions (lasting legacy reward; carries across heirs)
+  S.honorific = null;          // earned epithet shown on the profile/gravestone (per-life cosmetic)
   applyEraTheme(S.era);
   // Build a full, living family tree (grandparents → cousins → siblings)
   buildFamily(opts.gender);
@@ -1254,7 +1256,7 @@ function continueGame(){
     S.scenario=S.scenario||{key:null,completed:{}}; S.dynastyStats=S.dynastyStats||{officesWon:0,pandemics:0};   // SCENARIOS backfill
     if(!S.era || !ERA_DEFS[S.era]) S.era='modern'; if(!S.worldMode) S.worldMode='fixed'; applyEraTheme(S.era);   // ERA backfill
     if(!WORLD_PACE[S.worldPace]) S.worldPace='balanced'; if(S.startEraIndex==null) S.startEraIndex=ERA_ORDER.indexOf(S.era); if(S.dynastyYears==null) S.dynastyYears=S.age||0; if(!S.chronicle) S.chronicle=[]; if(!S.heirlooms) S.heirlooms=[];   // P3+ world-clock / chronicle / heirloom backfill
-    if(!S.ribbons) S.ribbons={}; if(S.ambition===undefined) S.ambition=null; if(S._died===undefined) S._died=!S.alive;   // RIBBONS backfill
+    if(!S.ribbons) S.ribbons={}; if(S.ambition===undefined) S.ambition=null; if(S._died===undefined) S._died=!S.alive; if(!S.ambitionsFulfilled) S.ambitionsFulfilled=[]; if(S.honorific===undefined) S.honorific=null;   // RIBBONS backfill
     if(S.passportApp===undefined) S.passportApp=null;
     if(S.passportExpires===undefined) S.passportExpires = S.passport ? S.age+10 : null;   // grandfather older saves with a fresh 10-yr passport
     if(S.eduUntil===undefined||S.eduUntil===0) S.eduUntil = S.eduLevel==='primary'?12 : S.eduLevel==='high'?18 : S.eduLevel==='college'?(S.age+1) : 0;
@@ -2074,13 +2076,22 @@ function ambHint(rb){ return ({ wealth:' Keep building your fortune.', fame:' Ch
 function ambitionNudge(){
   if(!S || !S.ambition) return; const rb=ribbonDef(S.ambition); if(!rb) return;
   const st=ribbonStatus(rb);
-  if(st.q>=1){ if(!S._ambDone){ S._ambDone=true; pushLog(`🎯 <b>Ambition fulfilled — ${rb.icon} ${rb.name}!</b> You set out to earn it, and you did. <span style="color:var(--dim)">(legacy bonus secured)</span>`,[['echo','Ambition fulfilled']]); } return; }
+  if(st.q>=1){ if(!S._ambDone){ S._ambDone=true; fulfillAmbition(rb); } return; }
   const m=[90,75,50,25].find(x=>st.pct>=x);
   if(m && (S._ambMark||0)<m){ S._ambMark=m; pushLog(`🎯 <span style="color:var(--accent)">Ambition: ${rb.icon} ${rb.name}</span> — you're <b>${st.pct}%</b> of the way there.${ambHint(rb)}`,[['flag','Ambition progress']]); }
 }
+// Deeper ambition reward bundle (PURE — no RNG): a lasting legacy bonus, an honorific title, a commemorative heirloom, and a dynasty tally.
+const AMB_REWARD={ common:80, rare:160, epic:280, legendary:450 };
+function fulfillAmbition(rb){
+  (S.ambitionsFulfilled=S.ambitionsFulfilled||[]).push({ id:rb.id, name:rb.name, icon:rb.icon, gen:S.legacyGen||1, age:S.age, era:S.era });
+  S.honorific='the '+rb.name;   // an earned epithet, shown on the profile & gravestone
+  setFlag('fulfilled_ambition');
+  const fresh=grantHeirloom('Seal of the '+rb.name, rb.icon, 'honor');   // commemorative relic — carries across eras, adds legacy, shows in the Timeline
+  pushLog(`🎯 <b>Ambition fulfilled — ${rb.icon} ${rb.name}!</b> ${S.name.split(' ')[0]} is now known as <b>${S.name.split(' ')[0]} ${S.honorific}</b>.${fresh?` A commemorative seal joins the family heirlooms.`:''} <span style="color:var(--dim)">(+${AMB_REWARD[rb.rarity]||100} legacy)</span>`,[['echo',`🎯 ${rb.name}`]]);
+}
 function ribbonLegacyBonus(){ let s=0; const codex=S.ribbons||{}; const wt={common:8,rare:18,epic:40,legendary:90};
+  for(const a of (S.ambitionsFulfilled||[])){ const rb=ribbonDef(a.id); s += rb?(AMB_REWARD[rb.rarity]||100):100; }   // every fulfilled ambition is a lasting dynasty reward (Fix 3, deeper)
   for(const id in codex){ const rb=ribbonDef(id); if(rb) s+=(wt[rb.rarity]||10)*(codex[id].count||1); }
-  if(S.ambition){ const rb=ribbonDef(S.ambition); if(rb){ const st=ribbonStatus(rb); if(st.q>=1) s+=120; } }   // Ambition completion reward (Fix 3)
   return s; }
 /* ---- Ribbon codex + in-life progress tracker (Fix 2/5/6) ---- */
 function ribbonsView(){ if(!S){toast('Start a life first.');return;} closeModal();
@@ -2093,6 +2104,12 @@ function ribbonsView(){ if(!S){toast('Start a life first.');return;} closeModal(
     <div style="font-size:11px;letter-spacing:.5px;color:var(--gold,#f5c451);font-weight:800">🎯 LIFE AMBITION</div>
     <div style="font-weight:800;margin-top:3px">${amb.icon} ${amb.name} <span style="color:var(--dim);font-weight:600">· ${st.status==='earned'?'✓ achieved':st.pct+'%'}</span></div>
     <div class="bar" style="margin-top:5px"><i style="width:${st.pct}%;background:var(--gold,#f5c451)"></i></div></div>`; }
+  const ful=S.ambitionsFulfilled||[];
+  if(ful.length){ body+=`<div class="genlabel" style="margin:2px 0 6px">🏵️ Ambitions Fulfilled <span>${ful.length} across the dynasty</span></div>`
+    + ful.slice().reverse().map(a=>`<div style="display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)">
+        <span style="font-size:17px">${a.icon}</span>
+        <div style="flex:1"><div style="font-size:13px;font-weight:700">${a.name}</div>
+          <div style="font-size:11px;color:var(--dim)">Gen ${a.gen} · age ${a.age}${ERA_DEFS[a.era]?' · '+ERA_DEFS[a.era].displayName:''}</div></div></div>`).join(''); }
   const earnedCount=Object.keys(codex).length;
   body+=`<div class="genlabel" style="margin:2px 0 6px">Ribbon Codex <span>${earnedCount}/${RIBBONS.length} discovered</span></div>`;
   body+=list.map(rb=>{
@@ -4114,7 +4131,7 @@ function deathHub(){
       ${earned.length?`<div style="margin-top:5px;line-height:1.9">${earned.map(rb=>`<span class="tag echo">${rb.icon} ${rb.name}</span>`).join(' ')}</div>`:''}
       ${dr.eulogy?`<div style="font-style:italic;color:#cfd8e6;font-size:12px;margin-top:8px;line-height:1.5">${dr.eulogy}</div>`:''}</div>`;
   }
-  openModal({banner:'The End', title:`${S.name} · died at ${S.age}`, icon:'⚰️', closable:true,
+  openModal({banner:'The End', title:`${S.name}${S.honorific?', '+S.honorific:''} · died at ${S.age}`, icon:'⚰️', closable:true,
     text:`${legacyLine()}<br><br>${ribBlock}<div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-bottom:8px"><b style="color:var(--gold,#f5c451)">👑 Legacy Score: ${legacyScore().toLocaleString()}</b> · ${arch.icon} ${arch.name}<br><span style="color:var(--dim);font-size:12px">Generation ${S.legacyGen||1} — your line is ${arch.blurb}.</span></div>${heirs.length?`Your bloodline lives on. Carry the legacy through your children, `:`You left no heirs. `}${(!S.ghost&&!S.exorcised)?`refuse to rest as a ghost, `:''}or begin a brand-new life.`,
     choices});
 }
@@ -4165,7 +4182,7 @@ function continueAsHeir(id){
   // POLITICS dynasty — the heir inherits NAME RECOGNITION (and any family disgrace), not the office itself
   if(S.office){ if(!S.dynastyOffice || officeRank(S.office.tier)>=officeRank(S.dynastyOffice)){ S.dynastyOffice=S.office.tier; S.dynastyApproval=S.office.approval; } }
   const _dynImpeached = has('impeached')||has('dynasty_impeached');
-  S.alive=true; S.ghost=false; S.exorcised=false; S.hauntCount=0; S._died=false; S._deathRibbons=null; S._ambMark=0; S._ambDone=false; S._ambOpp=-99;   // RIBBONS: heir starts a fresh life (codex S.ribbons & ambition carry on; per-life nudge state resets)
+  S.alive=true; S.ghost=false; S.exorcised=false; S.hauntCount=0; S._died=false; S._deathRibbons=null; S._ambMark=0; S._ambDone=false; S._ambOpp=-99; S.honorific=null;   // RIBBONS: heir starts a fresh life (codex S.ribbons, ambition & fulfilled-tally carry on; per-life nudge state + honorific reset)
   S.stats={health:rng(78,100), happy:rng(70,95), smarts:rng(40,85), looks:rng(40,90)};
   S.genome = heir.genome || rollGenome(S.genome, null); applyGenomeToStats();   // GENETICS: the heir IS your child — your genes live on
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
@@ -4252,7 +4269,7 @@ function setTab(t){
 }
 function render(){
   if(!S || S._replaying)return;
-  document.getElementById('pname').textContent=`${COUNTRIES[S.country]?COUNTRIES[S.country].flag+' ':''}${S.name}`;
+  document.getElementById('pname').textContent=`${COUNTRIES[S.country]?COUNTRIES[S.country].flag+' ':''}${S.name}${S.honorific?', '+S.honorific:''}`;   // earned ambition epithet
   document.getElementById('page').textContent=`Age ${S.age}  ·  ${S.gender==='m'?'♂':'♀'}`;
   const moneyEl=document.getElementById('pmoney');
   moneyEl.textContent=(S.money<0?'-':'')+cur()+Math.abs(S.money).toLocaleString();
