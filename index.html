@@ -3700,8 +3700,10 @@ const SCHEDULED = {
     ]};},
 };
 
-let _samName=null;
-function samName(){ if(!_samName)_samName=pick(FIRST); return _samName; }
+// the new-next-door-kid's name, cached ON S (per-life) so it's deterministic across replays.
+// (A module-level cache here would persist between a live run and its replay in the same JS context,
+//  consuming RNG on the first run but not the replay → a stream fork. Keeping it on S fixes that.)
+function samName(){ if(S && !S._samName) S._samName=pick(FIRST); return (S&&S._samName)||'Sam'; }
 
 const DISASTERS=[
   {name:'Earthquake',icon:'🌍',desc:'The ground heaves and splits open'},
