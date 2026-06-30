@@ -1025,7 +1025,8 @@ function chronicleRole(){
 function chronicleRecord(name, gender){
   (S.chronicle=S.chronicle||[]).push({ gen:S.legacyGen||1, era:S.era, age:S.age,
     name:name||S.name, gender:gender||S.gender, role:chronicleRole(),
-    score:(typeof legacyScore==='function'?legacyScore():0), heirlooms:(S.heirlooms||[]).length });
+    score:(typeof legacyScore==='function'?legacyScore():0), heirlooms:(S.heirlooms||[]).length,
+    ribbon:(S._deathRibbons&&S._deathRibbons.headline)||null, ribbonCount:(S._deathRibbons&&S._deathRibbons.ids.length)||0 });
 }
 /* Cross-era heirlooms (P3+) — relics that survive era jumps and feed the legacy score. */
 function grantHeirloom(name, icon, kind){
@@ -1158,6 +1159,9 @@ function startLife(opts){
   S.dynastyYears = 0;     // total years lived across the whole dynasty — drives the world-clock (persists across heirs)
   S.chronicle = [];       // P3+: per-generation record for the Dynasty Timeline (pushed at each succession)
   S.heirlooms = [];       // P3+: relics that survive era jumps and feed legacy score
+  S.ribbons = {};         // RIBBONS: per-dynasty codex (id → {count,best,bestBy,bestGen}); persists across heirs
+  S.ambition = null;      // optional Life Ambition (a target ribbon id)
+  S._died = false;        // death-chokepoint guard (die() runs awardRibbons once)
   applyEraTheme(S.era);
   // Build a full, living family tree (grandparents → cousins → siblings)
   buildFamily(opts.gender);
@@ -1249,6 +1253,7 @@ function continueGame(){
     S.scenario=S.scenario||{key:null,completed:{}}; S.dynastyStats=S.dynastyStats||{officesWon:0,pandemics:0};   // SCENARIOS backfill
     if(!S.era || !ERA_DEFS[S.era]) S.era='modern'; if(!S.worldMode) S.worldMode='fixed'; applyEraTheme(S.era);   // ERA backfill
     if(!WORLD_PACE[S.worldPace]) S.worldPace='balanced'; if(S.startEraIndex==null) S.startEraIndex=ERA_ORDER.indexOf(S.era); if(S.dynastyYears==null) S.dynastyYears=S.age||0; if(!S.chronicle) S.chronicle=[]; if(!S.heirlooms) S.heirlooms=[];   // P3+ world-clock / chronicle / heirloom backfill
+    if(!S.ribbons) S.ribbons={}; if(S.ambition===undefined) S.ambition=null; if(S._died===undefined) S._died=!S.alive;   // RIBBONS backfill
     if(S.passportApp===undefined) S.passportApp=null;
     if(S.passportExpires===undefined) S.passportExpires = S.passport ? S.age+10 : null;   // grandfather older saves with a fresh 10-yr passport
     if(S.eduUntil===undefined||S.eduUntil===0) S.eduUntil = S.eduLevel==='primary'?12 : S.eduLevel==='high'?18 : S.eduLevel==='college'?(S.age+1) : 0;
@@ -1886,6 +1891,7 @@ function legacyScore(){ const a=legacyAxes();
     + Math.round((S.peakFame||0)*1.5)                   // the height of your fame is remembered
     + Object.keys((S.scenario&&S.scenario.completed)||{}).length*120   // beaten scenario challenges
     + heirloomLegacy()                                  // P3+: relics carried across the ages
+    + ribbonLegacyBonus()                               // RIBBONS: codex + ambition reward
     + (factScore(null,{inherited:true})||0) ); }
 function legacyView(){ if(!S){toast('Start a life first.');return;}
   logAct('call',{fn:'legacyView'}); const a=legacyAxes(), arch=legacyArchetype(), sc=legacyScore();
@@ -1903,6 +1909,7 @@ function legacyView(){ if(!S){toast('Start a life first.');return;}
     <p style="color:var(--dim);font-size:12px;margin-top:8px">However you build it — through good works, high office, vast wealth, or sheer infamy — your dynasty leaves a mark. The Legacy Score counts it all.</p></div>`;
   openModal({banner:'The Legacy', title:'👑 Your Dynasty', icon:'👑', closable:true,
     text:body, choices:[
+      {label:'🎗️ Ribbons', alt:true, fn:ribbonsView},
       {label:'📜 Dynasty Timeline', alt:true, fn:dynastyTimeline},
       {label:'🏆 Submit to Leaderboard', fn:()=>{ closeModal(); submitToLeaderboard(); }},
       {label:'📤 Share this Saga', alt:true, fn:()=>{ closeModal(); exportSaga(); }},
@@ -1946,6 +1953,166 @@ function dynastyTimeline(){ if(!S){toast('Start a life first.');return;} closeMo
   openModal({banner:'The Legacy', title:'📜 The Dynasty', icon:'📜', closable:true,
     text:body, choices:[{label:'‹ Back to Legacy', alt:true, fn:legacyView},{label:'Close', fn:closeModal}] });
 }
+/* ============================================================
+   RIBBONS (fan-driven design) — life summaries earned at death.
+   Award engine grants EVERY qualifying ribbon (full credit), with
+   ONE headline by priority. Live progress tracker, optional
+   Ambition, rarity tiers + dynasty records, combo/era/dynasty
+   ribbons. All PURE functions of S (no RNG) → replay-safe; the
+   per-dynasty codex (S.ribbons) rebuilds identically on replay.
+   ============================================================ */
+const RIBBON_RARITY={ common:{label:'Common',col:'#9aa6b8'}, rare:{label:'Rare',col:'#54b7ff'}, epic:{label:'Epic',col:'#b06bff'}, legendary:{label:'Legendary',col:'#f5c451'} };
+function _frac(v,t){ return t>0?Math.max(0,Math.min(1,v/t)):0; }
+function _scholarFrac(r){ return r.edu>=3?1 : r.edu>=2?(r.smarts>=88?1:0.7) : r.edu>=1?0.45:0.12; }
+// A pure snapshot of the life's metrics — every ribbon's q() reads ONLY this (deterministic).
+function lifeRecord(){
+  const nw=netWorth(), base=eraToBaseUnit(S.era);
+  const ppl=Object.values(S.people||{});
+  const kids=ppl.filter(p=>p.gen>=1).length;
+  const edu = has('graduated_college') ? ((typeof GRAD_SCHOOLS!=='undefined'&&GRAD_SCHOOLS.some(g=>hasGradDeg(g.deg)))?3:2) : (has('graduated_hs')?1:0);
+  const topOffice = S.office?officeRank(S.office.tier):(S.dynastyOffice?officeRank(S.dynastyOffice):-1);
+  const everOffice = (S.officeTerms&&Object.keys(S.officeTerms).length>0) || (typeof factScore==='function'&&factScore('office')>0) || !!S.dynastyOffice;
+  const uwRank = (S.underworld&&typeof S.underworld.rank==='number')?S.underworld.rank:-1;
+  const criminal = has('criminal') || uwRank>=0 || (S.underworld&&S.underworld.busts>0);
+  const married = has('married')||!!S.spouse;
+  const startIdx=(S.startEraIndex!=null?S.startEraIndex:ERA_ORDER.indexOf(S.era));
+  const famAlive=ppl.filter(p=>p.fam&&p.alive&&!p.pet);
+  return {
+    age:S.age, netWorth:nw, nwBase:Math.round(Math.max(nw,S.peakMoney||0)*base),
+    fame:Math.max(S.fame||0,S.peakFame||0), karma:S.karma||0, gen:S.legacyGen||1,
+    smarts:S.stats.smarts, looks:S.stats.looks, health:S.stats.health, happy:S.stats.happy,
+    kids, edu, topOffice, everOffice, uwRank, criminal, married,
+    faithful: married && !has('cheater_caught') && !has('divorced'),
+    bornRich:!!(S.birthOpts&&S.birthOpts.rich),
+    charity:factScore('charity'), crimeScore:factScore('crime')+factScore('violence'),
+    scandal:factScore('scandal'), triumph:factScore('triumph'),
+    eraIdx:ERA_ORDER.indexOf(S.era), startEraIdx:startIdx, worldTurned:ERA_ORDER.indexOf(S.era)>startIdx,
+    govForm:worldRules.govForm(), heirlooms:(S.heirlooms||[]).length,
+    ghost:has('became_ghost'),
+    famBondLow: famAlive.length>0 && famAlive.every(p=>(p.affinity||0)<25),
+  };
+}
+const RIBBONS=[
+  // Wealth
+  {id:'loaded', name:'Loaded', icon:'💰', rarity:'rare', priority:6, track:'maxNetWorth', desc:'Amass a million-strong fortune.', q:r=>_frac(r.nwBase,1e6)},
+  {id:'tycoon', name:'Tycoon', icon:'🤑', rarity:'legendary', priority:9, track:'maxNetWorth', desc:'Build a colossal 25M+ fortune.', q:r=>_frac(r.nwBase,25e6)},
+  // Fame
+  {id:'famous', name:'Famous', icon:'🌟', rarity:'rare', priority:6, track:'maxFame', desc:'Become a household name.', q:r=>_frac(r.fame,70)},
+  {id:'legend', name:'Living Legend', icon:'✨', rarity:'epic', priority:8, track:'maxFame', desc:'Reach the very pinnacle of fame.', q:r=>_frac(r.fame,95)},
+  // Crime
+  {id:'notorious', name:'Notorious', icon:'😈', rarity:'rare', priority:6, desc:'Leave a trail of crime behind you.', q:r=>_frac(r.crimeScore,40)},
+  {id:'kingpin', name:'Kingpin', icon:'🩸', rarity:'epic', priority:8, desc:'Rise to the top of the underworld.', q:r=>_frac(r.uwRank+1,5)},
+  // Mind
+  {id:'scholar', name:'Scholar', icon:'🎓', rarity:'rare', priority:5, desc:'Reach the heights of education.', q:r=>_scholarFrac(r)},
+  {id:'genius', name:'Genius', icon:'🧠', rarity:'epic', priority:6, desc:'Max out your intellect.', q:r=>_frac(r.smarts,99)},
+  // Power
+  {id:'powerful', name:'Powerful', icon:'🏛️', rarity:'epic', priority:7, desc:'Hold high public office.', q:r=>_frac(r.topOffice+1,4)},
+  {id:'sovereign', name:'Sovereign', icon:'👑', rarity:'legendary', priority:9, desc:'Reach the very top of power.', q:r=>r.topOffice>=5?1:_frac(r.topOffice+1,6)},
+  // Virtue
+  {id:'saintly', name:'Saintly', icon:'🕊️', rarity:'rare', priority:5, desc:'Live a life of generosity and grace.', q:r=>Math.min(_frac(r.karma,55),_frac(r.charity,18))},
+  {id:'devoted', name:'Devoted', icon:'💞', rarity:'rare', priority:5, desc:'One marriage, faithful to the end.', q:r=>r.faithful?1:(r.married?0.5:0)},
+  // Longevity & family
+  {id:'centenarian', name:'Centenarian', icon:'🎂', rarity:'epic', priority:4, track:'maxAge', desc:'Live to 100.', q:r=>_frac(r.age,100)},
+  {id:'matriarch', name:'Matriarch', icon:'👵', rarity:'rare', priority:4, track:'maxChildren', desc:'Grow old surrounded by a big family.', q:r=>Math.min(_frac(r.age,78),_frac(r.kids,3))},
+  {id:'estranged', name:'Estranged', icon:'💔', rarity:'rare', priority:3, secret:true, desc:'Die with every family bond in ruins.', q:r=>r.famBondLow?1:0},
+  // Vice
+  {id:'deviant', name:'Deviant', icon:'🍸', rarity:'common', priority:3, desc:'Court scandal and notoriety.', q:r=>_frac(r.scandal,25)},
+  // Combos (reward varied lives — Fix 8)
+  {id:'renaissance_soul', name:'Renaissance Soul', icon:'🎭', rarity:'legendary', priority:10, combo:true, desc:'Wealthy, learned AND famous — all in one life.', q:r=>Math.min(_frac(r.nwBase,1e6),_scholarFrac(r),_frac(r.fame,70))},
+  {id:'self_made_monarch', name:'Self-Made Monarch', icon:'🏆', rarity:'legendary', priority:10, combo:true, desc:'Born with nothing, died ruling — and rich.', q:r=>Math.min(r.bornRich?0:1,_frac(r.topOffice+1,6),_frac(r.nwBase,2e6))},
+  {id:'redemption', name:'Redemption', icon:'⛓️', rarity:'epic', priority:9, combo:true, desc:'A criminal who reformed and died loved.', q:r=>Math.min(r.criminal?1:0,_frac(r.karma,50),(r.kids>=1||r.married)?1:0)},
+  {id:'polymath_founder', name:'Polymath Founder', icon:'📜', rarity:'legendary', priority:9, combo:true, desc:'Highly educated, and founded a lasting line.', q:r=>Math.min(r.edu>=3?1:_scholarFrac(r),r.gen>=2?1:0,(r.heirlooms>0||r.nwBase>=5e5)?1:0)},
+  // Era & dynasty (Fix 9)
+  {id:'pioneer', name:'Pioneer', icon:'🧭', rarity:'epic', priority:7, desc:'Live to see the world turn to a new age.', q:r=>r.worldTurned?1:0},
+  {id:'conqueror', name:'Conqueror', icon:'⚔️', rarity:'epic', priority:8, desc:'Wield power in an age of empires.', q:r=>Math.min((r.govForm==='empire'||r.govForm==='monarchy')?1:0,_frac(r.topOffice+1,5),_frac(r.crimeScore,20))},
+  {id:'dynasty_legend', name:'Dynasty Legend', icon:'🏰', rarity:'legendary', priority:8, track:'maxGen', desc:'Carry the bloodline to a 5th generation.', q:r=>_frac(r.gen,5)},
+  // Luck-flavored, but with a real path (Fix 4) — secret so the live tracker never tells you to chase death
+  {id:'cut_short', name:'Cut Short', icon:'⏳', rarity:'rare', priority:2, secret:true, desc:'A life ended before its time.', q:r=>r.age<40?1:0},
+  {id:'restless', name:'Restless Spirit', icon:'👻', rarity:'epic', priority:6, secret:true, desc:'Refuse to rest — rise as a ghost.', q:r=>r.ghost?1:0},
+];
+function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
+function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen})[track]||0; }
+// Live status of a ribbon for the in-life tracker (Fix 2): earned/close/onTrack/locked + % + hint.
+function ribbonStatus(rb, r){ r=r||lifeRecord(); let q; try{ q=rb.q(r); }catch(e){ q=0; } q=Math.max(0,Math.min(1,q));
+  return { q, pct:Math.round(q*100), status: q>=1?'earned': q>=0.66?'close': q>=0.33?'onTrack':'locked' }; }
+// AWARD ENGINE — runs once at death (deterministic). Grants ALL qualifying ribbons; headline = highest priority.
+function awardRibbons(){
+  if(!S) return; const r=lifeRecord();
+  const earned=RIBBONS.filter(rb=>{ try{ return rb.q(r)>=1; }catch(e){ return false; } });
+  let headline=null; for(const rb of earned){ if(!headline||rb.priority>headline.priority||(rb.priority===headline.priority&&rb.combo&&!headline.combo)) headline=rb; }
+  S.ribbons=S.ribbons||{};
+  for(const rb of earned){ const c=S.ribbons[rb.id]||(S.ribbons[rb.id]={count:0,best:0,bestBy:'',bestGen:0});
+    c.count++; if(rb.track){ const v=_ribRecordVal(rb.track,r); if(v>(c.best||0)){ c.best=v; c.bestBy=S.name; c.bestGen=r.gen; } } }
+  S._deathRibbons={ ids:earned.map(rb=>rb.id), headline:headline?headline.id:'ordinary', eulogy:_eulogy(r,earned,headline) };
+  return S._deathRibbons;
+}
+// Deterministic, grounded eulogy (Fix 10 adapted — templated from real Ledger facts, no nondeterministic AI / no RNG).
+function _eulogy(r, earned, headline){
+  const fact=(S.ledger||[]).filter(f=>f.note && decayedSev(f)>=10).sort((a,b)=>decayedSev(b)-decayedSev(a))[0];
+  const opens=['They came into the world','A life began','The story opened'];
+  const open=opens[(r.gen+r.age)%opens.length];
+  let s=`${open} and ran ${r.age} years`;
+  s+= r.gen>1?`, the ${_ord(r.gen)} of the line.`:`.`;
+  if(headline) s+=` Above all, ${S.name.split(' ')[0]} will be remembered as ${_artFor(headline.name)} <b>${headline.name}</b>.`;
+  if(fact) s+=` History records: ${fact.note}`;
+  const hi = r.nwBase>=1e6?'a fortune amassed' : r.fame>=70?'a name on every tongue' : r.karma>=55?'a kind heart' : r.crimeScore>=40?'a fearsome reputation' : r.kids>=3?'a houseful of children' : r.edu>=3?'a brilliant mind' : 'a quiet, ordinary grace';
+  s+=` What endured: ${hi}.`;
+  if(earned.length>1) s+=` ${earned.length} ribbons earned in one lifetime.`;
+  return s;
+}
+function _ord(n){ return n+({1:'st',2:'nd',3:'rd'}[n%10>3||(n%100>=11&&n%100<=13)?0:n%10]||'th'); }
+function _artFor(w){ return /^[aeiou]/i.test(w)?'an':'a'; }
+function ribbonLegacyBonus(){ let s=0; const codex=S.ribbons||{}; const wt={common:8,rare:18,epic:40,legendary:90};
+  for(const id in codex){ const rb=ribbonDef(id); if(rb) s+=(wt[rb.rarity]||10)*(codex[id].count||1); }
+  if(S.ambition){ const rb=ribbonDef(S.ambition); if(rb){ const st=ribbonStatus(rb); if(st.q>=1) s+=120; } }   // Ambition completion reward (Fix 3)
+  return s; }
+/* ---- Ribbon codex + in-life progress tracker (Fix 2/5/6) ---- */
+function ribbonsView(){ if(!S){toast('Start a life first.');return;} closeModal();
+  const r=lifeRecord(); const codex=S.ribbons||{};
+  const order={legendary:0,epic:1,rare:2,common:3};
+  const list=RIBBONS.slice().sort((a,b)=>(order[a.rarity]-order[b.rarity])||(b.priority-a.priority));
+  const amb=S.ambition?ribbonDef(S.ambition):null;
+  let body=`<div style="text-align:left">`;
+  if(amb){ const st=ribbonStatus(amb,r); body+=`<div style="background:rgba(245,196,81,.12);border:1px solid var(--gold,#f5c451);border-radius:10px;padding:9px 11px;margin-bottom:10px">
+    <div style="font-size:11px;letter-spacing:.5px;color:var(--gold,#f5c451);font-weight:800">🎯 LIFE AMBITION</div>
+    <div style="font-weight:800;margin-top:3px">${amb.icon} ${amb.name} <span style="color:var(--dim);font-weight:600">· ${st.status==='earned'?'✓ achieved':st.pct+'%'}</span></div>
+    <div class="bar" style="margin-top:5px"><i style="width:${st.pct}%;background:var(--gold,#f5c451)"></i></div></div>`; }
+  const earnedCount=Object.keys(codex).length;
+  body+=`<div class="genlabel" style="margin:2px 0 6px">Ribbon Codex <span>${earnedCount}/${RIBBONS.length} discovered</span></div>`;
+  body+=list.map(rb=>{
+    const c=codex[rb.id]; const everEarned=c&&c.count>0; const st=ribbonStatus(rb,r);
+    const hidden=rb.secret&&!everEarned&&st.q<1;
+    const rc=RIBBON_RARITY[rb.rarity];
+    if(hidden) return `<div class="platrow" style="opacity:.6;cursor:default"><div class="picon" style="background:#222b37">❓</div>
+      <div class="pinfo"><div class="pn">??? <span style="font-size:10px;color:${rc.col}">${rc.label}</span></div><div class="pf">A secret ribbon — discover it through play.</div></div></div>`;
+    const badge = st.status==='earned'?`<span style="color:var(--good);font-weight:800">✓ qualifying</span>`
+      : st.status==='close'?`<span style="color:var(--warn)">${st.pct}% · close</span>`
+      : st.status==='onTrack'?`<span style="color:var(--accent)">${st.pct}%</span>`
+      : `<span style="color:var(--dim)">${st.pct}%</span>`;
+    const rec = (c&&rb.track&&c.best>0)?` · record ${_fmtRec(rb.track,c.best)} (Gen ${c.bestGen})`:'';
+    const cnt = everEarned?` · earned ${c.count}×`:'';
+    return `<div class="platrow" style="cursor:default"><div class="picon" style="background:linear-gradient(135deg,${rc.col}33,#1b222d)">${rb.icon}</div>
+      <div class="pinfo"><div class="pn">${rb.name} <span style="font-size:10px;color:${rc.col};font-weight:800">${rc.label}</span></div>
+        <div class="pf">${rb.desc}${cnt}${rec}</div>
+        ${!rb.secret||st.q>0?`<div class="bar" style="margin-top:5px;height:5px"><i style="width:${st.pct}%;background:${rc.col}"></i></div>`:''}
+        <div class="pf" style="margin-top:3px">${badge}</div></div></div>`;
+  }).join('');
+  body+=`</div>`;
+  openModal({banner:'Legacy', title:'🎗️ Ribbons', icon:'🎗️', closable:true, text:body,
+    choices:[{label:S.ambition?'🎯 Change Ambition':'🎯 Set a Life Ambition', alt:true, fn:chooseAmbition},{label:'‹ Back to Legacy', alt:true, fn:legacyView},{label:'Close', fn:closeModal}]});
+}
+function _fmtRec(track,v){ if(track==='maxNetWorth') return '⊙'+(v>=1e6?(v/1e6).toFixed(1)+'M':Math.round(v/1000)+'k'); if(track==='maxAge')return v+' yrs'; if(track==='maxChildren')return v+' kids'; if(track==='maxFame')return v+' fame'; if(track==='maxGen')return 'Gen '+v; return ''+v; }
+/* ---- Optional Life Ambition (Fix 3) — declare a target; still EARNED through play ---- */
+function chooseAmbition(){ closeModal();
+  const r=lifeRecord(); const order={legendary:0,epic:1,rare:2,common:3};
+  const pickable=RIBBONS.filter(rb=>!rb.secret).sort((a,b)=>(order[a.rarity]-order[b.rarity]));
+  const choices=pickable.slice(0,9).map(rb=>({label:`${rb.icon} ${rb.name}`, tip:rb.desc, alt:true, fn:()=>setAmbition(rb.id)}));
+  if(S.ambition) choices.push({label:'✖ Clear ambition', fn:()=>setAmbition(null)});
+  choices.push({label:'‹ Back', fn:ribbonsView});
+  openModal({banner:'Ambition', title:'🎯 Choose a Life Ambition', icon:'🎯', closable:true,
+    text:`Declare a ribbon to strive for. The game will surface chances to earn it — but you still have to <b>earn it through how you live</b>. There's a legacy reward if you fulfil it.`, choices});
+}
+function setAmbition(id){ S.ambition=id||null; ribbonsView(); }   // modalpick-reached → no logAct (replay re-runs the pick deterministically)
 // SECRETS — private Ledger facts (affairs, hidden crimes) that can be discovered or blackmailed
 function secrets(){ const cg=S.legacyGen||1; return (S.ledger||[]).filter(f=>!f.pub && f.gen===cg
   && ['scandal','crime','violence','betrayal'].includes(f.t) && decayedSev(f)>=15 && !f.exposed); }
@@ -3571,9 +3738,7 @@ function ageUp(){
   // if you die this year, no random event is picked (death is the year's event), so the
   // ghost/death modal never collides with a dangling pending event (a replay-safety fix).
   if(S.stats.health<=0 || S.age>=Math.max(35,(hasLongevity()?99:92)+worldRules.lifeExpMod())){    // era life-expectancy + longevity genes set the natural cap
-    S.alive=false; haptics.heavy();   // the big, irreversible moment
-    pushLog(`<b>${S.name} has died at ${S.age}.</b> ${legacyLine()}`);
-    setTab('life'); offerGhost(); return;
+    die(); return;   // the big, irreversible moment — ribbons awarded inside die()
   }
 
   // 1) fire any scheduled (deferred) consequence due this year
@@ -3615,7 +3780,7 @@ function choose(i){
   const res=ch.apply();
   pushLog(`<b>${pending.title}.</b> ${res.text}`, res.tags);
   pending=null; closeModal();
-  if(S.stats.health<=0){S.alive=false;pushLog(`<b>${S.name} has died at ${S.age}.</b> ${legacyLine()}`); setTab('life'); offerGhost(); return;}
+  if(S.stats.health<=0){ die(); return; }
   setTab('life');
 }
 /* Re-run a life from its creation inputs + action tape. The server uses this headless to
@@ -3845,17 +4010,36 @@ function legacyLine(){
 function isLocked(){ return S && !S.alive && !S.ghost; }
 function aliveHeirs(){ return S?Object.values(S.people).filter(p=>p.fam&&p.alive&&!p.pet&&(p.gen>=1)):[]; }
 // the central end-of-life screen — your only ways forward
+// Single death chokepoint — idempotent. Awards ribbons (deterministic) at the moment of death, then opens the death hub.
+function die(){
+  if(!S || S._died) return;
+  S._died=true; S.alive=false; if(typeof haptics!=='undefined') haptics.heavy();
+  awardRibbons();
+  pushLog(`<b>${S.name} has died at ${S.age}.</b> ${legacyLine()}`);
+  const dr=S._deathRibbons; const hrb=dr&&ribbonDef(dr.headline);
+  if(hrb) pushLog(`🎗️ Life ribbon: <b>${hrb.icon} ${hrb.name}</b>${dr.ids.length>1?` <span style="color:var(--dim)">(+${dr.ids.length-1} more earned)</span>`:''}.`,[['echo',hrb.name]]);
+  setTab('life'); offerGhost();
+}
 function offerGhost(){ deathHub(); }
 function deathHub(){
   const heirs=aliveHeirs();
   const choices=[];
   if(heirs.length) choices.push({label:`👶 Continue as your child (${heirs.length})`, tip:'Play on as your heir — The Legacy', fn:chooseHeir});
+  const dr=S._deathRibbons;
+  if(dr && dr.ids.length) choices.push({label:`🎗️ Ribbons earned (${dr.ids.length})`, tip:'See this life\'s ribbons & the codex', alt:true, fn:ribbonsView});
   choices.push({label:'🏆 Submit to Leaderboard', tip:'Verified by replay — make the board', alt:true, fn:()=>{ closeModal(); submitToLeaderboard(); }});
   if(!S.ghost && !S.exorcised) choices.push({label:'👻 Haunt the living', tip:'Linger as a ghost — but they may exorcise you', alt:true, fn:becomeGhost});
   choices.push({label:'🌱 Start a New Life', alt:true, fn:()=>{ closeModal(); resetLife(true); }});
   const arch=legacyArchetype();
+  let ribBlock='';
+  if(dr){ const hrb=ribbonDef(dr.headline); const earned=dr.ids.map(ribbonDef).filter(Boolean);
+    ribBlock=`<div style="background:rgba(245,196,81,.08);border:1px solid rgba(245,196,81,.4);border-radius:8px;padding:8px 10px;margin-bottom:8px">
+      ${hrb?`<div><b style="color:var(--gold,#f5c451)">🎗️ ${hrb.icon} ${hrb.name}</b> <span style="color:var(--dim);font-size:11px">— headline: your highest-priority ribbon this life</span></div>`:`<div style="color:var(--dim)">🎗️ A life lived — no ribbon this time.</div>`}
+      ${earned.length?`<div style="margin-top:5px;line-height:1.9">${earned.map(rb=>`<span class="tag echo">${rb.icon} ${rb.name}</span>`).join(' ')}</div>`:''}
+      ${dr.eulogy?`<div style="font-style:italic;color:#cfd8e6;font-size:12px;margin-top:8px;line-height:1.5">${dr.eulogy}</div>`:''}</div>`;
+  }
   openModal({banner:'The End', title:`${S.name} · died at ${S.age}`, icon:'⚰️', closable:true,
-    text:`${legacyLine()}<br><br><div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-bottom:8px"><b style="color:var(--gold,#f5c451)">👑 Legacy Score: ${legacyScore().toLocaleString()}</b> · ${arch.icon} ${arch.name}<br><span style="color:var(--dim);font-size:12px">Generation ${S.legacyGen||1} — your line is ${arch.blurb}.</span></div>${heirs.length?`Your bloodline lives on. Carry the legacy through your children, `:`You left no heirs. `}${(!S.ghost&&!S.exorcised)?`refuse to rest as a ghost, `:''}or begin a brand-new life.`,
+    text:`${legacyLine()}<br><br>${ribBlock}<div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-bottom:8px"><b style="color:var(--gold,#f5c451)">👑 Legacy Score: ${legacyScore().toLocaleString()}</b> · ${arch.icon} ${arch.name}<br><span style="color:var(--dim);font-size:12px">Generation ${S.legacyGen||1} — your line is ${arch.blurb}.</span></div>${heirs.length?`Your bloodline lives on. Carry the legacy through your children, `:`You left no heirs. `}${(!S.ghost&&!S.exorcised)?`refuse to rest as a ghost, `:''}or begin a brand-new life.`,
     choices});
 }
 function chooseHeir(){
@@ -3905,7 +4089,7 @@ function continueAsHeir(id){
   // POLITICS dynasty — the heir inherits NAME RECOGNITION (and any family disgrace), not the office itself
   if(S.office){ if(!S.dynastyOffice || officeRank(S.office.tier)>=officeRank(S.dynastyOffice)){ S.dynastyOffice=S.office.tier; S.dynastyApproval=S.office.approval; } }
   const _dynImpeached = has('impeached')||has('dynasty_impeached');
-  S.alive=true; S.ghost=false; S.exorcised=false; S.hauntCount=0;
+  S.alive=true; S.ghost=false; S.exorcised=false; S.hauntCount=0; S._died=false; S._deathRibbons=null;   // RIBBONS: heir starts a fresh life (codex S.ribbons & ambition carry on)
   S.stats={health:rng(78,100), happy:rng(70,95), smarts:rng(40,85), looks:rng(40,90)};
   S.genome = heir.genome || rollGenome(S.genome, null); applyGenomeToStats();   // GENETICS: the heir IS your child — your genes live on
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
@@ -6548,7 +6732,7 @@ function ofMeetWhale(id){ const w=ofWhale(id); if(!w)return;
     text:`${w.name} has spent <b>${cur()}${Math.round(w.spent).toLocaleString()}</b> on you and is begging to meet in person — for serious money. You never really know who's behind the screen, though.`,
     choices:[
       {label:'Meet them for the right price', alt:true, fn:()=>{ closeModal(); const r=ofFanMeet(w.name,true); if(r&&r.text){ pushLog(r.text, r.tags||[]); } w.spent+=rng(500,3000);
-        if(S.stats.health<=0){ S.alive=false; pushLog(`<b>${S.name} has died at ${S.age}.</b> ${legacyLine()}`); setTab('life'); offerGhost(); return; }
+        if(S.stats.health<=0){ die(); return; }
         resultModal('FanVault', w.name, '🤝', [r?r.text:'You met them.'], ()=>setTab('social')); }},
       {label:'Keep it online — take the gift', fn:()=>{ closeModal(); const r=ofFanMeet(w.name,false); if(r&&r.text) pushLog(r.text,r.tags||[]); resultModal('FanVault', w.name, '💸', [r?r.text:'They sent a gift.'], ()=>setTab('social')); }},
     ]});
