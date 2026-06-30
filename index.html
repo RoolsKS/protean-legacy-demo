@@ -4616,7 +4616,7 @@ function personAction(id,action){
   pushLog(`I ${verb} ${p.name}.`,[['rel',`${p.name}: ${relStatus(p)}`]]);
   const col=pbColor(p.affinity);
   const arrow = p.affinity>before?' ▲':p.affinity<before?' ▼':'';
-  resultModal('Relationship', p.name, '👤', [...lines, `<div class="relbars" style="margin-top:8px">${pbar('Relationship'+arrow,p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}</div>`], ()=>setTab('people'));
+  resultModal('Relationship', p.name, '👤', [...lines, `<div class="relbars" style="margin-top:8px">${pbar('Relationship'+arrow,p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}</div>`], ()=>openPerson(id));   // stay on the person to keep interacting
 }
 
 /* ============================================================
@@ -4753,12 +4753,12 @@ function marriageCounseling(id){ const p=S.people[id]; if(!p||!p.romantic){close
   const cost=rng(800,3500); if(!spend(cost)){ resultModal('Counseling','Can’t Afford It','🛋️',[`Counseling runs ${cur()}${cost.toLocaleString()} and you’re short.`],()=>setTab('people')); return; }
   ensureSpark(p); const ok=rng(0,100)<55+npcDial(p,'warmth')/5; p.spark=clamp(p.spark+(ok?rng(10,20):rng(2,7))); rel(id,+(ok?5:2),+(ok?4:1),'You worked on the marriage together.');
   pushLog(`🛋️ ${p.name} and I went to <b>marriage counseling</b>.`,[['good','Marriage counseling']]);
-  resultModal('Counseling','Working On It 🛋️','🛋️',[`You and ${p.name} put in the work (${cur()}${cost.toLocaleString()}).`, ok?`It really helped — the spark is coming back. 💞`:`Small steps. It's a start.`, `Spark: <b>${sparkBand(p.spark).l}</b>.`],()=>setTab('people')); }
+  resultModal('Counseling','Working On It 🛋️','🛋️',[`You and ${p.name} put in the work (${cur()}${cost.toLocaleString()}).`, ok?`It really helped — the spark is coming back. 💞`:`Small steps. It's a start.`, `Spark: <b>${sparkBand(p.spark).l}</b>.`],()=>openPerson(id)); }
 function renewVows(id){ const p=S.people[id]; if(!p||!p.romantic){closeModal();return;} closeModal();   // modalpick-covered
   const cost=rng(2000,20000); if(!spend(cost)){ toast('You can’t afford a vow renewal.'); return; }
   ensureSpark(p); p.spark=clamp(p.spark+rng(8,16)); rel(id,+8,+6,'You renewed your vows.'); chg('happy',8); ledgerAdd('bond',18,{who:p.id,note:`Renewed your vows with ${p.name}.`});
   pushLog(`💍 ${p.name} and I <b>renewed our vows</b> — a celebration of the years.`,[['good','Renewed vows']]);
-  resultModal('Vow Renewal','💞 Forever, Again','💞',[`You and ${p.name} stood together again and renewed your promises.`,`The whole family came. The spark is <b>${sparkBand(p.spark).l}</b>.`],()=>setTab('people')); }
+  resultModal('Vow Renewal','💞 Forever, Again','💞',[`You and ${p.name} stood together again and renewed your promises.`,`The whole family came. The spark is <b>${sparkBand(p.spark).l}</b>.`],()=>openPerson(id)); }
 function willHeir(){
   if(!S){ toast('Start a life first.'); return; } closeMenu();
   const kids=Object.values(S.people).filter(p=>p.fam&&p.alive&&!p.pet&&p.gen>=1);
@@ -5332,7 +5332,7 @@ function buyLotto(n){ const cost=n*2; if(!spend(cost))return;
   S.lottoTickets=S.lottoTickets||[]; for(let i=0;i<n;i++) S.lottoTickets.push(lottoDraw());
   const tot=S.lottoTickets.length;
   pushLog(`I bought ${n} lottery ticket${n>1?'s':''} (${cur()}${cost.toLocaleString()}) for the ${fcm(S.lottoJackpot||LOTTO_BASE)} jackpot. 🎟️`,[['flag','Bought lottery tickets']]);
-  resultModal('Lottery','Tickets Bought','🎟️',[`You bought <b>${n}</b> quick-pick ticket${n>1?'s':''} for ${cur()}${cost.toLocaleString()}.`,`The draw is at the end of the year — good luck! 🍀 You now hold <b>${tot}</b> ticket${tot>1?'s':''}.`],()=>setTab('life')); }
+  resultModal('Lottery','Tickets Bought','🎟️',[`You bought <b>${n}</b> quick-pick ticket${n>1?'s':''} for ${cur()}${cost.toLocaleString()}.`,`The draw is at the end of the year — good luck! 🍀 You now hold <b>${tot}</b> ticket${tot>1?'s':''}.`],()=>lottery()); }
 function lotteryYear(){
   S.lottoJackpot = (S.lottoJackpot||LOTTO_BASE) + rng(400000,3500000);   // the pot rolls over & grows each year
   const tickets=S.lottoTickets||[]; let jackpotYou=false;
@@ -5456,8 +5456,8 @@ function agendaFocus(){ const off=S.office; closeModal();
 }
 function givePoliticalSpeech(){ const off=S.office; closeModal();   /* reached via the office modal → modalpick covers it, no logAct */
   const issue=pick(off.agenda); const win=rng(0,100) < (45+S.stats.looks*0.3+S.stats.smarts*0.2);
-  if(win){ off.approval=clamp(off.approval+rng(3,8)); pushLog(`🎤 I gave a rousing speech on <b>${issue.name}</b> — my approval climbed.`,[['good','Great speech']]); resultModal('Politics','Standing Ovation 🎤','🎤',[`Your speech on <b>${issue.name}</b> landed beautifully.`,`Approval up to ${off.approval}%.`],()=>setTab('life')); }
-  else { off.approval=clamp(off.approval-rng(1,5)); pushLog(`🎤 My speech on ${issue.name} fell flat.`,[['bad','Flat speech']]); resultModal('Politics','Crickets 🦗','🦗',[`Your speech on <b>${issue.name}</b> didn't connect.`,`Approval slipped to ${off.approval}%.`],()=>setTab('life')); }
+  if(win){ off.approval=clamp(off.approval+rng(3,8)); pushLog(`🎤 I gave a rousing speech on <b>${issue.name}</b> — my approval climbed.`,[['good','Great speech']]); resultModal('Politics','Standing Ovation 🎤','🎤',[`Your speech on <b>${issue.name}</b> landed beautifully.`,`Approval up to ${off.approval}%.`],()=>politicsOffice()); }
+  else { off.approval=clamp(off.approval-rng(1,5)); pushLog(`🎤 My speech on ${issue.name} fell flat.`,[['bad','Flat speech']]); resultModal('Politics','Crickets 🦗','🦗',[`Your speech on <b>${issue.name}</b> didn't connect.`,`Approval slipped to ${off.approval}%.`],()=>politicsOffice()); }
 }
 function impeach(reason){ const off=S.office; if(!off)return; keyMoment(off,'impeached',-85,`Impeached: ${reason}.`); setFlag('impeached'); chg('happy',-15);
   ledgerAdd('scandal', 90, {note:`Impeached and removed as ${off.title} — ${reason}.`});   // a stain that haunts the dynasty
@@ -5697,7 +5697,7 @@ function interactCeleb(id,action){
     const lab={acquaintance:'met',friend:'became friends with',dating:'started dating',spouse:'married'}[c.rel]||'spent time with';
     pushLog(`I ${lab} <b>${c.name}</b>${c.rel==='spouse'?' 💍':c.rel==='dating'?' 💘':''}.`,[['rel',`${c.name}: ${c.rel}`]]);
   } else pushLog(`I spent time with ${c.name}.`,[['flag',`${c.name}: closeness ${c.affinity}`]]);
-  resultModal('Celebrity', c.name, '⭐', [msg, `Closeness with ${c.name}: ${c.affinity}/100.`], ()=>setTab('life'));
+  resultModal('Celebrity', c.name, '⭐', [msg, `Closeness with ${c.name}: ${c.affinity}/100.`], ()=>setTab('stars'));
 }
 
 function renderStars(){
@@ -6178,7 +6178,7 @@ function post(type){
     `❤ ${fc(likes)}${dislikes?` · 👎 ${fc(dislikes)}`:''}${pay?` · +${cur()}${pay.toLocaleString()}`:''}`];
   if(ofStarved) lines.push(`😬 Barely any new subs — <b>FanVault grows off your other platforms</b>. Build Instagram/X first, or you're wasting your time.`);
   if(celebReact) lines.push(celebReact);
-  resultModal('Social', dl.name, c.icon, lines, ()=>setTab('life'));
+  resultModal('Social', dl.name, c.icon, lines, ()=>setTab('social'));
 }
 function celebPic(id){
   const c=S.celebs[id]; if(!c||!c.met)return;
@@ -6187,7 +6187,7 @@ function celebPic(id){
   const boost=Math.round(totalFollowers()*0.05)+c.fame*rng(200,1200);
   bumpFollowers(boost); eachSent(+4); c.affinity=clamp(c.affinity+rng(2,6));
   pushLog(`I posted a pic with <b>${c.name}</b> — +${fc(boost)} followers! 📸`,[['good',`+${fc(boost)} followers`]]);
-  resultModal('Social', `Pic with ${c.name}`, '📸', [`I snapped a photo with ${c.name} and posted it!`, `The internet ate it up — <b>+${fc(boost)}</b> followers.`], ()=>setTab('life'));
+  resultModal('Social', `Pic with ${c.name}`, '📸', [`I snapped a photo with ${c.name} and posted it!`, `The internet ate it up — <b>+${fc(boost)}</b> followers.`], ()=>setTab('social'));
 }
 // network at a creator meetup — you can only realistically meet creators near (or a bit above) your size
 function ytMeetup(){
@@ -6237,20 +6237,20 @@ function ytCollab(){
     const loss=Math.round(yt.followers*rng(3,10)/100);
     yt.followers=Math.max(0,yt.followers-loss); yt.sentiment=clamp((yt.sentiment||0)-rng(8,18),-100,100);
     pushLog(`I collabed with <b>${y.name}</b>, but they got caught in a scandal — I lost ${fc(loss)} subs by association. 💀`,[['bad',`−${fc(loss)} subs`]]);
-    resultModal('Social','Collab Backfired','💀',[`I collabed with <b>${y.name}</b> — but they have a bad reputation right now.`,`The scandal rubbed off on me — <b>−${fc(loss)}</b> subscribers.`],()=>setTab('life'));
+    resultModal('Social','Collab Backfired','💀',[`I collabed with <b>${y.name}</b> — but they have a bad reputation right now.`,`The scandal rubbed off on me — <b>−${fc(loss)}</b> subscribers.`],()=>setTab('social'));
     return;
   }
   const gain=Math.round(Math.min(y.subs*0.04, mySubs*1.5+5000)+rng(500,5000));
   yt.followers+=gain; yt.sentiment=clamp((yt.sentiment||0)+3,-100,100);
   pushLog(`I collabed with YouTuber <b>${y.name}</b> (${fc(y.subs)} subs). +${fc(gain)} subscribers! 🤝`,[['good',`+${fc(gain)} subs`]]);
-  resultModal('Social', `Collab: ${y.name}`, '🤝', [`I made a video with <b>${y.name}</b> (${fc(y.subs)} subscribers)!`, `Their fans checked me out — <b>+${fc(gain)}</b> subscribers.`], ()=>setTab('life'));
+  resultModal('Social', `Collab: ${y.name}`, '🤝', [`I made a video with <b>${y.name}</b> (${fc(y.subs)} subscribers)!`, `Their fans checked me out — <b>+${fc(gain)}</b> subscribers.`], ()=>setTab('social'));
 }
 function merchDrop(plat){
   if(plat.followers<5000){ toast('Need ~5K followers to sell merch.'); return; }
   const sm=S.sm; sm.postsThisYear++;
   const earn=Math.round(plat.followers*rng(3,12)/100)+rng(100,2000); money(earn); plat.sentiment=clamp((plat.sentiment||0)-2,-100,100);
   pushLog(`I dropped a merch line on ${PLAT_DEF[plat.key].name} and made ${cur()}${earn.toLocaleString()}. 👕`,[['good',`+${cur()}${earn.toLocaleString()}`]]);
-  resultModal('Social','Merch Drop','👕',[`I launched merch to my ${fc(plat.followers)} ${PLAT_DEF[plat.key].label}.`,`Sold out — <b>+${cur()}${earn.toLocaleString()}</b>!`],()=>setTab('life'));
+  resultModal('Social','Merch Drop','👕',[`I launched merch to my ${fc(plat.followers)} ${PLAT_DEF[plat.key].label}.`,`Sold out — <b>+${cur()}${earn.toLocaleString()}</b>!`],()=>setTab('social'));
 }
 function crossPromote(plat){
   const sm=S.sm; sm.postsThisYear++;
@@ -6258,7 +6258,7 @@ function crossPromote(plat){
   let boosted=0;
   others.forEach(o=>{ const b=Math.round(plat.followers*0.03)+rng(30,400); o.followers+=b; boosted+=b; });
   pushLog(`I cross-promoted my channels on ${PLAT_DEF[plat.key].name}. +${fc(boosted)} followers across platforms.`,[['good',`+${fc(boosted)} followers`]]);
-  resultModal('Social','Cross-Promote','📣',[`I plugged my other channels on ${PLAT_DEF[plat.key].name}.`,`+${fc(boosted)} followers spread across my other platforms.`],()=>setTab('life'));
+  resultModal('Social','Cross-Promote','📣',[`I plugged my other channels on ${PLAT_DEF[plat.key].name}.`,`+${fc(boosted)} followers spread across my other platforms.`],()=>setTab('social'));
 }
 
 /* ============================================================
@@ -6550,13 +6550,13 @@ function askPromotion(){
   const chance=10 + (S.jobPerf||50)/4 + S.stats.smarts/9 - j.level*5 - pester*14;
   if(rng(0,100) < chance){
     promote();
-    resultModal('Job','You Got the Promotion!','📈',[`You walked into the boss's office and made your case — and it worked.`,`You're now <b>${jobTitle(j)}</b> · ${cur()}${j.salary.toLocaleString()}/yr.`],()=>setTab('life'));
+    resultModal('Job','You Got the Promotion!','📈',[`You walked into the boss's office and made your case — and it worked.`,`You're now <b>${jobTitle(j)}</b> · ${cur()}${j.salary.toLocaleString()}/yr.`],()=>setTab('job'));
   } else {
     j.promo=clamp((j.promo||0)+rng(3,9),0,99);   // even a "no" nudges you closer
     let line=`Not this time — the boss says to keep it up.`, tags=[['flag','Asked for a raise']];
     if(pester>=2){ S.jobPerf=clamp((S.jobPerf||50)-rng(4,11)); line=`The boss is getting tired of you asking — it's hurting how they see you.`; tags=[['bad','Boss annoyed']]; }
     pushLog(`I asked the boss for a promotion. ${pester>=2?'They were not impressed. 😬':'Not yet — but I planted the seed.'}`,tags);
-    resultModal('Job','Asked the Boss','💼',[line,`Promotion progress: ${j.promo}/100.`],()=>setTab('life'));
+    resultModal('Job','Asked the Boss','💼',[line,`Promotion progress: ${j.promo}/100.`],()=>setTab('job'));
   }
 }
 /* ---- Sleeping your way up — charm the boss, get used, or get reported (18+) ---- */
@@ -6908,7 +6908,7 @@ function bizAction(kind){ const b=S.business; if(!b)return; logAct('call',{fn:'b
 }
 function workHarder(){ if(!S.job)return; logAct('call',{fn:'workHarder'}); S.jobPerf=clamp((S.jobPerf||50)+rng(5,12)); chg('happy',-2); chg('smarts',1);
   pushLog(`I put in extra hours at work. Performance up.`,[['good',`Performance: ${S.jobPerf}/100`]]);
-  resultModal('Job','Hard at Work','💼',[`I went above and beyond this year.`,`Performance now ${S.jobPerf}/100 — better promotion odds.`],()=>setTab('life')); }
+  resultModal('Job','Hard at Work','💼',[`I went above and beyond this year.`,`Performance now ${S.jobPerf}/100 — better promotion odds.`],()=>setTab('job')); }
 function quitJob(){ if(!S.job)return; if(!(S&&S._replaying) && typeof confirm==='function' && !confirm('Quit your job?'))return;
   logAct('call',{fn:'quitJob'});
   pushLog(`I quit my job as ${jobTitle(S.job)}.`,[['flag','Quit job']]); S.job=null; clearCoworkers(); setTab('life'); }
@@ -7279,7 +7279,7 @@ function studyHarder(){
   logAct('call',{fn:'studyHarder'});
   S.grades=clamp(S.grades+rng(4,9)); chg('smarts',rng(1,3)); chg('happy',-rng(1,3));
   pushLog(`I put my nose in the books and studied my ${S.eduLevel} work for extra hours.`,[['good',`Grades: ${S.grades}/100`]]);
-  resultModal('Education','Nose in the Books','📚',[`I studied hard.`,`Grades now ${S.grades}/100 · +Smarts, −a little fun.`],()=>setTab('life'));
+  resultModal('Education','Nose in the Books','📚',[`I studied hard.`,`Grades now ${S.grades}/100 · +Smarts, −a little fun.`],()=>setTab('school'));
 }
 function dropOut(){
   if(!(S&&S._replaying) && typeof confirm==='function' && !confirm('Drop out of school? This limits your future.'))return;
