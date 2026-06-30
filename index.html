@@ -43,7 +43,7 @@
   .modal-wrap.open{display:flex}
   .modal-card{position:relative;width:100%;max-width:420px;max-height:calc(100dvh - 52px);display:flex;flex-direction:column;background:var(--panel);border:2px solid #ff6a3d;border-radius:18px;padding:0 0 18px;animation:rise .22s ease;box-shadow:0 12px 44px rgba(0,0,0,.55)}
   /* Modal header bar — matches the sub-page header: circular ✕ on the left + centered title. */
-  .modal-banner{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);border-radius:16px 16px 0 0;background:linear-gradient(180deg,var(--panel2),var(--panel))}
+  .modal-banner{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);border-radius:16px 16px 0 0;background:linear-gradient(180deg,var(--panel2),var(--panel));box-shadow:0 6px 14px -10px rgba(0,0,0,.7)}
   .modal-banner:empty{display:none}
   .modal-banner .mh-btn{width:34px;height:34px;border-radius:50%;border:2px solid #ff6a3d;background:transparent;color:#ff6a3d;font-size:15px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;padding:0}
   .modal-banner .mh-btn:active{transform:scale(.92)}
@@ -174,7 +174,9 @@
   .platrow .parrow{font-size:24px;color:var(--accent);font-weight:700}
   .backbtn{background:none;border:none;color:var(--accent);font-size:14px;font-weight:700;cursor:pointer;padding:2px 0 10px}
   /* Sub-page header bar — circular back/✕ on the left + centered title (the Feed is the only "home"). */
-  .pagehead{display:flex;align-items:center;gap:12px;margin:-12px -14px 14px;padding:11px 14px;background:linear-gradient(180deg,var(--panel2),var(--panel));border-bottom:1px solid var(--line);position:sticky;top:0;z-index:15}
+  .pagehead{display:flex;align-items:center;gap:12px;margin:-12px -14px 14px;padding:11px 14px;background:linear-gradient(180deg,var(--panel2),var(--panel));border-bottom:1px solid var(--line);position:sticky;top:0;z-index:15;box-shadow:0 8px 16px -10px rgba(0,0,0,.6)}
+  @keyframes slidein{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+  .view-anim{animation:slidein .2s ease}
   .pagehead-btn{width:38px;height:38px;border-radius:50%;border:2px solid var(--accent);background:transparent;color:var(--accent);font-size:19px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;padding:0}
   .pagehead-btn:active{transform:scale(.92)}
   .pagehead-title{flex:1;text-align:center;font-weight:800;font-size:16px;letter-spacing:1px;text-transform:uppercase;color:var(--text);padding-right:38px}
@@ -3971,7 +3973,7 @@ function setTab(t){
   if(S && S._replaying) return;   // headless replay: no UI
   if(S && !S.alive && t!=='life'){ t='life'; if(isLocked()) deathHub(); }   // dead/ghost: tabs locked (ghost uses Haunt, corpse uses Legacy hub)
   if(t===curTab && t!=='life') t='life';   // tapping the active tab returns you to the Life feed
-  curTab=t;
+  const _prevTab=curTab; curTab=t; const _changed=(t!==_prevTab);
   // 4 hub landings + the home feed + the sub-pages each hub contains
   const views={life:'lifeView', career:'careerView', assets:'assetsView', connections:'connectionsView', activities:'activitiesView',
     people:'peopleView', social:'socialView', stars:'starsView', events:'eventsView', school:'schoolView', job:'jobView', gigs:'gigsView', licenses:'licensesView', shop:'shopView',
@@ -3979,6 +3981,9 @@ function setTab(t){
   for(const k in views){ const el=document.getElementById(views[k]); if(el) el.style.display = (t===k)?'block':'none'; }
   // The dock (nav + Advance Age + wellbeing bars) belongs to the Feed only — sub-pages stay clean and use the ✕ to return.
   const dock=document.getElementById('dock'); if(dock) dock.style.display = (t==='life') ? 'flex' : 'none';
+  // Polish: entering a sub-page starts at the top with a quick slide-in (only on an actual tab change, so it never flickers on re-render).
+  if(t!=='life'){ const main=document.querySelector('main'); if(main) main.scrollTop=0;
+    const tv=document.getElementById(views[t]); if(tv && _changed){ tv.classList.remove('view-anim'); void tv.offsetWidth; tv.classList.add('view-anim'); } }
   // highlight the parent hub (sub-pages light up their hub button)
   const map={ career:0,job:0,school:0,gigs:0,careersdex:0,achievements:0,business:0,  assets:1,social:1,shop:1,  connections:2,people:2,stars:2,  activities:3,events:3,licenses:3 };
   document.querySelectorAll('#toolbar .tb-btn').forEach((b,i)=>b.classList.toggle('on',map[t]===i));
