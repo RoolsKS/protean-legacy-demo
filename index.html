@@ -2010,6 +2010,7 @@ function lifeRecord(){
     footballer:has('footballer'), worldPlayer:has('world_player'),
     soccerTrophies:(S.soccer&&S.soccer.trophies)?S.soccer.trophies.length:0,
     clubOwner:has('club_owner'), clubDynastyGens:(S.soccer&&S.soccer.owned&&S.soccer.owned.gensWon)?S.soccer.owned.gensWon.length:0,
+    scholarship:has('athletic_scholarship'), schoolCaptain:has('school_captain'),
     famBondLow: famAlive.length>0 && famAlive.every(p=>(p.affinity||0)<25),
   };
 }
@@ -2056,6 +2057,8 @@ const RIBBONS=[
   {id:'football_legend', name:'Footballing Legend', icon:'🌟', rarity:'legendary', priority:9, desc:'Be crowned World Player of the Year.', q:r=>r.worldPlayer?1:0},
   {id:'club_owner', name:'Club Owner', icon:'🏟️', rarity:'rare', priority:5, desc:'Own a football club.', q:r=>r.clubOwner?1:0},
   {id:'dynasty_club', name:'Dynasty Club', icon:'👑', rarity:'legendary', priority:10, desc:'Build a family club that wins across generations.', q:r=>r.clubDynastyGens>=2?1:0},
+  {id:'full_ride', name:'Full Ride', icon:'🎓', rarity:'rare', priority:5, desc:'Earn an athletic scholarship.', q:r=>r.scholarship?1:0},
+  {id:'school_mvp', name:'School MVP', icon:'🎖️', rarity:'rare', priority:5, desc:'Captain a school sports team.', q:r=>r.schoolCaptain?1:0},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
@@ -2094,7 +2097,7 @@ const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame
   powerful:'power',sovereign:'power',self_made_monarch:'power', notorious:'crime',kingpin:'crime',conqueror:'crime',
   saintly:'virtue',devoted:'virtue',redemption:'virtue', dynasty_legend:'dynasty',polymath_founder:'dynasty',matriarch:'dynasty',
   centenarian:'health', pioneer:'era', deviant:'vice',
-  pro_footballer:'fame', silverware:'fame', football_legend:'fame', club_owner:'wealth', dynasty_club:'dynasty' };
+  pro_footballer:'fame', silverware:'fame', football_legend:'fame', club_owner:'wealth', dynasty_club:'dynasty', full_ride:'mind', school_mvp:'fame' };
   // renaissance_soul is intentionally themeless — a combo of wealth+mind+fame; it advances via all three and the milestone tracker, not one opportunity event.
 function ambTheme(){ return (S&&S.ambition)?(RIBBON_THEME[S.ambition]||null):null; }
 function ambHint(rb){ return ({ wealth:' Keep building your fortune.', fame:' Chase the spotlight.', mind:' Hit the books.', power:' Climb toward high office.', crime:' The underworld is calling.', virtue:' Keep doing good.', dynasty:' Grow the family line.', era:' Live to see the age turn.', health:' Stay healthy and live long.', vice:' Court a little scandal.' }[RIBBON_THEME[rb.id]]||''); }
@@ -3707,7 +3710,8 @@ function ageUp(){
     }
   }
   ambitionNudge();   // RIBBONS: surface progress toward a declared Life Ambition (pure — no RNG)
-  if(typeof socActive==='function' && socActive()) socSeasonEnd();   // ⚽ conclude the football season (deterministic, feed-only)
+  if(S.schoolSport && S.schoolSport.onTeam) ssSeasonEnd();           // ⚽ school football season (deterministic, feed-only)
+  if(typeof socActive==='function' && socActive()) socSeasonEnd();   // ⚽ conclude the pro football season (deterministic, feed-only)
   if(S.soccer && S.soccer.owned) socOwnerSeason();                   // 🏟️ run the owned club's season (deterministic, feed-only)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
@@ -4303,6 +4307,7 @@ function continueAsHeir(id){
   // ⚽ heir starts a fresh PLAYING career (inherits only the athletic genes), but INHERITS the family CLUB (stadium, honours, finances compound across generations — the differentiator)
   if(S.soccer && S.soccer.owned){ S._inheritedClub=S.soccer.world.clubs[S.soccer.owned.clubId]?S.soccer.world.clubs[S.soccer.owned.clubId].name:'the family club'; S.soccer={ world:S.soccer.world, owned:S.soccer.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'', seasonsPlayed:0 }; }
   else S.soccer=null;
+  S.schoolSport=null;   // ⚽ heir starts their own school-sports journey (inherits the athletic GENES → school prodigy)
   S.stats={health:rng(78,100), happy:rng(70,95), smarts:rng(40,85), looks:rng(40,90)};
   S.genome = heir.genome || rollGenome(S.genome, null); applyGenomeToStats();   // GENETICS: the heir IS your child — your genes live on
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
@@ -5338,13 +5343,144 @@ function soc(){ return S.soccer; }
 function socClub(){ const sc=soc(); return sc && sc.world && sc.world.clubs[sc.player.clubId]; }
 function socActive(){ return !!(S.soccer && S.soccer.player && !S.soccer.player.retired); }
 // ---- Go pro: join an academy (era-gated, choose a position). Logged action. ----
+/* ============================================================
+   ⚽ SCHOOL SPORTS → SOCCER PIPELINE — the youth feeder. Builds a
+   shared ATHLETICISM stat + nascent soccer attributes through school,
+   gates tryouts/captaincy/scholarship/scouting, then HANDS OFF into
+   the Soccer pack's pro career (one continuous development arc).
+   Layers onto the existing school system. Deterministic; era-gated.
+   ============================================================ */
+const SS_LEVEL_NAME={elementary:'Elementary',middle:'Middle School',highSchool:'High School',college:'College'};
+const SS_THRESHOLD={elementary:28, middle:40, highSchool:56, college:72};   // athleticism needed to make the team — rises by level
+function schoolSportLevel(){ if(S.eduLevel==='college'||S.eduLevel==='cc') return 'college'; if(S.eduLevel==='high') return 'highSchool'; if(S.eduLevel==='primary') return S.age>=11?'middle':'elementary'; return S.age<11?'elementary':S.age<14?'middle':S.age<18?'highSchool':'college'; }
+function schoolSportEligible(){ return soccerEraOK() && S.age>=7 && S.age<=23 && ['primary','high','college','cc'].includes(S.eduLevel) && !(S.soccer&&(S.soccer.player||S.soccer.owned)); }
+function ssp(){ return S.schoolSport; }
+function ssOnTeam(){ const s=ssp(); return !!(s && s.onTeam); }
+function ssKeyMoment(type,desc){ const s=ssp(); if(!s)return; (s.keyMoments=s.keyMoments||[]).push({type,age:S.age,description:desc}); }
+function ssRecent(t){ const s=ssp(); if(!s)return; (s.recentEvents=s.recentEvents||[]).push({age:S.age,event:t}); if(s.recentEvents.length>6){ s.summary=((s.summary?s.summary+' ':'')+s.recentEvents.shift().event).slice(-500); } }
+function ssEnsureCoach(){ const s=ssp(); if(!s||(s.coachId&&S.people[s.coachId]))return; const g=rand()<.5?'m':'f'; S.people['ss_coach']={id:'ss_coach',name:nm(g)+' '+pick(LAST),rel:'Coach',affinity:rng(45,62),trust:rng(40,58),alive:true,memory:[],keyMoments:[],summary:'',schoolsport:true,coach:true,gender:g,age:rng(35,60),fam:false,gen:9}; s.coachId='ss_coach'; }
+// INHERITED talent → school prodigy: athleticism seeds from the genome (vitality) + sports talent, both of which pass down.
+function ssGenInit(position){
+  const ath=clamp(Math.round(geneVal('vitality')*0.4 + (S.stats.health||60)*0.2 + (has('talent_sports')?12:0) + rng(0,10)), 15, 55);
+  const a={}; ['pace','shooting','passing','dribbling','defending','physical'].forEach(k=>a[k]=clamp(Math.round(ath*0.5+rng(-5,8)),12,45));
+  const w=SOC_POS_W[position]; for(const k in w){ if(w[k]>=0.2) a[k]=clamp(a[k]+rng(3,8),12,50); }
+  S.schoolSport={ athleticism:ath, hasSportsTalent:has('talent_sports'), position, attributes:a, onTeam:false, squadStatus:'notOnTeam',
+    seasonStats:{apps:0,goals:0,assists:0,ratingSum:0,ratingN:0}, schoolReputation:rng(8,20), scoutInterest:0, wasCaptain:false, scholarshipOffered:false,
+    coachId:null, keyMoments:[], recentEvents:[], summary:'', _scoutOffer:null, careerSeasons:0 };
+  setFlag('plays_school_soccer');
+}
+function ssGrow(s){ const cap=S.age<=18?60:70, youth=S.age<=14?1.4:S.age<=18?1.1:0.8;   // school attrs stay BELOW pro level (finish developing in the pros)
+  for(const k in s.attributes){ const g=clamp(Math.round((rng(0,2)+(s.hasSportsTalent?1:0))*youth),0,4); s.attributes[k]=clamp(s.attributes[k]+g,12,cap); } }
+function ssJoinPrompt(){ const lvl=schoolSportLevel();
+  openModal({banner:'School Sports', title:'⚽ Take Up Football', icon:'⚽', closable:true,
+    text:`You can take up football at <b>${SS_LEVEL_NAME[lvl]}</b>. Build your athleticism, try out for the team, captain it, earn a scholarship — and if you're good enough, get <b>scouted into the pro game</b>. Pick your position.`,
+    choices: SOC_POS.map(pos=>({label:`${({GK:'🧤',DEF:'🛡️',MID:'🎯',FWD:'⚽'})[pos]} ${SOC_POS_NAME[pos]}`, alt:true, fn:()=>{ ssGenInit(pos); pushLog(`⚽ I started playing football at ${SS_LEVEL_NAME[lvl]} as a ${SOC_POS_NAME[pos]}.`,[['good','Started playing football']]); ssHub(); }}))
+      .concat([{label:'Not now', fn:closeModal}]) });
+}
+function ssHub(){ const s=ssp(); if(!s){ ssJoinPrompt(); return; } const lvl=schoolSportLevel(); const ov=socOverall({position:s.position,attributes:s.attributes});
+  const inSchool=['primary','high','college','cc'].includes(S.eduLevel);
+  const ss=s.seasonStats, avg=ss.ratingN?(ss.ratingSum/ss.ratingN).toFixed(1):'—';
+  const statusTxt={notOnTeam:'Not on the team',cut:'Cut — try again',reserve:'Reserve (bench)',starter:'Starter',captain:'⭐ Captain'}[s.squadStatus];
+  let body=`<div style="text-align:left">
+    <div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><b>${({GK:'🧤',DEF:'🛡️',MID:'🎯',FWD:'⚽'})[s.position]} ${SOC_POS_NAME[s.position]}</b><div style="font-size:12px;color:var(--dim)">${SS_LEVEL_NAME[lvl]} · ${statusTxt}</div></div>
+        <div style="text-align:right"><div style="font-size:24px;font-weight:900;color:var(--gold,#f5c451)">${s.athleticism}</div><div style="font-size:9px;color:var(--dim)">ATHLETICISM</div></div>
+      </div></div>
+    <div class="relbars" style="margin-bottom:8px">${pbar('Athleticism',s.athleticism)}${pbar('Skill (OVR)',ov)}${pbar('School Reputation',s.schoolReputation)}${(lvl==='highSchool'||lvl==='college')?pbar('Scout Interest',s.scoutInterest):''}</div>
+    ${s.onTeam?`<div class="genlabel" style="margin:2px 0 4px">This Season</div>${socStatLine('Appearances',ss.apps)}${socStatLine('Goals · Assists',ss.goals+' · '+ss.assists)}${socStatLine('Avg rating',avg)}`:''}
+    ${s.scholarshipOffered?`<div style="color:var(--good);font-size:12px;margin-top:6px">🎓 Athletic scholarship earned — tuition covered.</div>`:''}
+    <p style="color:var(--dim);font-size:11px;margin-top:8px">Make the team, become captain, get scouted — your school skills carry straight into a pro career.</p></div>`;
+  const choices=[];
+  if(s._scoutOffer){ choices.push({label:'📣 Sign Pro (a scout wants you!)', alt:true, fn:ssGoPro}); }
+  if(inSchool && !s.onTeam) choices.push({label:`⚽ Try out for the ${SS_LEVEL_NAME[lvl]} team`, alt:true, fn:ssTryout});
+  if(inSchool) choices.push({label:'🏋️ Train', alt:true, fn:ssTrain});
+  if(!inSchool && !s._scoutOffer) choices.push({label:'🎓 School days are over', fn:()=>{ closeModal(); setTab('activities'); }, tip:'The school route has closed'});
+  choices.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
+  openModal({banner:'School Sports', title:'⚽ School Football', icon:'⚽', closable:true, text:body, choices});
+}
+function ssTryout(){ const s=ssp(); if(!s){ ssJoinPrompt(); return; } if(s.onTeam){ ssHub(); return; } const lvl=schoolSportLevel();
+  openModal({banner:'Tryouts', title:`⚽ ${SS_LEVEL_NAME[lvl]} Tryout`, icon:'⚽', closable:false,
+    text:`Tryouts for the ${SS_LEVEL_NAME[lvl]} team. Your athleticism is <b>${s.athleticism}</b> — you'll want around <b>${SS_THRESHOLD[lvl]}</b>. The coach is watching. How do you play it?`,
+    choices:[
+      {label:'Leave it all on the pitch', tip:'Bold — risk & reward', fn:()=>ssDoTryout(8)},
+      {label:'Play your natural game', fn:()=>ssDoTryout(0)},
+      {label:'Play it safe', tip:'Nervy', fn:()=>ssDoTryout(-6)},
+    ]});
+}
+function ssDoTryout(mod){ const s=ssp(), lvl=schoolSportLevel(); const ov=socOverall({position:s.position,attributes:s.attributes});
+  const score=s.athleticism + (ov-30)*0.4 + (s.hasSportsTalent?6:0) + s.schoolReputation*0.1 + mod + rng(-8,8); const th=SS_THRESHOLD[lvl];
+  let res,line,icon;
+  if(score < th-8){ s.squadStatus='cut'; s.onTeam=false; ssKeyMoment('cut',`Cut from the ${SS_LEVEL_NAME[lvl]} team.`); chg('happy',-rng(3,7)); res='Cut'; icon='❌'; line=`You were <b>cut</b>. Not this year — train your athleticism and come back stronger.`; }
+  else if(score < th+10){ s.squadStatus='reserve'; s.onTeam=true; ssEnsureCoach(); ssKeyMoment('madeTeam',`Made the ${SS_LEVEL_NAME[lvl]} squad (reserve).`); chg('happy',rng(2,5)); res='Made the Squad'; icon='⚽'; line=`You <b>made the squad</b> — a reserve for now. Force your way into the starting XI.`; }
+  else { s.squadStatus='starter'; s.onTeam=true; ssEnsureCoach(); ssKeyMoment('madeTeam',`Made the ${SS_LEVEL_NAME[lvl]} starting XI.`); chg('happy',rng(3,7)); gainFame(rng(0,2)); res='Starter!'; icon='⚽'; line=`You <b>made the starting XI</b>! The coach loves what they saw.`; }
+  pushLog(`⚽ ${SS_LEVEL_NAME[lvl]} tryout — ${res==='Cut'?'cut.':res==='Starter!'?'made the starting XI!':'made the bench.'}`,[[res==='Cut'?'bad':'good',res]]);
+  resultModal('Tryouts', res, icon, [line], ()=>ssHub());
+}
+function ssTrain(){ const s=ssp(); if(!s){ssJoinPrompt();return;}
+  openModal({banner:'Training', title:'🏋️ Put in the Work', icon:'🏋️', closable:true,
+    text:`Train to raise your <b>athleticism (${s.athleticism})</b> and ball skills. Growth is fastest while you're young — make it count now.`,
+    choices:[ {label:'⚡ Athletic conditioning', alt:true, fn:()=>ssDoTrain('ath')}, {label:'⚽ Ball skills', alt:true, fn:()=>ssDoTrain('skill')}, {label:'‹ Back', fn:ssHub} ]});
+}
+function ssDoTrain(kind){ const s=ssp(); const youth=S.age<=14?1.5:S.age<=18?1.1:0.8;
+  if(kind==='ath'){ const g=clamp(Math.round((rng(1,3)+(s.hasSportsTalent?1:0))*youth),0,5); s.athleticism=clamp(s.athleticism+g,0,95); chg('health',rng(0,2)); S.fitness=clamp((S.fitness||50)+rng(1,4));
+    pushLog(`🏋️ I trained hard — athleticism +${g} (now ${s.athleticism}).`,[g>0?['good',`+${g} athleticism`]:['flag','Plateau']]);
+    resultModal('Training','Fitter & Faster 🏋️','🏋️',[`Athleticism up to <b>${s.athleticism}</b>.`],()=>ssHub()); }
+  else { const ks=Object.keys(s.attributes), k=ks[rng(0,ks.length-1)], cap=S.age<=18?60:70; const g=clamp(Math.round((rng(1,3)+(s.hasSportsTalent?1:0))*youth),0,4); s.attributes[k]=clamp(s.attributes[k]+g,12,cap);
+    const ov=socOverall({position:s.position,attributes:s.attributes});
+    pushLog(`⚽ I drilled my ${k} — +${g} (skill OVR ${ov}).`,[g>0?['good',`+${g} ${k}`]:['flag','Plateau']]);
+    resultModal('Training','Sharper ⚽','⚽',[`Your <b>${k}</b> improved. Skill rating: <b>${ov}</b>.`],()=>ssHub()); }
+}
+// School season, concluded each ageUp while on the team & in school (deterministic, feed-only).
+function ssSeasonEnd(){ const s=ssp(); if(!s||!s.onTeam || !['primary','high','college','cc'].includes(S.eduLevel)) return;
+  const lvl=schoolSportLevel(), starter=(s.squadStatus==='starter'||s.squadStatus==='captain'), ov=socOverall({position:s.position,attributes:s.attributes});
+  ssEnsureCoach();
+  const apps=starter?rng(14,22):rng(4,12), q=(ov/55)*(starter?1:0.5);
+  const posGoal={FWD:0.40,MID:0.20,DEF:0.05,GK:0}[s.position]||0.15;
+  const goals=Math.round(apps*posGoal*q*(0.6+rand()*0.8)), assists=Math.round(apps*0.15*q*(0.6+rand()*0.8));
+  const rating=clamp(5.5 + (ov-30)/15 + (starter?0.5:0) + rand(), 4, 9);
+  s.seasonStats={apps,goals,assists,ratingSum:rating*apps,ratingN:apps};
+  const wonTitle = rng(0,100) < clamp((ov-30)+s.schoolReputation/3,0,55)*0.4;
+  const perf=(rating-6)*8 + goals*3 + (wonTitle?12:0) + (starter?6:0);
+  s.schoolReputation=clamp(s.schoolReputation+Math.round(perf/2)+rng(-2,4),0,100);
+  if(lvl==='highSchool'||lvl==='college') s.scoutInterest=clamp(s.scoutInterest+Math.max(0,Math.round(perf/3))+(s.wasCaptain?4:0)+(lvl==='college'?5:0),0,100);
+  ssGrow(s); if(S.age<=18) s.athleticism=clamp(s.athleticism+rng(0,2),0,95);
+  let lines=[];
+  if(wonTitle){ ssKeyMoment('wonTitle',`Won the ${SS_LEVEL_NAME[lvl]} title.`); gainFame(rng(1,3)); lines.push(`🏆 ${SS_LEVEL_NAME[lvl]} champions!`); }
+  if(!s.wasCaptain && starter && s.athleticism>=SS_THRESHOLD[lvl]+12 && s.schoolReputation>=55 && (lvl==='highSchool'||lvl==='college')){ s.squadStatus='captain'; s.wasCaptain=true; setFlag('school_captain'); s.scoutInterest=clamp(s.scoutInterest+12,0,100); ssKeyMoment('becameCaptain',`Named ${SS_LEVEL_NAME[lvl]} captain.`); gainFame(rng(2,4)); lines.push(`🎖️ Named <b>team captain</b>!`); }
+  if(lvl==='highSchool' && !s.scholarshipOffered && s.schoolReputation>=62 && (goals+assists)>=6){ s.scholarshipOffered=true; setFlag('athletic_scholarship'); S.schoolTuition=0; ssKeyMoment('scholarship',`Earned an athletic scholarship.`); lines.push(`🎓 Earned an <b>athletic scholarship</b> — college tuition covered!`); }
+  if(!s._scoutOffer && s.scoutInterest >= (lvl==='college'?68:78)){ s._scoutOffer={tier: s.scoutInterest>=88?0:(s.scoutInterest>=78?1:2), age:S.age}; ssKeyMoment('scoutOffer',`A pro scout came calling.`); lines.push(`📣 A <b>pro scout wants to sign you</b> — go pro from the Football hub!`); }
+  s.careerSeasons=(s.careerSeasons||0)+1;
+  ssRecent(`${SS_LEVEL_NAME[lvl]}: ${apps} apps ${goals}g ${assists}a, rep ${s.schoolReputation}.`);
+  pushLog(`⚽ <b>${SS_LEVEL_NAME[lvl]} season</b>: ${apps} apps, ${goals}g ${assists}a (rating ${rating.toFixed(1)}). ${lines.join(' ')} Rep ${s.schoolReputation}${(lvl==='highSchool'||lvl==='college')?` · scout interest ${s.scoutInterest}`:''}.`, lines.length?[['good','⚽ School season']]:[['flag','⚽ School season']]);
+}
+function ssGoPro(){ const s=ssp(); if(!s||!s._scoutOffer){ ssHub(); return; } socJoinFromSchool(s._scoutOffer.tier); }
+// THE HANDOFF — initialize the Soccer pack's pro FootballPlayer from the SchoolSportsProfile (shared attributes/position → one arc).
+function socJoinFromSchool(tier){ const s=ssp(); const world=socBuildWorld();
+  const attributes={}; for(const k in s.attributes) attributes[k]=s.attributes[k];
+  const ovNow=socOverall({position:s.position,attributes});
+  const div=world.divisions[clamp(tier,0,2)]; const clubId=div[rng(2,div.length-1)];
+  S.soccer={ world, seasonsPlayed:0,
+    player:{ position:s.position, attributes, potential:clamp(socPotential(), ovNow+8, 95), form:65, fitness:90, morale:72,
+      clubId, onNationalTeam:false, retired:false, contract:{wagePerYear:Math.round((10000+rng(0,12000))*priceMult()), yearsRemaining:rng(2,4)},
+      seasonStats:{apps:0,goals:0,assists:0,ratingSum:0,ratingN:0}, careerStats:{apps:0,goals:0,assists:0,seasons:0} },
+    trophies:[], awards:[], _matchedThisSeason:0, summary:s.summary, keyMoments:(s.keyMoments||[]).slice(), recentEvents:[] };
+  socEnsureNPCs(); setFlag('footballer'); gainFame(rng(2,5));
+  const ov=socOverall(S.soccer.player);
+  socKeyMoment('debut',`Scouted from school to ${world.clubs[clubId].name} (OVR ${ov}).`);
+  S.schoolSport=null;   // the school stage is complete — the pro arc begins
+  pushLog(`⚽ <b>SCOUTED!</b> I signed pro with <b>${world.clubs[clubId].name}</b> straight out of school — OVR ${ov}. The dream is real.`,[['good','Turned pro']]);
+  resultModal('Football','Turned Pro ⚽','⚽',[`You signed for <b>${world.clubs[clubId].name}</b> — Overall <b>${ov}</b>, potential <b>${S.soccer.player.potential}</b>.`,`Your school development carried straight into the pro game.`],()=>socHub());
+}
 function footballMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
   if(!soccerEraOK()){ toast('Organized football doesn’t exist in this era yet.'); return; }
   logAct('call',{fn:'footballMenu'});
   const sc=S.soccer;
   if(sc && sc.owned){ socOwnerHub(); return; }            // OWNER mode is primary once you run a club
   if(sc && sc.player){ socHub(); return; }                // player career (active or retired)
-  socStartMenu();
+  if(S.schoolSport && (schoolSportEligible() || S.schoolSport._scoutOffer)){ ssHub(); return; }   // active school pipeline / pending scout offer
+  if(schoolSportEligible()){ ssJoinPrompt(); return; }    // school-age → the youth feeder
+  socStartMenu();                                         // out of school / older → academy or buy a club (school flags persist for ribbons)
 }
 function socStartMenu(){   // nothing yet → choose your path into football
   const canAcademy = S.age>=8 && S.age<=24;
