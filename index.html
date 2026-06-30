@@ -2013,6 +2013,8 @@ function lifeRecord(){
     scholarship:has('athletic_scholarship'), schoolCaptain:has('school_captain'),
     baller:has('basketballer'), bballRings:(S.bball&&S.bball.trophies)?S.bball.trophies.length:0, bballMVP:has('bball_mvp'),
     franchiseOwner:has('franchise_owner'), franchiseDynastyGens:(S.bball&&S.bball.owned&&S.bball.owned.gensWon)?S.bball.owned.gensWon.length:0,
+    gridironPro:has('nfl_player'), nflRings:(S.nfl&&S.nfl.trophies)?S.nfl.trophies.length:0, nflMVP:has('nfl_mvp'),
+    nflFranchiseOwner:has('nfl_franchise_owner'), nflFranchiseDynastyGens:(S.nfl&&S.nfl.owned&&S.nfl.owned.gensWon)?S.nfl.owned.gensWon.length:0,
     famBondLow: famAlive.length>0 && famAlive.every(p=>(p.affinity||0)<25),
   };
 }
@@ -2066,6 +2068,11 @@ const RIBBONS=[
   {id:'hoops_goat', name:'Hardwood Legend', icon:'🐐', rarity:'legendary', priority:9, desc:'Be named League MVP.', q:r=>r.bballMVP?1:0},
   {id:'franchise_owner', name:'Franchise Owner', icon:'🏀', rarity:'rare', priority:6, desc:'Own a pro basketball franchise.', q:r=>r.franchiseOwner?1:0},
   {id:'dynasty_franchise', name:'Dynasty Franchise', icon:'👑', rarity:'legendary', priority:10, desc:'Build a family franchise that wins across generations.', q:r=>r.franchiseDynastyGens>=2?1:0},
+  {id:'gridiron_pro', name:'Gridiron Pro', icon:'🏈', rarity:'rare', priority:6, desc:'Make it to the NFL.', q:r=>r.gridironPro?1:0},
+  {id:'super_champ', name:'Champion', icon:'🏆', rarity:'epic', priority:8, desc:'Win an NFL championship.', q:r=>r.nflRings>=1?1:0},
+  {id:'gridiron_goat', name:'Gridiron Legend', icon:'🐐', rarity:'legendary', priority:9, desc:'Be named NFL MVP.', q:r=>r.nflMVP?1:0},
+  {id:'nfl_owner', name:'NFL Owner', icon:'🏈', rarity:'rare', priority:6, desc:'Own an NFL franchise.', q:r=>r.nflFranchiseOwner?1:0},
+  {id:'nfl_dynasty', name:'Gridiron Dynasty', icon:'👑', rarity:'legendary', priority:10, desc:'Build a family NFL franchise that wins across generations.', q:r=>r.nflFranchiseDynastyGens>=2?1:0},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
@@ -2104,7 +2111,7 @@ const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame
   powerful:'power',sovereign:'power',self_made_monarch:'power', notorious:'crime',kingpin:'crime',conqueror:'crime',
   saintly:'virtue',devoted:'virtue',redemption:'virtue', dynasty_legend:'dynasty',polymath_founder:'dynasty',matriarch:'dynasty',
   centenarian:'health', pioneer:'era', deviant:'vice',
-  pro_footballer:'fame', silverware:'fame', football_legend:'fame', club_owner:'wealth', dynasty_club:'dynasty', full_ride:'mind', school_mvp:'fame', baller:'fame', ring_chaser:'fame', hoops_goat:'fame', franchise_owner:'wealth', dynasty_franchise:'dynasty' };
+  pro_footballer:'fame', silverware:'fame', football_legend:'fame', club_owner:'wealth', dynasty_club:'dynasty', full_ride:'mind', school_mvp:'fame', baller:'fame', ring_chaser:'fame', hoops_goat:'fame', franchise_owner:'wealth', dynasty_franchise:'dynasty', gridiron_pro:'fame', super_champ:'fame', gridiron_goat:'fame', nfl_owner:'wealth', nfl_dynasty:'dynasty' };
   // renaissance_soul is intentionally themeless — a combo of wealth+mind+fame; it advances via all three and the milestone tracker, not one opportunity event.
 function ambTheme(){ return (S&&S.ambition)?(RIBBON_THEME[S.ambition]||null):null; }
 function ambHint(rb){ return ({ wealth:' Keep building your fortune.', fame:' Chase the spotlight.', mind:' Hit the books.', power:' Climb toward high office.', crime:' The underworld is calling.', virtue:' Keep doing good.', dynasty:' Grow the family line.', era:' Live to see the age turn.', health:' Stay healthy and live long.', vice:' Court a little scandal.' }[RIBBON_THEME[rb.id]]||''); }
@@ -2517,6 +2524,25 @@ const EVENTS = [
       {label:'Cook them on the court', apply:()=>{ b.player.form=clamp(b.player.form+rng(3,7)); rel(rv.id,-rng(2,5),0,'You let your game do the talking.'); return {text:`You torch ${rv.name} for a career night. Statement made.`,tags:[['good','Dropped 40']]}; }},
       {label:'Talk junk all game', tip:'Fame · feud', apply:()=>{ gainFame(rng(3,7)); rel(rv.id,-rng(6,12),-rng(2,5),'You jawed at each other all night.'); ledgerAdd('rivalry',rng(6,12),{who:rv.id,note:`Bad blood with ${rv.name}.`}); return {text:`Technicals fly. The beef with ${rv.name} is now must-see TV.`,tags:[['flag','Heated']]}; }},
       {label:'Show respect', apply:()=>{ addSelfWorth(3); rel(rv.id,+rng(2,5),+rng(0,2),'Mutual respect after the battle.'); return {text:`You and ${rv.name} dap up after a war. Legends recognize legends.`,tags:[['good','Sportsmanship']]}; }},
+    ] };}},
+/* 🏈 NFL FLAVOR — templated, real-name rival references (user-accepted IP). Deterministic; 2-yr cooldown via S.nfl._lastFlavor. */
+{ id:'nfl_presser', once:false, weight:12, when:S=>S.nfl&&S.nfl.player&&!S.nfl.player.retired&&S.age>=18&&(S.age-(S.nfl._lastFlavor||-99)>=2)&&(S.nfl.player.form>=62||(S.nfl.trophies||[]).some(t=>t.age>=S.age-1)),
+  build:S=>{ const b=S.nfl; b._lastFlavor=S.age; const coach=b.coachId&&S.people[b.coachId], team=nflTeam(); const star=sportStar('nfl');
+    return { yr:`Age ${S.age}`, title:'🎤 Post-Game Presser',
+    text:`The cameras swarm after another big game for the <b>${team?team.name:'team'}</b>. A reporter asks how you measure up against <b>${star}</b>.`,
+    choices:[
+      {label:'Credit the team', tip:'Humble', apply:()=>{ gainFame(rng(2,5)); chg('happy',3); if(coach) rel(coach.id,+rng(4,8),+rng(2,5),'You praised the coach.'); return {text:`"It's all about the guys in this locker room." The team respects it.`,tags:[['good','Team-first']]}; }},
+      {label:`"I'm the best in the league"`, tip:'Bold · heat', apply:()=>{ gainFame(rng(5,9)); S.rep=clamp((S.rep||0)-rng(1,4),-100,100); ledgerAdd('rivalry',rng(4,9),{note:`Called out ${star} in the press.`}); return {text:`The quote blows up. ${star}'s camp fires back — the rivalry's on.`,tags:[['flag','Trash talk']]}; }},
+      {label:'Stay humble', apply:()=>({text:`"Nothing but respect for ${star}. We just play ball." Classy, forgettable.`,tags:[['flag','Diplomatic']]})},
+    ] };}},
+{ id:'nfl_rival', once:false, weight:10, when:S=>S.nfl&&S.nfl.player&&!S.nfl.player.retired&&S.nfl.rivalId&&S.people[S.nfl.rivalId]&&S.age>=18&&(S.age-(S.nfl._lastFlavor||-99)>=2),
+  build:S=>{ const b=S.nfl; b._lastFlavor=S.age; const rv=S.people[b.rivalId];
+    return { yr:`Age ${S.age}`, title:'⚔️ Primetime Showdown',
+    text:`Sunday Night Football vs <b>${rv.name}</b>, the league's other superstar and your great rival. The whole country is watching.`,
+    choices:[
+      {label:'Outplay them on the field', apply:()=>{ b.player.form=clamp(b.player.form+rng(3,7)); rel(rv.id,-rng(2,5),0,'You let your play do the talking.'); return {text:`You ball out and outshine ${rv.name}. Statement made.`,tags:[['good','MVP night']]}; }},
+      {label:'Talk junk all game', tip:'Fame · feud', apply:()=>{ gainFame(rng(3,7)); rel(rv.id,-rng(6,12),-rng(2,5),'You jawed at each other all game.'); ledgerAdd('rivalry',rng(6,12),{who:rv.id,note:`Bad blood with ${rv.name}.`}); return {text:`Flags fly. The beef with ${rv.name} is now must-see TV.`,tags:[['flag','Heated']]}; }},
+      {label:'Show respect', apply:()=>{ addSelfWorth(3); rel(rv.id,+rng(2,5),+rng(0,2),'Mutual respect after the battle.'); return {text:`You and ${rv.name} embrace at midfield after a war. Legends recognize legends.`,tags:[['good','Sportsmanship']]}; }},
     ] };}},
 
 /* ============================================================
@@ -3742,6 +3768,9 @@ function ageUp(){
   if(S.bball && S.bball.youth && S.bball.youth.onTeam) bbYouthSeason();   // 🏀 school/college hoops season (deterministic)
   if(typeof bbActive==='function' && bbActive()) bbSeasonEnd();      // 🏀 conclude the pro basketball season (deterministic)
   if(S.bball && S.bball.owned) bbOwnerSeason();                      // 🏀 run the owned franchise's season (deterministic, feed-only)
+  if(S.nfl && S.nfl.youth && S.nfl.youth.onTeam) nflYouthSeason();   // 🏈 high-school/college football season (deterministic)
+  if(typeof nflActive==='function' && nflActive()) nflSeasonEnd();   // 🏈 conclude the pro NFL season (deterministic, feed-only)
+  if(S.nfl && S.nfl.owned) nflOwnerSeason();                         // 🏈 run the owned NFL franchise's season (deterministic, feed-only)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -4340,6 +4369,9 @@ function continueAsHeir(id){
   // 🏀 heir starts a fresh PLAYING career (inherits the athletic genes) but INHERITS the family FRANCHISE (arena, banners, finances compound across generations)
   if(S.bball && S.bball.owned){ const _ft=S.bball.world&&S.bball.world.teams[S.bball.owned.teamId]; S._inheritedFranchise=_ft?_ft.name:'the family franchise'; S.bball={ world:S.bball.world, owned:S.bball.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'' }; }
   else S.bball=null;
+  // 🏈 same for the NFL franchise — family ownership carries across generations
+  if(S.nfl && S.nfl.owned){ const _nt=S.nfl.world&&S.nfl.world.teams[S.nfl.owned.teamId]; S._inheritedNflFranchise=_nt?_nt.name:'the family franchise'; S.nfl={ world:S.nfl.world, owned:S.nfl.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'' }; }
+  else S.nfl=null;
   S.stats={health:rng(78,100), happy:rng(70,95), smarts:rng(40,85), looks:rng(40,90)};
   S.genome = heir.genome || rollGenome(S.genome, null); applyGenomeToStats();   // GENETICS: the heir IS your child — your genes live on
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
@@ -5608,6 +5640,309 @@ function bballMenuRoute(){ const b=S.bball;
   if(S.age>=18 && netWorth()>=Math.round(3000000*priceMult())){ bbBuyFranchisePrompt(); return; }   // out of the playing window but rich → buy a franchise
   resultModal('Basketball','Past the Window 🏀','🏀',[`Pro basketball starts young — you've aged out of the playing path. Build wealth and you could buy a franchise instead.`],()=>setTab('activities')); }
 function basketballMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;} if(!bballEraOK()){ toast('Organized basketball doesn’t exist in this era yet.'); return; } logAct('call',{fn:'basketballMenu'}); bballMenuRoute(); }
+/* ============================================================
+   🏈 NFL PACK — American football. school → COLLEGE → draft → pro
+   PLAYER career + OWNER mode. USA-ONLY (country-gated). Mirrors the
+   basketball engine (seeded rng → replay-safe). Real-name rivals/flavor
+   (user-accepted IP risk, NOT store-safe). Determinism contract preserved.
+   ============================================================ */
+const NF_POS=['QB','RB','WR','TE','OL','DL','LB','DB'];
+const NF_POS_NAME={QB:'Quarterback',RB:'Running Back',WR:'Wide Receiver',TE:'Tight End',OL:'Offensive Lineman',DL:'Defensive Lineman',LB:'Linebacker',DB:'Defensive Back'};
+const NF_POS_EMO={QB:'🎯',RB:'🏃',WR:'🧤',TE:'🪢',OL:'🧱',DL:'💪',LB:'🔨',DB:'🛡️'};
+const NF_ATTRS=['throwing','catching','speed','strength','agility','awareness','tackling'];
+const NF_POS_W={
+  QB:{throwing:.42,awareness:.26,agility:.12,speed:.10,strength:.10},
+  RB:{speed:.28,agility:.22,strength:.18,catching:.14,awareness:.10,tackling:.08},
+  WR:{catching:.32,speed:.28,agility:.22,awareness:.12,strength:.06},
+  TE:{catching:.26,strength:.22,awareness:.16,speed:.14,agility:.12,tackling:.10},
+  OL:{strength:.42,awareness:.28,agility:.16,speed:.10,tackling:.04},
+  DL:{strength:.34,tackling:.26,speed:.16,agility:.14,awareness:.10},
+  LB:{tackling:.30,speed:.20,strength:.20,awareness:.16,agility:.14},
+  DB:{speed:.30,agility:.24,tackling:.20,awareness:.16,catching:.10} };
+const NF_CITY=['Metro','Capital','Bayfront','Riverside','Summit','Liberty','Empire','Crescent','Harbor','Sterling','Granite','Apex','Vanguard','Cardinal','Phoenix','Sentinel','Monarch','Frontier','Atlas','Beacon','Cobalt','Redwood','Tropic','Glacier','Canyon','Prairie','Delta','Highland','Lakeshore','Gulf','Sierra','Heartland'];
+const NF_NICK=['Blitz','Maulers','Outlaws','Sentinels','Pioneers','Stallions','Generals','Mustangs','Gladiators','Vipers','Voyagers','Avalanche','Wranglers','Buffaloes','Dragons','Crusaders','Pythons','Hammers','Stampede','Renegades','Marshals','Aviators','Brigade','Wolfpack','Bandits','Rustlers','Cyclones','Sappers','Raptors','Comets','Drovers','Tridents'];
+const NF_AWARDS={ mvp:'League MVP', champ:'Championship MVP', opoy:'Offensive Player of the Year', dpoy:'Defensive Player of the Year', roty:'Rookie of the Year', probowl:'Pro Bowl Selection' };
+function nflCountryOK(){ return S.country==='us'; }   // 🇺🇸 USA-only — the NFL doesn't exist elsewhere in-game
+function nflEraOK(){ return soccerEraOK() && nflCountryOK(); }
+function nf(){ return S.nfl; }
+function nflGroup(pos){ return pos==='OL'?'line':(pos==='DL'||pos==='LB'||pos==='DB')?'defense':'offense'; }
+function nflOverall(p){ const w=NF_POS_W[p.position]||NF_POS_W.WR; let s=0,tw=0; for(const k in w){ s+=(p.attributes[k]||40)*w[k]; tw+=w[k]; } return Math.round(s/(tw||1)); }
+function nflTeam(){ const b=nf(); return (b&&b.player&&b.world)?b.world.teams[b.player.teamId]:null; }
+function nflActive(){ return !!(S.nfl && S.nfl.player && !S.nfl.player.retired); }
+function nflPotential(){ return clamp(Math.round(geneVal('vitality')*0.55 + (S.stats.health||60)*0.25 + (has('talent_sports')?16:6) + rng(0,12)),55,99); }
+function nflKeyMoment(type,desc){ const b=nf(); if(!b)return; (b.keyMoments=b.keyMoments||[]).push({type,age:S.age,description:desc}); }
+function nflRecent(t){ const b=nf(); if(!b)return; (b.recentEvents=b.recentEvents||[]).push({age:S.age,event:t}); if(b.recentEvents.length>6){ b.summary=((b.summary?b.summary+' ':'')+b.recentEvents.shift().event).slice(-500); } }
+function nflBuildWorld(){ const teams={}, used={}, ids=[];
+  for(let i=0;i<32;i++){ let n; let g=0; do{ n=pick(NF_CITY)+' '+pick(NF_NICK); g++; }while(used[n]&&g<60); used[n]=1; const id='nt'+i; teams[id]={id,name:n,conf:i<16?'American':'National',strength:rng(55,86),prestige:rng(30,90),fanbase:rng(45000,82000),ownedByPlayer:false}; ids.push(id); }
+  return {teams, confs:{American:ids.slice(0,16),National:ids.slice(16)}, all:ids}; }
+function nflEnsureNPCs(){ const b=nf(); if(!b||!b.player||b.player.retired) return;
+  const mk=(id,rel,aff,trust,extra)=>{ const g=rand()<.5?'m':'f'; const o={id,name:nm(g)+' '+pick(LAST),rel,affinity:aff,trust,alive:true,memory:[],keyMoments:[],summary:'',nfl:true,gender:g,age:rng(38,60),fam:false,gen:9}; if(extra)for(const k in extra)o[k]=extra[k]; S.people[id]=o; };
+  if(!b.agentId||!S.people[b.agentId]){ mk('nfl_agent','Agent',rng(45,65),rng(40,60),{agent:true,age:rng(35,58)}); b.agentId='nfl_agent'; }
+  if(!b.coachId||!S.people[b.coachId]||b._coachTeam!==b.player.teamId){ mk('nfl_coach','Head Coach',rng(40,62),rng(35,58),{coach:true,age:rng(42,66)}); b.coachId='nfl_coach'; b._coachTeam=b.player.teamId; }
+  if(!b.rivalId||!S.people[b.rivalId]){ mk('nfl_rival','Rival',rng(20,40),rng(15,35),{rival:true,enemy:true,age:clamp(S.age+rng(-3,3),18,40)}); S.people['nfl_rival'].name=sportStar('nfl'); b.rivalId='nfl_rival'; }
+}
+/* ---- Youth: high school → COLLEGE → the DRAFT (college path only, athleticism-gated) ---- */
+function nflYouthLevel(){ return (S.eduLevel==='college'||S.eduLevel==='cc')?'college':(S.eduLevel==='high'?'highSchool':S.age<14?'middle':'highSchool'); }
+const NF_YTH_THRESH={middle:38,highSchool:54,college:70};
+function nflEligibleYouth(){ return nflEraOK() && S.age>=10 && S.age<=23 && ['primary','high','college','cc'].includes(S.eduLevel) && !(S.nfl&&(S.nfl.player||S.nfl.owned)); }
+function nflStatHeadline(p){ const ss=p.seasonStats, g=ss.games||0; const grp=nflGroup(p.position);
+  if(grp==='offense'){ const lbl=p.position==='QB'?'Pass Yds · TD':p.position==='RB'?'Rush Yds · TD':'Rec Yds · TD'; return socStatLine(lbl, `${(ss.yards||0).toLocaleString()} · ${ss.tds||0}`); }
+  if(grp==='defense') return socStatLine('Tackles · Splash', `${ss.tackles||0} · ${ss.splash||0}`);
+  return socStatLine('Games · Pancakes', `${g} · ${ss.splash||0}`); }
+function nflProduce(p, ov, games){ const ss=p.seasonStats, grp=nflGroup(p.position), q=(0.7+rand()*0.6);
+  if(grp==='offense'){
+    if(p.position==='QB'){ ss.yards+=Math.round(games*(140+ov*4.2)*q); ss.tds+=Math.round(games*(0.5+ov*0.035)*q); }
+    else if(p.position==='RB'){ ss.yards+=Math.round(games*(26+ov*1.4)*q); ss.tds+=Math.round(games*(0.12+ov*0.014)*q); }
+    else { ss.yards+=Math.round(games*(20+ov*1.6)*q); ss.tds+=Math.round(games*(0.1+ov*0.013)*q); } }
+  else if(grp==='defense'){ ss.tackles+=Math.round(games*(2+ov*0.06)*q); ss.splash+=Math.round(games*(0.05+ov*0.012)*q); }
+  else { ss.splash+=Math.round(games*(0.3+ov*0.03)*q); } }
+function nflYouthStart(pos){ const ath=clamp(Math.round(geneVal('vitality')*0.42+(S.stats.health||60)*0.2+(has('talent_sports')?12:0)+rng(0,10)),16,56);
+  const a={}; NF_ATTRS.forEach(k=>a[k]=clamp(Math.round(ath*0.5+rng(-5,8)),12,46)); const w=NF_POS_W[pos]; for(const k in w){ if(w[k]>=0.2) a[k]=clamp(a[k]+rng(3,8),12,50); }
+  S.nfl={ world:null, youth:{ athleticism:ath, hasSportsTalent:has('talent_sports'), position:pos, attributes:a, onTeam:false, status:'notOnTeam', seasonStats:{games:0,yards:0,tds:0,tackles:0,splash:0}, rep:rng(8,20), draftStock:0, wasCaptain:false, scholarship:false, _draftReady:false, coachId:null }, keyMoments:[], recentEvents:[], summary:'' };
+  setFlag('plays_football_us'); pushLog(`🏈 I took up American football as a ${NF_POS_NAME[pos]}.`,[['good','Started playing football']]); nflYouthHub();
+}
+function nflYouthHub(){ const b=nf(); if(!b||!b.youth){ nflYouthStartPrompt(); return; } const y=b.youth, lvl=nflYouthLevel(), ov=nflOverall(y), inSchool=['primary','high','college','cc'].includes(S.eduLevel);
+  const st={notOnTeam:'Not on the team',cut:'Cut — try again',reserve:'Backup',starter:'Starter',captain:'⭐ Captain'}[y.status];
+  let body=`<div style="text-align:left"><div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><div><b>${NF_POS_EMO[y.position]} ${NF_POS_NAME[y.position]}</b><div style="font-size:12px;color:var(--dim)">${lvl==='college'?'College':lvl==='highSchool'?'High School':'School'} · ${st}</div></div>
+    <div style="text-align:right"><div style="font-size:24px;font-weight:900;color:var(--gold,#f5c451)">${y.athleticism}</div><div style="font-size:9px;color:var(--dim)">ATHLETICISM</div></div></div></div>
+    <div class="relbars" style="margin-bottom:8px">${pbar('Athleticism',y.athleticism)}${pbar('Skill (OVR)',ov)}${pbar('Reputation',y.rep)}${pbar('Draft Stock',y.draftStock)}</div>
+    ${y.scholarship?`<div style="color:var(--good);font-size:12px">🎓 Athletic scholarship earned.</div>`:''}
+    ${lvl==='highSchool'?`<div style="color:var(--dim);font-size:11px;margin-top:6px">🎓 The NFL draft requires <b>college</b> — earn a scholarship and keep balling.</div>`:''}
+    <p style="color:var(--dim);font-size:11px;margin-top:8px">Star in high school, get to <b>college</b>, raise your draft stock — then declare for the <b>draft</b> and go pro.</p></div>`;
+  const ch=[];
+  if(y._draftReady) ch.push({label:'📣 Declare for the Draft', alt:true, fn:nflEnterDraft});
+  if(inSchool && !y.onTeam) ch.push({label:`🏈 Try out for the team`, alt:true, fn:nflTryout});
+  if(inSchool) ch.push({label:'🏋️ Train', alt:true, fn:nflTrain});
+  ch.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
+  openModal({banner:'Football', title:'🏈 My Game', icon:'🏈', closable:true, text:body, choices:ch});
+}
+function nflYouthStartPrompt(){ openModal({banner:'Football', title:'🏈 Take Up Football', icon:'🏈', closable:true,
+  text:`Pick your position and chase the NFL — star in high school, earn a college spot, raise your draft stock, and get drafted.`,
+  choices: NF_POS.map(p=>({label:`${NF_POS_EMO[p]} ${NF_POS_NAME[p]}`, alt:true, fn:()=>nflYouthStart(p)})).concat([{label:'Not now', fn:closeModal}]) }); }
+function nflTryout(){ const b=nf(); if(!b||!b.youth){nflYouthStartPrompt();return;} const y=b.youth; if(y.onTeam){nflYouthHub();return;} const lvl=nflYouthLevel();
+  openModal({banner:'Tryouts', title:'🏈 Tryout', icon:'🏈', closable:false, text:`Tryouts for the ${lvl==='college'?'college':'school'} team. Athleticism <b>${y.athleticism}</b> (need ~${NF_YTH_THRESH[lvl]}). Leave it all on the field.`,
+    choices:[{label:'Go all-out', tip:'Bold', fn:()=>nflDoTryout(8)},{label:'Play your game', fn:()=>nflDoTryout(0)},{label:'Play it safe', fn:()=>nflDoTryout(-6)}] }); }
+function nflDoTryout(mod){ const y=nf().youth, lvl=nflYouthLevel(), ov=nflOverall(y), score=y.athleticism+(ov-30)*0.4+(y.hasSportsTalent?6:0)+y.rep*0.1+mod+rng(-8,8), th=NF_YTH_THRESH[lvl]; let res,line,icon;
+  if(score<th-8){ y.status='cut'; y.onTeam=false; nflKeyMoment('cut','Cut from the team.'); chg('happy',-rng(3,7)); res='Cut'; icon='❌'; line=`You were <b>cut</b>. Hit the weight room and come back.`; }
+  else if(score<th+10){ y.status='reserve'; y.onTeam=true; nflEnsureYouthCoach(); nflKeyMoment('madeTeam','Made the roster (backup).'); chg('happy',rng(2,5)); res='Made the Roster'; icon='🏈'; line=`You <b>made the team</b> as a backup. Earn your snaps.`; }
+  else { y.status='starter'; y.onTeam=true; nflEnsureYouthCoach(); nflKeyMoment('madeTeam','Won a starting job.'); chg('happy',rng(3,7)); gainFame(rng(0,2)); res='Starter!'; icon='🏈'; line=`You <b>won a starting job</b>!`; }
+  pushLog(`🏈 Tryout — ${res==='Cut'?'cut.':res==='Starter!'?'won a starting job!':'made the roster.'}`,[[res==='Cut'?'bad':'good',res]]);
+  resultModal('Tryouts',res,icon,[line],()=>nflYouthHub()); }
+function nflEnsureYouthCoach(){ const y=nf().youth; if(y.coachId&&S.people[y.coachId])return; const g=rand()<.5?'m':'f'; S.people['nfl_ycoach']={id:'nfl_ycoach',name:nm(g)+' '+pick(LAST),rel:'Coach',affinity:rng(45,62),trust:rng(40,58),alive:true,memory:[],keyMoments:[],summary:'',nfl:true,coach:true,gender:g,age:rng(35,60),fam:false,gen:9}; y.coachId='nfl_ycoach'; }
+function nflTrain(){ const y=nf().youth; openModal({banner:'Training', title:'🏋️ Put in Work', icon:'🏋️', closable:true, text:`Raise your <b>athleticism (${y.athleticism})</b> or your position skills. Growth is fastest while you're young.`,
+  choices:[{label:'⚡ Athletic conditioning', alt:true, fn:()=>nflDoTrain('ath')},{label:'🏈 Position work', alt:true, fn:()=>nflDoTrain('skill')},{label:'‹ Back', fn:nflYouthHub}] }); }
+function nflDoTrain(kind){ const y=nf().youth, youth=S.age<=15?1.5:S.age<=19?1.1:0.8;
+  if(kind==='ath'){ const g=clamp(Math.round((rng(1,3)+(y.hasSportsTalent?1:0))*youth),0,5); y.athleticism=clamp(y.athleticism+g,0,95); S.fitness=clamp((S.fitness||50)+rng(1,4)); pushLog(`🏋️ Trained hard — athleticism +${g} (now ${y.athleticism}).`,[g>0?['good',`+${g} ath`]:['flag','Plateau']]); resultModal('Training','Stronger 🏋️','🏋️',[`Athleticism <b>${y.athleticism}</b>.`],()=>nflYouthHub()); }
+  else { const w=NF_POS_W[y.position], keys=Object.keys(w), k=keys[rng(0,keys.length-1)], cap=S.age<=18?60:70, g=clamp(Math.round((rng(1,3)+(y.hasSportsTalent?1:0))*youth),0,4); y.attributes[k]=clamp(y.attributes[k]+g,12,cap); pushLog(`🏈 Worked my ${k} — +${g} (skill OVR ${nflOverall(y)}).`,[g>0?['good',`+${g} ${k}`]:['flag','Plateau']]); resultModal('Training','Sharper 🏈','🏈',[`Your <b>${k}</b> improved. OVR <b>${nflOverall(y)}</b>.`],()=>nflYouthHub()); } }
+function nflYouthSeason(){ const b=nf(); if(!b||!b.youth||!b.youth.onTeam||!['primary','high','college','cc'].includes(S.eduLevel)) return; const y=b.youth, lvl=nflYouthLevel(), starter=(y.status==='starter'||y.status==='captain'), ov=nflOverall(y);
+  const games=starter?rng(10,13):rng(3,8); y.seasonStats={games,yards:0,tds:0,tackles:0,splash:0}; nflProduce(y, ov, games);
+  const grp=nflGroup(y.position); const prod = grp==='offense'?(y.seasonStats.yards/Math.max(1,games))/8 + y.seasonStats.tds : grp==='defense'?y.seasonStats.tackles*0.3 + y.seasonStats.splash*2 : games*0.6+y.seasonStats.splash;
+  const perf=(starter?8:0)+prod+ (ov-40)*0.3;
+  y.rep=clamp(y.rep+Math.round(perf/3)+rng(-2,4),0,100);
+  if(lvl==='highSchool'||lvl==='college') y.draftStock=clamp(y.draftStock+Math.max(0,Math.round(perf/3))+(y.wasCaptain?4:0)+(lvl==='college'?7:0),0,100);
+  const cap=S.age<=18?60:72; NF_ATTRS.forEach(k=>{ const g=clamp(Math.round((rng(0,2)+(y.hasSportsTalent?1:0))*(S.age<=18?1.2:0.9)),0,4); y.attributes[k]=clamp(y.attributes[k]+g,12,cap); }); if(S.age<=20) y.athleticism=clamp(y.athleticism+rng(0,2),0,95);
+  let lines=[];
+  if(!y.wasCaptain && starter && y.athleticism>=NF_YTH_THRESH[lvl]+12 && y.rep>=55 && (lvl==='highSchool'||lvl==='college')){ y.status='captain'; y.wasCaptain=true; setFlag('school_captain'); y.draftStock=clamp(y.draftStock+10,0,100); nflKeyMoment('becameCaptain','Named team captain.'); gainFame(rng(2,4)); lines.push(`🎖️ Named <b>team captain</b>!`); }
+  if(lvl==='highSchool' && !y.scholarship && y.rep>=60 && y.draftStock>=24){ y.scholarship=true; setFlag('athletic_scholarship'); S.schoolTuition=0; nflKeyMoment('scholarship','Earned a football scholarship.'); lines.push(`🎓 <b>Football scholarship</b> — college covered!`); }
+  // draft eligibility: COLLEGE ONLY (NFL requires it) with enough stock
+  if(!y._draftReady && lvl==='college' && y.draftStock>=38){ y._draftReady=true; lines.push(`📣 You can <b>declare for the draft</b> (Football hub)!`); }
+  const headline = grp==='offense'?`${y.seasonStats.yards} yds, ${y.seasonStats.tds} TD`:grp==='defense'?`${y.seasonStats.tackles} tkl, ${y.seasonStats.splash} splash`:`${games} starts`;
+  nflRecent(`${lvl}: ${headline}, stock ${y.draftStock}.`);
+  pushLog(`🏈 <b>${lvl==='college'?'College':'School'} season</b>: ${headline}. ${lines.join(' ')} Draft stock ${y.draftStock}.`, lines.length?[['good','🏈 Football season']]:[['flag','🏈 Football season']]); }
+function nflEnterDraft(){ const b=nf(), y=b.youth; const world=nflBuildWorld();
+  const stock=y.draftStock; const pickNo = clamp(Math.round(257 - stock*2.3 + rng(-8,8)), 1, 256); const round=clamp(Math.ceil(pickNo/32),1,7);
+  const sorted=Object.values(world.teams).sort((a,c)=>a.strength-c.strength); const team=sorted[clamp(Math.round((pickNo-1)/256*(sorted.length-1)),0,sorted.length-1)];
+  const attributes={}; for(const k in y.attributes) attributes[k]=y.attributes[k]; const ovNow=nflOverall({position:y.position,attributes});
+  S.nfl={ world, player:{ position:y.position, attributes, potential:clamp(nflPotential(), ovNow+8, 99), form:65, fitness:90, morale:74, teamId:team.id, onProBowl:false, retired:false, isRookie:true,
+    contract:{wagePerYear:Math.round((round===1?(33-Math.min(32,pickNo))*180000+1200000:round<=3?900000:660000)*priceMult()), yearsRemaining:rng(3,4)}, seasonStats:{games:0,yards:0,tds:0,tackles:0,splash:0}, careerStats:{games:0,yards:0,tds:0,tackles:0,splash:0,seasons:0} },
+    trophies:[], awards:[], keyMoments:(y.keyMoments||[]).slice(), recentEvents:[], summary:y.summary, _gamedThisSeason:0 };
+  nflEnsureNPCs(); setFlag('nfl_player'); gainFame(rng(3,7)); const ov=nflOverall(S.nfl.player);
+  nflKeyMoment('draft',`Drafted R${round} P${pickNo} by ${team.name} (OVR ${ov}).`);
+  pushLog(`🏈 <b>DRAFTED!</b> Round ${round}, pick ${pickNo} by the <b>${team.name}</b> — OVR ${ov}. Welcome to the NFL.`,[['good','Drafted to the NFL']]);
+  resultModal('Draft','You\'re in the NFL! 🏈','🏈',[`The <b>${team.name}</b> took you ${round===1?`#${pickNo} overall`:`in round ${round} (pick ${pickNo})`}.`,`Overall <b>${ov}</b> · potential <b>${S.nfl.player.potential}</b>. Play games and chase a championship.`],()=>nflHub()); }
+/* ---- Pro career ---- */
+function nflHub(){ const b=nf(); if(!b||!b.player){ nflMenuRoute(); return; } const p=b.player, team=nflTeam(), ov=nflOverall(p);
+  let bars=''; NF_ATTRS.forEach(k=>bars+=pbar(k.charAt(0).toUpperCase()+k.slice(1),p.attributes[k]));
+  let body=`<div style="text-align:left"><div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center">
+    <div><b>${NF_POS_EMO[p.position]} ${NF_POS_NAME[p.position]}</b><div style="font-size:12px;color:var(--dim)">${team?team.name:'Free agent'}${p.onProBowl?' · ⭐ Pro Bowl':''}${p.retired?' · Retired':''}</div></div>
+    <div style="text-align:right"><div style="font-size:26px;font-weight:900;color:var(--gold,#f5c451)">${ov}</div><div style="font-size:9px;color:var(--dim)">OVERALL</div></div></div></div>
+    <div class="relbars" style="margin-bottom:6px">${bars}</div><div class="relbars" style="margin-bottom:8px">${pbar('Form',p.form)}${pbar('Fitness',p.fitness)}${pbar('Morale',p.morale)}</div>
+    <div class="genlabel" style="margin:2px 0 4px">This Season</div>${socStatLine('Games',p.seasonStats.games)}${nflStatHeadline(p)}
+    <div class="genlabel" style="margin:8px 0 4px">Career <span>${p.careerStats.seasons} season${p.careerStats.seasons===1?'':'s'}</span></div>${socStatLine('Rings · Awards',`🏆 ${(b.trophies||[]).length} · 🏅 ${(b.awards||[]).length}`)}${p.contract?socStatLine('Contract',`${cur()}${p.contract.wagePerYear.toLocaleString()}/yr · ${p.contract.yearsRemaining}yr`):''}</div>`;
+  const ch=[]; const senior=!p.retired;
+  if(senior){ ch.push({label:`🏈 Play a Game${b._gamedThisSeason?` (${b._gamedThisSeason})`:''}`, alt:true, fn:nflPlayGame}); ch.push({label:'🏋️ Train', alt:true, fn:nflProTrain}); }
+  if((b.trophies||[]).length||(b.awards||[]).length) ch.push({label:'🏆 Trophy Cabinet', alt:true, fn:nflCabinet});
+  if(!b.owned && S.age>=18) ch.push({label:`🏟️ Buy a Franchise${p.retired?'':' (own & run)'}`, alt:true, fn:()=>{ const min=Math.round(5000000*priceMult()); if(netWorth()<min){ toast(`Need ${fcm(min)}+ net worth to buy a franchise.`); nflHub(); return; } nflBuyFranchisePrompt(); }});
+  if(senior && S.age>=30) ch.push({label:'🚪 Retire', alt:true, fn:nflRetirePrompt});
+  ch.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
+  openModal({banner:'Football', title:'🏈 My Career', icon:'🏈', closable:true, text:body, choices:ch}); }
+function nflProTrain(){ const p=nf().player; const w=NF_POS_W[p.position], keys=Object.keys(w), k=keys[rng(0,keys.length-1)]; const young=S.age<=26; const g=clamp(Math.round((rng(0,2)+1)*(young?1:0.5)),0,3); const cap=Math.min(99,p.potential); p.attributes[k]=clamp(p.attributes[k]+g,20,cap); p.fitness=clamp(p.fitness+rng(2,6));
+  pushLog(`🏋️ Offseason work — ${k} +${g} (OVR ${nflOverall(p)}).`,[g>0?['good',`+${g} ${k}`]:['flag','Plateau']]); resultModal('Training','Put in the Work 🏋️','🏋️',[`Your <b>${k}</b> improved to a ${nflOverall(p)} overall.`],()=>nflHub()); }
+function nflPlayGame(){ const b=nf(), p=b.player; if(p.retired){nflHub();return;} if((b._gamedThisSeason||0)>=4){ resultModal('Football','Save it for the Season 🏈','🏈',[`You've played your big games this season — advance a year to wrap the campaign.`],()=>nflHub()); return; }
+  const opp=Object.values(b.world.teams)[rng(0,b.world.all.length-1)]; const grp=nflGroup(p.position);
+  const c1=grp==='defense'?{label:'Lay the big hit',tip:'Tackling',a:'tackling'}:p.position==='QB'?{label:'Throw the deep ball',tip:'Throwing',a:'throwing'}:p.position==='RB'?{label:'Hit the hole',tip:'Speed',a:'speed'}:p.position==='OL'?{label:'Pancake the rusher',tip:'Strength',a:'strength'}:{label:'Go up and get it',tip:'Catching',a:'catching'};
+  const c2=grp==='defense'?{label:'Jump the route',tip:'Awareness',a:'awareness'}:{label:'Make them miss',tip:'Agility',a:'agility'};
+  const c3={label:'Trust your prep',tip:'Awareness',a:'awareness'};
+  openModal({banner:'Game Time', title:'🏈 Fourth Quarter', icon:'🏈', closable:false, text:`Two minutes left, season on the line vs the <b>${opp.name}</b>. It's on you. What's the play?`,
+    choices:[ {label:c1.label, tip:c1.tip, fn:()=>nflResolveGame(c1.a,opp)}, {label:c2.label, tip:c2.tip, fn:()=>nflResolveGame(c2.a,opp)}, {label:c3.label, tip:c3.tip, fn:()=>nflResolveGame(c3.a,opp)} ]}); }
+function nflResolveGame(attr,opp){ const b=nf(), p=b.player; const a=p.attributes[attr]||50; const edge=a-(opp.strength||60)*0.45+(p.form-50)*0.3+rng(-22,22); const win=edge>0; b._gamedThisSeason=(b._gamedThisSeason||0)+1;
+  const grp=nflGroup(p.position); p.seasonStats.games++;
+  let head;
+  if(grp==='offense'){ const yds=Math.max(0,Math.round((p.position==='QB'?180:55)+a*1.4+(win?rng(20,70):rng(0,25))+rng(-15,20))); const td=win?rng(1,3):rng(0,1); p.seasonStats.yards+=yds; p.seasonStats.tds+=td; head=`${yds} yds, ${td} TD`; }
+  else if(grp==='defense'){ const tkl=rng(4,11), sp=win?rng(1,3):rng(0,1); p.seasonStats.tackles+=tkl; p.seasonStats.splash+=sp; head=`${tkl} tackles, ${sp} splash`; }
+  else { const pan=win?rng(2,5):rng(0,2); p.seasonStats.splash+=pan; head=`${pan} pancakes, clean pocket`; }
+  p.form=clamp(p.form+(win?rng(2,6):-rng(1,4))); p.morale=clamp(p.morale+(win?rng(1,4):-rng(1,3))); if(win) gainFame(rng(0,2));
+  pushLog(`🏈 vs ${opp.name}: ${head} — ${win?'W ✅ (you came up clutch!)':'L ❌ (just short)'}.`,[[win?'good':'bad',head]]);
+  resultModal('Game', win?'Clutch! 🏈':'Heartbreaker', win?'🏈':'😞', [`You ${win?'delivered when it mattered':'came up short'} — <b>${head}</b>.`, win?'The stadium goes wild.':'Next week.'], ()=>nflHub()); }
+function nflSeasonEnd(){ const b=nf(); if(!b||!nflActive()||S.age<18) return; const p=b.player, world=b.world, team=world.teams[p.teamId]; if(!team) return; nflEnsureNPCs();
+  const ov=nflOverall(p), grp=nflGroup(p.position); const games=Math.max(0,17-(p.seasonStats.games||0)); nflProduce(p, ov, games); p.seasonStats.games=17;
+  const ss=p.seasonStats; const eliteOff = grp==='offense' && (p.position==='QB'?(ss.yards>=4200||ss.tds>=32):(ss.yards>=1300||ss.tds>=12));
+  const eliteDef = grp==='defense' && (ss.tackles>=110 || ss.splash>=14);
+  const made = (team.strength + (ov-60)*0.5 + rng(-10,10)) > 64; let lines=[], wonRing=false;
+  if(made){ lines.push(`Made the playoffs.`); const runs=clamp(Math.round((team.strength+ov-110)/8 + rng(-1,3)),0,4);
+    if(runs>=4 && rng(0,100) < 30+ov-team.strength/2){ wonRing=true; nflTrophy('League Championship'); gainFame(rng(6,12)); team.prestige=clamp(team.prestige+rng(2,5)); nflKeyMoment('trophy','Won the championship.'); lines.push(`🏆 <b>CHAMPIONS!</b>`);
+      if(ov>=80 && (eliteOff||eliteDef||p.position==='QB')){ nflAward(NF_AWARDS.champ); gainFame(rng(4,8)); lines.push(`🏅 <b>${NF_AWARDS.champ}</b>.`); } }
+    else lines.push(`Out in the ${['Wild Card','Divisional','Conf Championship','Championship Game'][clamp(runs,0,3)]}.`);
+  } else lines.push(`Missed the playoffs (${team.name}).`);
+  if(p.isRookie){ if(ov>=72 && (eliteOff||eliteDef||ss.tds>=8||ss.tackles>=90)){ nflAward(NF_AWARDS.roty); gainFame(rng(2,5)); lines.push(`🏅 <b>${NF_AWARDS.roty}</b>!`); } p.isRookie=false; }
+  if(ov>=80 && (eliteOff||eliteDef||rng(0,100)<35)){ if(!p.onProBowl||rng(0,1)){ p.onProBowl=true; nflAward(NF_AWARDS.probowl); gainFame(rng(1,3)); lines.push(`⭐ <b>Pro Bowl</b>.`); } }
+  if(grp==='offense' && ov>=87 && eliteOff){ nflAward(NF_AWARDS.opoy); gainFame(rng(2,4)); lines.push(`🏅 <b>${NF_AWARDS.opoy}</b>.`); }
+  if(grp==='defense' && ov>=87 && eliteDef){ nflAward(NF_AWARDS.dpoy); gainFame(rng(2,4)); lines.push(`🏅 <b>${NF_AWARDS.dpoy}</b>.`); }
+  if(ov>=90 && (p.position==='QB'?true:(eliteOff||eliteDef)) && made){ nflAward(NF_AWARDS.mvp); gainFame(rng(6,12)); setFlag('nfl_mvp'); nflKeyMoment('award','Named League MVP.'); lines.push(`🌟 <b>${NF_AWARDS.mvp}</b>!`); }
+  money(p.contract?p.contract.wagePerYear:600000); if(p.contract) p.contract.yearsRemaining=Math.max(0,p.contract.yearsRemaining-1);
+  nflAgeCurve(p); nflContractCheck(p, ov, eliteOff||eliteDef); nflTradeCheck(p, ov, eliteOff||eliteDef);
+  const cs=p.careerStats; cs.games+=17; cs.yards+=ss.yards; cs.tds+=ss.tds; cs.tackles+=ss.tackles; cs.splash+=ss.splash; cs.seasons++;
+  const headline = grp==='offense'?`${ss.yards} yds, ${ss.tds} TD`:grp==='defense'?`${ss.tackles} tkl, ${ss.splash} splash`:`17 starts`;
+  nflRecent(`S${cs.seasons}: ${headline}${wonRing?' 🏆':''}.`);
+  pushLog(`🏈 <b>Season ${cs.seasons}</b>: ${headline}. ${lines.join(' ')}`, (wonRing||lines.some(l=>/🏅|🌟|⭐/.test(l)))?[['good','🏈 Season']]:[['flag','🏈 Season']]);
+  p.seasonStats={games:0,yards:0,tds:0,tackles:0,splash:0}; b._gamedThisSeason=0;
+  if(p.fitness<=12 || S.age>=38 || (ov<60 && S.age>=34)) nflAutoRetire(); }
+function nflAgeCurve(p){ const peak=27, cap=Math.min(99,p.potential);
+  if(S.age<peak){ const w=NF_POS_W[p.position]||NF_POS_W.WR; const speed=S.age<=23?1:0.7;
+    Object.keys(w).sort((a,b)=>w[b]-w[a]).slice(0,2).forEach(k=>{ if(p.attributes[k]<cap) p.attributes[k]=clamp(p.attributes[k]+Math.round(rng(1,3)*speed),20,cap); });
+    for(let i=0;i<3;i++){ const k=NF_ATTRS[rng(0,NF_ATTRS.length-1)]; if(p.attributes[k]<cap) p.attributes[k]=clamp(p.attributes[k]+Math.round(rng(0,2)*speed),20,cap); }
+  }
+  else if(S.age>30){ const dec=Math.min(4,Math.round((S.age-30)/2)); for(let i=0;i<dec;i++){ const k=NF_ATTRS[rng(0,NF_ATTRS.length-1)]; p.attributes[k]=clamp(p.attributes[k]-rng(0,2),20,99); } p.fitness=clamp(p.fitness-rng(1,4)); } }
+function nflContractCheck(p, ov, elite){ if(p.contract && p.contract.yearsRemaining<=0){ p.contract={wagePerYear:Math.round((600000 + ov*ov*2200 + (elite?5000000:0))*priceMult()), yearsRemaining:rng(2,5)}; } }
+function nflTradeCheck(p, ov, elite){ const b=nf(), team=b.world.teams[p.teamId]; if(S.age<=32 && (ov>=team.strength+5 || elite) && rng(0,100)<20){ const cands=Object.values(b.world.teams).filter(t=>t.id!==team.id && t.strength>=team.strength); if(cands.length){ const nt=cands[rng(0,cands.length-1)]; const old=team.name; p.teamId=nt.id; nflKeyMoment('transfer',`Signed with ${nt.name}.`); pushLog(`🏈 I moved from the ${old} to the <b>${nt.name}</b>.`,[['flag','New team']]); } } }
+function nflTrophy(name){ const b=nf(); (b.trophies=b.trophies||[]).push({name,season:(b.player.careerStats.seasons||0)+1,age:S.age}); }
+function nflAward(name){ const b=nf(); (b.awards=b.awards||[]).push({name,age:S.age}); }
+function nflCabinet(){ const b=nf(); const tr=(b.trophies||[]).slice().reverse(), aw=(b.awards||[]).slice().reverse();
+  let body=`<div style="text-align:left"><div class="genlabel">🏆 Rings <span>${tr.length}</span></div>${tr.length?tr.map(t=>`<div style="font-size:13px;padding:2px 0">🏆 ${t.name} <span style="color:var(--dim);font-size:11px">· age ${t.age}</span></div>`).join(''):'<p style="color:var(--dim)">No rings yet.</p>'}<div class="genlabel" style="margin-top:8px">🏅 Awards <span>${aw.length}</span></div>${aw.length?aw.map(a=>`<div style="font-size:13px;padding:2px 0">🏅 ${a.name} <span style="color:var(--dim);font-size:11px">· age ${a.age}</span></div>`).join(''):'<p style="color:var(--dim)">No awards yet.</p>'}</div>`;
+  openModal({banner:'Football', title:'🏆 Cabinet', icon:'🏆', closable:true, text:body, choices:[{label:'‹ Back', fn:nflHub},{label:'Close', fn:closeModal}]}); }
+function nflRetirePrompt(){ openModal({banner:'Football', title:'🚪 Retire?', icon:'🚪', closable:true, text:`Hang up the cleats? You can't un-retire.`, choices:[{label:'Retire', alt:true, fn:()=>nflDoRetire(false)},{label:'Keep playing', fn:nflHub}] }); }
+function nflAutoRetire(){ nflDoRetire(true); }
+function nflDoRetire(forced){ const b=nf(),p=b&&b.player; if(!p||p.retired)return; p.retired=true; p.onProBowl=false; setFlag('nfl_retired'); nflKeyMoment('retirement','Retired from football.'); gainFame(rng(1,3));
+  pushLog(`🏈 I retired from football${forced?' — the body gave out':''}. <b>${p.careerStats.seasons}</b> seasons, <b>${(b.trophies||[]).length}</b> rings, <b>${(b.awards||[]).length}</b> awards. 🎖️`,[['echo','Retired from football']]); }
+/* ---- 🏈 OWNER MODE — buy/inherit a franchise, build the STADIUM, sign players,
+   win championships. Family franchise across generations. Deterministic. ---- */
+function nflFranchiseValue(t){ return Math.round((t.strength*t.strength*2200 + t.prestige*70000 + 1600000) * priceMult()); }
+function nflBuyFranchisePrompt(){ const world=(S.nfl&&S.nfl.world)||nflBuildWorld(); const nw=netWorth();
+  const all=Object.values(world.teams).map(t=>({t,price:nflFranchiseValue(t)})).sort((a,b)=>a.price-b.price).filter(x=>x.price<=nw);
+  if(!all.length){ resultModal('Football','Out of Reach 🏈','🏈',[`Even the cheapest franchise is beyond your means right now.`,`Build your fortune and come back.`],()=>setTab('activities')); return; }
+  const picks=[], seen={}; [all[0],all[Math.floor(all.length/2)],all[all.length-1]].forEach(x=>{ if(x&&!seen[x.t.id]){seen[x.t.id]=1;picks.push(x);} });
+  if(!S.nfl) S.nfl={ world, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'' }; else if(!S.nfl.world) S.nfl.world=world;
+  openModal({banner:'Football', title:'🏈 Buy a Franchise', icon:'🏈', closable:true,
+    text:`Buy an NFL franchise and run it — finances, the roster and the stadium. A stronger, bigger-market team costs more but starts better. Net worth: <b>${fcm(nw)}</b>.`,
+    choices: picks.map(x=>({label:`${x.t.name} (${x.t.conf})`, tip:`STR ${x.t.strength} · ${fcm(x.price)}`, alt:true, fn:()=>nflBuyFranchise(x.t.id,x.price)})).concat([{label:'‹ Back', fn:()=>{closeModal();setTab('activities');}}]) }); }
+function nflBuyFranchise(teamId,price){ if(S.money<price){ toast(`You can’t afford ${fcm(price)}.`); return; } spend(price);
+  const b=S.nfl, team=b.world.teams[teamId]; team.ownedByPlayer=true; const cap=clamp(Math.round(team.fanbase*0.95),50000,82000);
+  b.owned={ teamId, foundedGen:S.legacyGen||1, seasonsOwned:0, gensWon:[],
+    finances:{ cashBalance:Math.round(price*0.12), capSpace:Math.round(price*0.10), salaryBudget:Math.round(team.strength*70000*priceMult()) },
+    stadium:{ name:team.name.split(' ')[0]+' Stadium', capacity:cap, tier:1, facilities:1 }, trophies:[], boardObj:nflNewBoardObj(team), _lastRev:null, _lastExp:null };
+  setFlag('nfl_franchise_owner'); gainFame(rng(2,5)); nflKeyMoment('boughtClub',`Bought the ${team.name} for ${fcm(price)}.`);
+  pushLog(`🏈 I bought the <b>${team.name}</b> for <b>${fcm(price)}</b>. The franchise is mine — time to chase a championship.`,[['good','Bought an NFL franchise']]);
+  resultModal('Football','Franchise Bought 🏈','🏈',[`The <b>${team.name}</b> are yours — strength ${team.strength}, an ${cap.toLocaleString()}-seat stadium.`,`Board objective: <b>${nflBoardObjText(b.owned.boardObj)}</b>.`,`Each year your team plays a season — reinvest in players, the stadium and facilities.`],()=>nflOwnerHub()); }
+function nflNewBoardObj(team){ const r=rng(0,100); if(r<50) return {type:'playoffs'}; if(r<80) return {type:'win', target:rng(10,12)}; return {type:'profit'}; }
+function nflBoardObjText(o){ return o.type==='playoffs'?'Make the playoffs' : o.type==='win'?`Win ${o.target}+ games` : 'Stay profitable (positive cash)'; }
+function nflFranchiseTrophy(name){ const own=nf().owned; (own.trophies=own.trophies||[]).push({name,gen:S.legacyGen||1,age:S.age}); own.gensWon=own.gensWon||[]; if(own.gensWon.indexOf(S.legacyGen||1)<0) own.gensWon.push(S.legacyGen||1); }
+function nflOwnerHub(){ const b=nf(); if(!b||!b.owned){ nflMenuRoute(); return; }
+  const own=b.owned, team=b.world.teams[own.teamId], st=own.stadium, fin=own.finances;
+  const rev=own._lastRev||{gate:0,tv:0,commercial:0,prize:0}, exp=own._lastExp||{salaries:0,upkeep:0,staff:0};
+  const totRev=rev.gate+rev.tv+rev.commercial+rev.prize, totExp=exp.salaries+exp.upkeep+exp.staff;
+  let body=`<div style="text-align:left"><div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between"><b style="font-size:15px">🏈 ${team.name}</b><span style="color:var(--dim);font-size:12px">${team.conf} Conference</span></div>
+    <div style="font-size:12px;color:var(--dim);margin-top:3px">STR ${team.strength} · Prestige ${team.prestige} · 👥 ${fc(team.fanbase)} fans · 🏟️ ${st.capacity.toLocaleString()} seats</div></div>
+    <div class="relbars" style="margin-bottom:8px">${pbar('Roster Strength',team.strength)}${pbar('Prestige',team.prestige)}${pbar('Stadium',Math.round(st.capacity/82000*100))}${pbar('Facilities',st.facilities*20)}</div>
+    <div class="genlabel" style="margin:2px 0 4px">💰 Finances ${own.seasonsOwned?'<span>last season</span>':''}</div>
+    ${socStatLine('Cash balance',(fin.cashBalance<0?'-':'')+cur()+Math.abs(fin.cashBalance).toLocaleString())}
+    ${socStatLine('Cap space',cur()+fin.capSpace.toLocaleString())}
+    ${own.seasonsOwned?socStatLine('Revenue (gate)',`${cur()}${totRev.toLocaleString()} (${cur()}${rev.gate.toLocaleString()})`):''}
+    ${own.seasonsOwned?socStatLine('Costs',cur()+totExp.toLocaleString()):''}
+    ${own.seasonsOwned?socStatLine('Net last season',`${totRev-totExp>=0?'+':''}${cur()}${(totRev-totExp).toLocaleString()}`):''}
+    <div class="genlabel" style="margin:8px 0 4px">🎯 Board · 🏆 Banners</div>
+    ${socStatLine('Objective',nflBoardObjText(own.boardObj))}
+    ${socStatLine('Titles',`🏆 ${(own.trophies||[]).length}${(own.gensWon||[]).length>1?` · 👑 across ${own.gensWon.length} generations`:''}`)}
+    <p style="color:var(--dim);font-size:11px;margin-top:8px">Gate revenue scales with your stadium and big winning seasons. Invest, win banners, and the family franchise compounds across generations.</p></div>`;
+  const ch=[ {label:`🛒 Sign a Free Agent`, alt:true, fn:nflSignFreeAgent}, {label:`🏟️ Expand Stadium`, alt:true, fn:nflUpgradeStadium}, {label:`🎓 Upgrade Facilities`, alt:true, fn:nflUpgradeFacilities} ];
+  if((own.trophies||[]).length) ch.push({label:'🏆 Franchise Banners', alt:true, fn:nflFranchiseHonors});
+  ch.push({label:'‹ Back', fn:()=>{closeModal();setTab('activities');}});
+  openModal({banner:'Football', title:'🏈 My Franchise', icon:'🏈', closable:true, text:body, choices:ch}); }
+function nflSignFreeAgent(){ const b=nf(), own=b.owned, fin=own.finances; const minFee=Math.round(120000*priceMult());
+  if(fin.capSpace<minFee){ resultModal('Free Agency','No Cap Space 🛒','🛒',[`Your cap space is ${fcm(fin.capSpace)} — not enough for a real signing.`,`Win games, grow the gate, free up money.`],()=>nflOwnerHub()); return; }
+  const opts=[{lab:'Depth piece',f:0.3,g:[1,3]},{lab:'Quality starter',f:0.6,g:[2,5]},{lab:'Franchise cornerstone',f:0.95,g:[4,8]}].map(o=>({lab:o.lab,cost:Math.round(fin.capSpace*o.f),g:o.g})).filter(o=>o.cost>=minFee&&o.cost<=fin.capSpace);
+  openModal({banner:'Free Agency', title:'🛒 Sign a Player', icon:'🛒', closable:true, text:`Spend from your <b>${fcm(fin.capSpace)}</b> cap space to upgrade the roster. Bigger contracts buy bigger talent.`,
+    choices: opts.map(o=>({label:`${o.lab} — ${fcm(o.cost)}`, alt:true, fn:()=>nflDoSignFA(o.cost,o.g)})).concat([{label:'‹ Back', fn:nflOwnerHub}]) }); }
+function nflDoSignFA(cost,g){ const b=nf(), own=b.owned, team=b.world.teams[own.teamId]; own.finances.capSpace-=cost; own.finances.cashBalance-=cost; const gain=rng(g[0],g[1]); team.strength=clamp(team.strength+gain,40,99); own.finances.salaryBudget+=Math.round(cost*0.15);
+  pushLog(`🛒 The ${team.name} signed a player for ${fcm(cost)} — roster strength +${gain} (now ${team.strength}).`,[['good',`+${gain} roster`]]);
+  resultModal('Free Agency','Signed ✍️','✍️',[`A ${fcm(cost)} signing lifts roster strength by <b>${gain}</b> to <b>${team.strength}</b>.`],()=>nflOwnerHub()); }
+function nflUpgradeStadium(){ const own=nf().owned, st=own.stadium; if(st.capacity>=82000){ resultModal('Stadium','Sold Out 🏟️','🏟️',[`Your ${st.capacity.toLocaleString()}-seat stadium is already among the league's biggest.`],()=>nflOwnerHub()); return; }
+  const addCap=4000+st.tier*2000, cost=Math.round(addCap*3000*priceMult());
+  openModal({banner:'Stadium', title:'🏟️ Expand the Stadium', icon:'🏟️', closable:true,
+    text:`Add <b>${addCap.toLocaleString()} seats</b> → ${(st.capacity+addCap).toLocaleString()} for <b>${fcm(cost)}</b>. More seats = bigger gate income on Sundays. Cash: <b>${fcm(own.finances.cashBalance)}</b>.`,
+    choices:[{label:`Build it (${fcm(cost)})`, alt:true, fn:()=>nflDoStadium(cost,addCap)},{label:'‹ Back', fn:nflOwnerHub}] }); }
+function nflDoStadium(cost,addCap){ const own=nf().owned; if(own.finances.cashBalance<cost){ toast(`Not enough cash — need ${fcm(cost)}.`); return; }
+  own.finances.cashBalance-=cost; own.stadium.capacity=clamp(own.stadium.capacity+addCap,50000,82000); own.stadium.tier++;
+  pushLog(`🏟️ Expanded the stadium to <b>${own.stadium.capacity.toLocaleString()}</b> seats (${fcm(cost)}).`,[['good','Stadium expanded']]);
+  resultModal('Stadium','Bigger & Louder 🏟️','🏟️',[`Capacity is now <b>${own.stadium.capacity.toLocaleString()}</b> — expect a gate bump on game days.`],()=>nflOwnerHub()); }
+function nflUpgradeFacilities(){ const own=nf().owned; if(own.stadium.facilities>=5){ resultModal('Facilities','Elite 🎓','🎓',[`Your training facilities are already elite.`],()=>nflOwnerHub()); return; }
+  const cost=Math.round(own.stadium.facilities*650000*priceMult());
+  openModal({banner:'Facilities', title:'🎓 Upgrade Facilities', icon:'🎓', closable:true, text:`Better training & development facilities (level ${own.stadium.facilities}→${own.stadium.facilities+1}) grow your roster faster every season. Cost <b>${fcm(cost)}</b>. Cash: <b>${fcm(own.finances.cashBalance)}</b>.`,
+    choices:[{label:`Invest (${fcm(cost)})`, alt:true, fn:()=>nflDoFacilities(cost)},{label:'‹ Back', fn:nflOwnerHub}] }); }
+function nflDoFacilities(cost){ const own=nf().owned; if(own.finances.cashBalance<cost){ toast(`Not enough cash.`); return; } own.finances.cashBalance-=cost; own.stadium.facilities++;
+  pushLog(`🎓 Upgraded facilities to level ${own.stadium.facilities} (${fcm(cost)}).`,[['good','Facilities upgraded']]);
+  resultModal('Facilities','Built for the Future 🎓','🎓',[`Facilities at level <b>${own.stadium.facilities}</b> — your roster will improve faster each season.`],()=>nflOwnerHub()); }
+function nflFranchiseHonors(){ const own=nf().owned, tr=(own.trophies||[]).slice().reverse();
+  let body=`<div style="text-align:left"><div class="genlabel" style="margin:2px 0 4px">🏆 Championship Banners <span>${tr.length}${(own.gensWon||[]).length>1?` · 👑 ${own.gensWon.length} gens`:''}</span></div>`;
+  body+= tr.length? tr.map(t=>`<div style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)">🏆 <b>${t.name}</b> <span style="color:var(--dim);font-size:11px">· Gen ${t.gen} · age ${t.age}</span></div>`).join('') : `<p style="color:var(--dim)">No banners yet.</p>`;
+  body+=`</div>`; openModal({banner:'Football', title:'🏆 Franchise Banners', icon:'🏆', closable:true, text:body, choices:[{label:'‹ Back', fn:nflOwnerHub},{label:'Close', fn:closeModal}]}); }
+function nflOwnerSeason(){ const b=nf(); if(!b||!b.owned||S.age<18) return; const own=b.owned, team=b.world.teams[own.teamId], st=own.stadium, fin=own.finances; if(!team) return;
+  let lines=[], wonRing=false;
+  const wins=clamp(Math.round(3 + (team.strength-60)*0.32 + rng(-3,3)), 1, 17);
+  const made = wins>=10;
+  if(made){ lines.push(`Made the playoffs (${wins}-${17-wins}).`); const runs=clamp(Math.round((team.strength-72)/6 + rng(-1,3)),0,4);
+    if(runs>=4 && rng(0,100)<30+(team.strength-70)){ wonRing=true; nflFranchiseTrophy('League Championship'); team.prestige=clamp(team.prestige+rng(2,5)); team.fanbase=Math.round(team.fanbase*1.05); lines.push(`🏆 <b>CHAMPIONS!</b>`); }
+    else lines.push(`Out in the ${['Wild Card','Divisional','Conf Championship','Championship Game'][clamp(runs,0,3)]}.`);
+  } else lines.push(`Missed the playoffs (${wins}-${17-wins}).`);
+  // STADIUM gate revenue — capacity × attendance(success/prestige) × ticket × ~9 home games
+  const succ = wins>=13?1.0 : wins>=11?0.9 : wins>=8?0.78 : 0.62;
+  const attPct = clamp(0.6 + team.prestige/260 + succ*0.22, 0.4, 1.0); const att=Math.round(st.capacity*attPct);
+  const ticket=Math.round(120*priceMult()); const gate=att*ticket*9;
+  const tv=Math.round((90000000 + team.prestige*350000) * priceMult());   // NFL national TV money (the biggest, shared)
+  const commercial=Math.round(team.prestige*team.fanbase*1.0*priceMult());
+  const prize=Math.round(((wonRing?3:0)+(made?1.2:0)+Math.max(0,wins-8)/8) * 2500000 * priceMult());
+  const revenue=gate+tv+commercial+prize;
+  const salaries=Math.round(team.strength*team.strength*9000*priceMult()), upkeep=Math.round(st.capacity*60*priceMult()), staff=Math.round((600000+st.facilities*280000)*priceMult());
+  const expenses=salaries+upkeep+staff;
+  fin.cashBalance += revenue-expenses; fin.capSpace=Math.max(0,Math.round(Math.max(0,fin.cashBalance)*0.5 + revenue*0.10));
+  own._lastRev={gate,tv,commercial,prize}; own._lastExp={salaries,upkeep,staff};
+  const grow=(st.facilities>=3?rng(0,2):st.facilities>=2?rng(0,1):0) - (rng(0,100)<25?1:0); team.strength=clamp(team.strength+grow,40,99);
+  const ob=own.boardObj, met = ob.type==='playoffs'?made : ob.type==='win'?(wins>=ob.target) : (revenue>expenses);
+  if(met) gainFame(rng(1,3)); own.boardObj=nflNewBoardObj(team); own.seasonsOwned++;
+  nflRecent(`Franchise S${own.seasonsOwned}: ${team.name} ${wins}W, net ${revenue-expenses>=0?'+':''}${fcm(revenue-expenses)}.`);
+  pushLog(`🏈 <b>${team.name}</b> · ${lines.join(' ')} Revenue ${fcm(revenue)} − costs ${fcm(expenses)} = <b>${revenue-expenses>=0?'+':''}${fcm(revenue-expenses)}</b> (cash ${fcm(fin.cashBalance)})${fin.cashBalance<0?' ⚠️':''}.`, (wonRing||made)?[['good','🏈 Franchise season']]:[['flag','🏈 Franchise season']]); }
+function nflMenuRoute(){ const b=S.nfl;
+  if(b && b.owned){ nflOwnerHub(); return; }
+  if(b && b.player){ nflHub(); return; }
+  if(b && b.youth){ nflYouthHub(); return; }
+  if(nflEligibleYouth()){ nflYouthStartPrompt(); return; }
+  if(S.age>=18 && netWorth()>=Math.round(5000000*priceMult())){ nflBuyFranchisePrompt(); return; }
+  resultModal('Football','Past the Window 🏈','🏈',[`Pro football starts young — you've aged out of the playing path. Build wealth and you could buy a franchise instead.`],()=>setTab('activities')); }
+function nflMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  if(!nflCountryOK()){ toast('🇺🇸 The NFL is only available to players living in the USA.'); return; }
+  if(!soccerEraOK()){ toast('Organized football doesn’t exist in this era yet.'); return; }
+  logAct('call',{fn:'nflMenu'}); nflMenuRoute(); }
 /* Real-world star names for rivals & flavor references (user-accepted IP risk; NOT store-safe — see notes).
    Used to name your rival and to colour scenario text across sports. */
 const SPORT_STARS={
@@ -6165,6 +6500,7 @@ function renderActivities(){ const v=document.getElementById('activitiesView'); 
   let h=`${feedX('Activities')}`;
   if(soccerEraOK() && S.age>=8){ const sub = (S.soccer&&S.soccer.player) ? (S.soccer.player.retired?`Retired · ${(S.soccer.trophies||[]).length} trophies`:`${SOC_POS_NAME[S.soccer.player.position]} · ${socClub()?socClub().name:'—'} · OVR ${socOverall(S.soccer.player)}`) : 'Join an academy & go pro'; h+=hubCard('⚽','Football', sub, "footballMenu()"); }
   if(bballEraOK() && S.age>=8){ const sub = (S.bball&&S.bball.player) ? (S.bball.player.retired?`Retired · ${(S.bball.trophies||[]).length} rings`:`${BB_POS_NAME[S.bball.player.position]} · ${bbTeam()?bbTeam().name:'—'} · OVR ${bbOverall(S.bball.player)}`) : 'Ball your way to the pros'; h+=hubCard('🏀','Basketball', sub, "basketballMenu()"); }
+  if(nflEraOK() && S.age>=8){ const sub = (S.nfl&&S.nfl.owned) ? `Owner · ${S.nfl.world.teams[S.nfl.owned.teamId].name} · 🏆 ${(S.nfl.owned.trophies||[]).length}` : (S.nfl&&S.nfl.player) ? (S.nfl.player.retired?`Retired · ${(S.nfl.trophies||[]).length} rings`:`${NF_POS_NAME[S.nfl.player.position]} · ${nflTeam()?nflTeam().name:'—'} · OVR ${nflOverall(S.nfl.player)}`) : 'Chase the NFL 🇺🇸'; h+=hubCard('🏈','NFL Football', sub, "nflMenu()"); }
   h+=hubCard('🎟️','Go Out','Events, nightlife, find love', "setTab('events')");
   h+=hubCard('✈️','Take a Trip','Hotels worldwide, rent a car, ball out', "takeTrip()");
   h+=hubCard('🧘','Mind & Body','Gym, diet, meditation, therapy', "mindBody()");
