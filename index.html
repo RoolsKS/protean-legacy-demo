@@ -472,6 +472,7 @@
       <select id="cCountry" onchange="fillCities()"></select></div>
     <div class="fld"><span>🏙️ City</span><select id="cCity"></select></div>
     <div class="fld"><span>🌟 Special Talent</span><select id="cTalent"></select></div>
+    <div class="fld"><span>👑 Family Wealth <span id="cFamLock" style="opacity:.75;font-weight:700;font-size:11px;color:var(--accent)"></span></span><select id="cFamily" onchange="onFamilyPick()"></select></div>
     <label class="richtoggle"><input type="checkbox" id="cRich"> 💰 Start with $1,000,000</label>
     <button id="btnStart" class="start big" onclick="beginLife()">🚀 Start Life</button>
     <button id="btnSurprise" class="start big" onclick="surpriseMe()">🎁 Surprise Me</button>
@@ -672,7 +673,7 @@ function showCreate(){
     cs.innerHTML=Object.entries(COUNTRIES).map(([k,c])=>`<option value="${k}">${c.flag} ${c.name}</option>`).join('');
     document.getElementById('cTalent').innerHTML=TALENTS.map(t=>`<option value="${t.k}">${t.icon} ${t.name}</option>`).join('');
   }
-  fillCities(); createSex='m'; syncSex(); renderEraPicker(); pickEra(createEra); pickWorldMode(createWorldMode,false); rerollName();
+  fillCities(); fillFamilyTiers(); createSex='m'; syncSex(); renderEraPicker(); pickEra(createEra); pickWorldMode(createWorldMode,false); rerollName();
 }
 function renderEraPicker(){ const row=document.getElementById('cEraRow'); if(!row) return;
   row.innerHTML=ERA_ORDER.map(id=>{ const e=ERA_DEFS[id], sel=id===createEra, locked=!canUseEra(e);
@@ -725,6 +726,25 @@ function randomizeCreate(){
   createSex=rand()<.5?'m':'f'; syncSex();
   document.getElementById('cTalent').selectedIndex=rng(0,TALENTS.length-1); rerollName();
 }
+/* 👑 FAMILY WEALTH — a PREMIUM character-creation choice: pick the family you're born into.
+   Free players get Working Class; the rest are premium-gated. The origin is captured in
+   birthOpts, so a chosen family replays deterministically. */
+const FAMILY_TIERS=[
+  {v:'poor',      label:'🪫 Dirt Poor',     prem:true},
+  {v:'normal',    label:'👷 Working Class',  prem:false},
+  {v:'middle',    label:'🏡 Middle Class',   prem:true},
+  {v:'rich_kid',  label:'💰 Wealthy',        prem:true},
+  {v:'famous_kid',label:'🌟 Famous Family',  prem:true},
+  {v:'royal',     label:'👑 Royalty',        prem:true},
+  {v:'adopted',   label:'🏠 Adopted',        prem:true},
+];
+function fillFamilyTiers(){ const sel=document.getElementById('cFamily'); if(!sel) return; const prem=isPremium(); const prev=sel.value||'normal';
+  sel.innerHTML=FAMILY_TIERS.map(t=>`<option value="${t.v}">${t.label}${(t.prem&&!prem)?' 🔒':''}</option>`).join('');
+  sel.value = FAMILY_TIERS.some(t=>t.v===prev)?prev:'normal';
+  const lock=document.getElementById('cFamLock'); if(lock) lock.textContent = prem?'✨ unlocked':'🔒 Premium'; }
+function onFamilyPick(){ const sel=document.getElementById('cFamily'); if(!sel) return; const t=FAMILY_TIERS.find(x=>x.v===sel.value);
+  if(t&&t.prem&&!isPremium()){ sel.value='normal'; toast('👑 Choosing your family is a Premium perk.'); if(typeof openPremium==='function') openPremium(); } }
+function familyOriginChoice(){ const sel=document.getElementById('cFamily'); if(!sel) return 'normal'; const v=sel.value||'normal'; const t=FAMILY_TIERS.find(x=>x.v===v); if(t&&t.prem&&!isPremium()) return 'normal'; return v; }
 function beginLife(origin){
   const first=(document.getElementById('cFirst').value||'').trim()||nm(createSex);
   const mid=(document.getElementById('cMiddle').value||'').trim();
@@ -735,7 +755,7 @@ function beginLife(origin){
     era:createEra,   // ERA — the chosen world ruleset (captured in birthOpts → replay-safe)
     worldMode:createWorldMode,   // fixed era vs Living Timeline (captured in birthOpts → replay-safe)
     worldPace:createWorldPace,   // P3+: world-clock speed (captured in birthOpts → replay-safe)
-    origin: typeof origin==='string'?origin:'normal' });
+    origin: typeof origin==='string'?origin:familyOriginChoice() });   // 👑 premium Family Wealth pick (or Working Class)
 }
 function surpriseMe(){ randomizeCreate();
   const pool = isPremium()
@@ -1209,9 +1229,11 @@ function startLife(opts){
   else if(S.origin==='royal'){ S.money+=200000; setFlag('royal'); }
   else if(S.origin==='adopted'){ setFlag('adopted'); }
   else if(S.origin==='famous_kid'){ setFlag('famous_family'); }
+  else if(S.origin==='middle'){ S.money+=15000; setFlag('middle_class'); }
+  else if(S.origin==='poor'){ setFlag('born_poor'); }
   S.peakMoney=Math.max(S.peakMoney||0,S.money);
   // how much your parents can spend — sets which schools they can afford
-  S.parentWealth=Math.round((has('born_rich')||has('royal')?rng(2e6,2.5e7):has('famous_family')?rng(6e5,6e6):rng(2e4,4e5))*(0.5+(COUNTRIES[S.country].col||50)/120));
+  S.parentWealth=Math.round((has('born_rich')||has('royal')?rng(2e6,2.5e7):has('famous_family')?rng(6e5,6e6):has('born_poor')?rng(2e3,3e4):has('middle_class')?rng(9e4,3.2e5):rng(2e4,4e5))*(0.5+(COUNTRIES[S.country].col||50)/120));
   S.celebs=buildCelebs();   // a roster of famous people to meet, befriend, date
   document.getElementById('title').style.display='none';
   document.getElementById('create').style.display='none';
@@ -2237,6 +2259,8 @@ function birthNarrative(){
   else if(S.origin==='royal') t+=`<br>I was born into <b>ROYALTY</b> — palaces and titles await. 👑`;
   else if(S.origin==='rich_kid') t+=`<br>I was born into serious <b>wealth</b>. 💰`;
   else if(S.origin==='famous_kid') t+=`<br>My family is <b>famous</b> — the spotlight found me early. 🌟`;
+  else if(S.origin==='poor') t+=`<br>We had <b>next to nothing</b> — I was born into hard poverty. 🪫`;
+  else if(S.origin==='middle') t+=`<br>We were comfortable — a solid <b>middle-class</b> home. 🏡`;
   const pet=Object.values(S.people).find(p=>p.pet&&p.alive);
   if(pet) t+=`<br>We have a family ${pet.rel.toLowerCase()} named ${pet.name}.`;
   if(S.signature) t+=`<br><i>“${S.signature}”</i>`;
@@ -9850,7 +9874,7 @@ function enrollSchool(level,label){
   buildSchoolPeople();
   pushLog(`I started <b>${label}</b> at ${S.schoolName}.`,[['flag',`Education: ${label}`]]);
   openModal({banner:'Education', title:label, icon:'🏫', closable:true,
-    text:`I'm starting ${label.toLowerCase()}.<br><br><b>School:</b> ${S.schoolName}<br><b>Type:</b> ${S.schoolType}<br><b>Grades:</b> ${S.grades}/100`,
+    text:`I'm starting ${label.toLowerCase()}.<br><br><b>School:</b> ${S.schoolName}<br><b>Type:</b> ${S.schoolType}<div class="relbars" style="margin-top:10px;text-align:left">${pbar('Grades',S.grades)}</div>`,
     choices:[{label:'OK', fn:()=>{ closeModal(); setTab('life'); }}]});
 }
 const PASS_GRADE=40;   // below this you fail the year and get held back
