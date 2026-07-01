@@ -3905,6 +3905,123 @@ const EVENTS = [
       {label:'Post a warning against it', tip:'Be responsible', apply:()=>{ karma(4); if(plat)plat.sentiment=clamp((plat.sentiment||0)+rng(4,9),-100,100); if(rng(0,100)<30){ gainFame(rng(1,3)); return {text:`Your video warning kids off ${chal} gets picked up by the news. You become a bit of a responsible-role-model figure.`,tags:[['good','Voice of reason']]}; } return {text:`You post a heartfelt warning. It won't go viral, but a few parents in the comments thank you.`,tags:[['good','Did the responsible thing']]}; }},
     ]};}},
 
+/* ═══════════ 📖 STORY WAVE 4 — health / aging · money / business · romance / marriage ═══════════ */
+/* HEALTH — a 2am emergency */
+{ id:'w4_er', once:false, weight:12, when:S=>S.age>=25&&(S.age-(S._lastW20||-99)>=5),
+  build:S=>{ S._lastW20=S.age; const sym=pick(['crushing chest pain','a sudden, blinding headache','trouble breathing','a fall down the stairs','stabbing abdominal pain']); return {yr:`Age ${S.age}`, title:'🚑 2 A.M. Emergency',
+    text:`You wake at 2 a.m. with <b>${sym}</b>. It might be nothing. It might be serious. What do you do?`,
+    choices:[
+      {label:'Call an ambulance', tip:'Better safe', apply:()=>{ const cost=rng(200,3000); if(S.money>0)money(-Math.min(cost,S.money)); if(rng(0,100)<45){ chg('health',rng(3,9)); return {text:`The paramedics catch something serious early and get you treated in time. The <b>${cur()}${cost.toLocaleString()}</b> bill stings, but it may have saved your life.`,tags:[['good','Caught it in time']]}; } chg('happy',rng(1,3)); return {text:`Turns out it wasn't life-threatening. A <b>${cur()}${cost.toLocaleString()}</b> bill for peace of mind — worth it.`,tags:[['good','False alarm']]}; }},
+      {label:'Tough it out till morning', tip:'Risky', apply:()=>{ if(rng(0,100)<42){ chg('health',-rng(6,16)); addStress(rng(5,12)); return {text:`You wait it out — and it gets much worse. By morning you're rushed in anyway, having lost precious hours.`,tags:[['bad','Waited too long']]}; } chg('health',-rng(0,3)); return {text:`You white-knuckle it through the night and, luckily, it eases by dawn. You got away with one.`,tags:[['flag','Rode it out']]}; }},
+      {label:'Drive yourself to the ER', tip:'Save the ambulance fee', apply:()=>{ if(rng(0,100)<20){ chg('health',-rng(4,10)); return {text:`You nearly pass out at the wheel and clip a curb, but you make it. Reckless — you should've called for help.`,tags:[['bad','Dangerous drive']]}; } const cost=rng(100,900); if(S.money>0)money(-Math.min(cost,S.money)); chg('health',rng(1,5)); return {text:`You white-knuckle the drive and get seen. Handled, for a smaller <b>${cur()}${cost.toLocaleString()}</b> bill.`,tags:[['flag','Drove yourself']]}; }},
+    ]};}},
+/* HEALTH — a get-fit bet */
+{ id:'w4_fitbet', once:false, weight:11, when:S=>S.age>=16&&(S.fitness||50)<70&&(S.age-(S._lastW21||-99)>=4),
+  build:S=>{ S._lastW21=S.age; const stake=rng(200,2000); return {yr:`Age ${S.age}`, title:'💪 The Bet',
+    text:`A friend bets you <b>${cur()}${stake.toLocaleString()}</b> that you can't get in real shape within the year. Do you take the bet?`,
+    choices:[
+      {label:'Take it — game on', tip:'Put in the work', apply:()=>{ if(rng(0,100) < 45+S.stats.health/6){ S.fitness=clamp((S.fitness||50)+rng(12,25),0,100); chg('looks',rng(1,4)); chg('health',rng(2,6)); money(stake); driftPers('discipline',2); return {text:`You grind it out for a year and transform. You collect the <b>${cur()}${stake.toLocaleString()}</b> — and a whole new body.`,tags:[['good',`Won the bet · +${cur()}${stake.toLocaleString()}`]]}; } S.fitness=clamp((S.fitness||50)+rng(2,7),0,100); money(-stake); return {text:`You start strong but fizzle out by spring. You lose the bet — and <b>${cur()}${stake.toLocaleString()}</b> — but you're a little fitter for trying.`,tags:[['flag',`Lost the bet −${cur()}${stake.toLocaleString()}`]]}; }},
+      {label:'Decline the bet', tip:'Know your limits', apply:()=>{ return {text:`You wave it off. Maybe another year. Your wallet and your couch are safe.`,tags:[['flag','Passed on the bet']]}; }},
+    ]};}},
+/* HEALTH/AGING — a chronic diagnosis */
+{ id:'w4_diagnosis', once:false, weight:12, when:S=>S.age>=45&&(S.age-(S._lastW22||-99)>=6),
+  build:S=>{ S._lastW22=S.age; const cond=pick(['high blood pressure','type-2 diabetes','a heart murmur','early arthritis','high cholesterol']); return {yr:`Age ${S.age}`, title:'🩺 A Diagnosis',
+    text:`A routine checkup turns up <b>${cond}</b>. The doctor lays out your options. How do you face it?`,
+    choices:[
+      {label:'Attack it — overhaul everything', tip:'Diet, meds, discipline', apply:()=>{ const cost=rng(500,5000); if(S.money>0)money(-Math.min(cost,S.money)); chg('health',rng(3,9)); S.fitness=clamp((S.fitness||50)+rng(4,10),0,100); driftPers('discipline',2); setFlag('managing_condition'); return {text:`You overhaul your whole life — diet, exercise, medication, the lot. It's work, but you get <b>${cond}</b> firmly under control.`,tags:[['good','Took charge of your health']]}; }},
+      {label:'Manage it, take the meds', tip:'Steady as she goes', apply:()=>{ chg('health',rng(1,4)); return {text:`You take the prescription and make modest changes. It's managed — not cured, but not getting worse.`,tags:[['flag','Managing it']]}; }},
+      {label:'Ignore it, you feel fine', tip:'Denial', apply:()=>{ if(rng(0,100)<55){ chg('health',-rng(5,13)); addStress(rng(3,8)); return {text:`You pretend it's not happening. A few years later, <b>${cond}</b> catches up with you the hard way.`,tags:[['bad','Ignored the warning']]}; } chg('health',-rng(1,4)); return {text:`You brush it off and, for now, you feel okay — but you're playing with fire.`,tags:[['flag','In denial']]}; }},
+    ]};}},
+/* HEALTH — a wake-up call to quit a habit */
+{ id:'w4_quit', once:false, weight:13, when:S=>((S.addictions||[]).length>0||has('smoker')||has('painkiller_habit'))&&(S.age-(S._lastW23||-99)>=3),
+  build:S=>{ S._lastW23=S.age; const vice=(S.addictions&&S.addictions[0]&&(S.addictions[0].name||S.addictions[0].key))||(has('painkiller_habit')?'painkillers':'smoking'); return {yr:`Age ${S.age}`, title:'🚭 The Wake-Up Call',
+    text:`A health scare forces you to face your <b>${vice}</b> habit head-on. It's time to make a call. What do you do?`,
+    choices:[
+      {label:'Quit cold turkey', tip:'All or nothing', apply:()=>{ if(rng(0,100) < 40+S.stats.health/6+ (S.personality&&S.personality.discipline||50)/6){ S.addictions=[]; setFlag('got_clean'); chg('health',rng(4,10)); chg('happy',rng(2,6)); driftPers('discipline',2); return {text:`It's brutal — the shakes, the cravings, the long nights — but you white-knuckle through and get <b>clean</b>. You beat it.`,tags:[['good','Kicked the habit']]}; } addStress(rng(6,14)); return {text:`You try to quit cold turkey but relapse within weeks. The habit's grip is stronger than your willpower this time.`,tags:[['bad','Relapsed']]}; }},
+      {label:'Cut down gradually', tip:'Slow and steady', apply:()=>{ if(rng(0,100)<55){ chg('health',rng(1,5)); driftPers('discipline',1); return {text:`You taper off bit by bit. It's slow, but you're using far less than you were — real progress.`,tags:[['good','Cutting back']]}; } return {text:`You mean to cut down, but 'just one more' keeps winning. Not much changes.`,tags:[['flag','Old habits die hard']]}; }},
+      {label:'Ignore it', tip:'Not today', apply:()=>{ chg('health',-rng(2,6)); addStress(rng(2,6)); return {text:`You tell yourself you'll deal with it later. The habit digs in deeper.`,tags:[['bad','Stayed hooked']]}; }},
+    ]};}},
+/* AGING — an aging parent needs care */
+{ id:'w4_agingparent', once:false, weight:13, when:S=>((P('mom')&&P('mom').alive&&(P('mom').age||0)>=68)||(P('dad')&&P('dad').alive&&(P('dad').age||0)>=68))&&(S.age-(S._lastW24||-99)>=4),
+  build:S=>{ S._lastW24=S.age; const par=(P('mom')&&P('mom').alive&&(P('mom').age||0)>=68)?P('mom'):P('dad'); return {yr:`Age ${S.age}`, title:'👵 Caring for a Parent',
+    text:`Your ${par.rel.toLowerCase()}, <b>${par.name}</b> (${par.age}), can no longer live alone safely. The family looks to you. What do you do?`,
+    choices:[
+      {label:'Move them in with you', tip:'Family cares for family', apply:()=>{ rel(par.id,+rng(8,15),+rng(5,10),`You took them in when they needed you.`); addStress(rng(6,14)); chg('happy',rng(-2,4)); karma(4); setFlag('caregiver'); return {text:`You move ${par.name} into your home. It's exhausting and your privacy's gone — but you'll never regret the extra years together under one roof.`,tags:[['good','Took them in']]}; }},
+      {label:'Hire in-home care', tip:'The middle path', apply:()=>{ const cost=rng(8000,40000); if(S.money>0)money(-Math.min(cost,S.money)); rel(par.id,+rng(3,7),+rng(2,5),`You made sure they were cared for.`); return {text:`You arrange professional in-home care for <b>${cur()}${cost.toLocaleString()}/yr</b>. ${par.name} keeps their independence and their dignity.`,tags:[['good','Arranged care']]}; }},
+      {label:'Move them to a facility', tip:'Practical, but hard', apply:()=>{ const cost=rng(15000,60000); if(S.money>0)money(-Math.min(cost,S.money)); rel(par.id,-rng(2,8),-rng(1,4),`You moved them into a home.`); addStress(rng(3,8)); return {text:`You find ${par.name} a good assisted-living facility. It's the sensible choice — but the guilt of the goodbye at the door lingers.`,tags:[['flag','Assisted living']]}; }},
+    ]};}},
+/* MONEY — a hot investment tip */
+{ id:'w4_invest', once:false, weight:12, when:S=>S.age>=21&&(S.money||0)>=5000&&(S.age-(S._lastW25||-99)>=3),
+  build:S=>{ S._lastW25=S.age; const thing=pick(['a hot tech stock','a friend\'s startup','a "guaranteed" crypto coin','a pre-IPO tip','a property flip']); return {yr:`Age ${S.age}`, title:'📈 A Hot Tip',
+    text:`Someone you trust swears <b>${thing}</b> is about to explode. "Can't-miss," they say. How much do you put in?`,
+    choices:[
+      {label:'Go all in', tip:'Fortune favors the bold', apply:()=>{ const stake=Math.round(Math.min(S.money,rng(5000,60000))); money(-stake); if(rng(0,100)<38){ const win=Math.round(stake*rng(180,500)/100); money(win); return {text:`It moons. Your <b>${cur()}${stake.toLocaleString()}</b> turns into <b>${cur()}${win.toLocaleString()}</b>. You're a genius — this time.`,tags:[['good',`+${cur()}${(win-stake).toLocaleString()}`]]}; } const back=Math.round(stake*rng(0,30)/100); money(back); return {text:`It craters. Of your <b>${cur()}${stake.toLocaleString()}</b>, you claw back just <b>${cur()}${back.toLocaleString()}</b>. Ouch.`,tags:[['bad',`−${cur()}${(stake-back).toLocaleString()}`]]}; }},
+      {label:'Invest a sensible amount', tip:'Measured risk', apply:()=>{ const stake=Math.round(Math.min(S.money,rng(1000,8000))); money(-stake); if(rng(0,100)<42){ const win=Math.round(stake*rng(140,260)/100); money(win); return {text:`Your measured <b>${cur()}${stake.toLocaleString()}</b> bet pays off nicely — <b>${cur()}${win.toLocaleString()}</b> back. Smart, disciplined.`,tags:[['good',`+${cur()}${(win-stake).toLocaleString()}`]]}; } const back=Math.round(stake*rng(20,60)/100); money(back); return {text:`It dips and you take a modest loss — but you only risked what you could afford. Lesson learned cheaply.`,tags:[['flag',`−${cur()}${(stake-back).toLocaleString()}`]]}; }},
+      {label:'Pass — too good to be true', tip:'Stay grounded', apply:()=>{ chg('smarts',1); driftPers('discipline',1); return {text:`You politely pass. If it were really can't-miss, they wouldn't be telling you.`,tags:[['good','Kept your money']]}; }},
+    ]};}},
+/* MONEY — a side-hustle idea */
+{ id:'w4_hustle', once:false, weight:12, when:S=>S.age>=18&&!S.business&&(S.age-(S._lastW26||-99)>=4),
+  build:S=>{ S._lastW26=S.age; const idea=pick(['flipping thrift finds online','a weekend food stall','freelancing your skills','a print-on-demand shop','tutoring on the side','a small handmade-crafts brand']); return {yr:`Age ${S.age}`, title:'💡 A Side Hustle',
+    text:`You've got an idea: <b>${idea}</b>. It'd take real evenings and weekends. Do you actually start it?`,
+    choices:[
+      {label:'Launch it and grind', tip:'Build something', apply:()=>{ const seed=Math.round(Math.min(S.money,rng(200,3000))); if(seed>0)money(-seed); driftPers('ambition',2); driftPers('discipline',1); if(rng(0,100)<48){ const earn=rng(1500,12000); money(earn); setFlag('side_hustler'); return {text:`You pour your nights into <b>${idea}</b>. It slowly takes off — <b>${cur()}${earn.toLocaleString()}</b> this year and momentum building. You built something real.`,tags:[['good',`Side hustle · +${cur()}${earn.toLocaleString()}`]]}; } chg('happy',-rng(1,4)); return {text:`You give <b>${idea}</b> a real shot, but it never quite catches. You're out your seed money and some sleep — but you learned a ton.`,tags:[['flag','Hustle fizzled']]}; }},
+      {label:'Keep dreaming about it', tip:'Someday', apply:()=>{ return {text:`You think about it every night and never start. Someday, you tell yourself. Someday.`,tags:[['flag','Stayed a dream']]}; }},
+    ]};}},
+/* MONEY — an unexpected windfall */
+{ id:'w4_windfall', once:false, weight:11, when:S=>S.age>=16&&(S.age-(S._lastW27||-99)>=5),
+  build:S=>{ S._lastW27=S.age; const src=pick(['a tax refund','a work bonus','a small inheritance from a distant relative','a forgotten savings bond','a settlement cheque']); const sum=rng(2000,25000); return {yr:`Age ${S.age}`, title:'🎁 A Windfall',
+    text:`You get an unexpected <b>${cur()}${sum.toLocaleString()}</b> from ${src}. What do you do with it?`,
+    choices:[
+      {label:'Save it all', tip:'Future you says thanks', apply:()=>{ money(sum); S.savings=(S.savings||0)+Math.round(sum*0.9); money(-Math.round(sum*0.9)); driftPers('discipline',1); return {text:`You tuck almost all of the <b>${cur()}${sum.toLocaleString()}</b> straight into savings. Boring? Maybe. Wise? Absolutely.`,tags:[['good','Saved the windfall']]}; }},
+      {label:'Treat yourself', tip:'You earned it', apply:()=>{ money(Math.round(sum*0.4)); chg('happy',rng(4,9)); chg('looks',rng(0,2)); return {text:`You blow a chunk on something you've always wanted and bank the rest. Life's short — the smile was worth it.`,tags:[['flag','Treated yourself']]}; }},
+      {label:'Invest it', tip:'Make it grow', apply:()=>{ if(rng(0,100)<50){ const win=Math.round(sum*rng(120,200)/100); money(win); return {text:`You put the <b>${cur()}${sum.toLocaleString()}</b> to work and it grows to <b>${cur()}${win.toLocaleString()}</b>. Money making money.`,tags:[['good',`Grew it to ${cur()}${win.toLocaleString()}`]]}; } money(Math.round(sum*rng(50,90)/100)); return {text:`Your investment dips a little — you're down slightly, but it's a long game.`,tags:[['flag','Invested it']]}; }},
+    ]};}},
+/* MONEY — a debt collector calls */
+{ id:'w4_debt', once:false, weight:11, when:S=>S.age>=20&&(((S.loans||[]).length>0)||(S.money||0)<0)&&(S.age-(S._lastW28||-99)>=3),
+  build:S=>{ S._lastW28=S.age; const owed=rng(1000,15000); return {yr:`Age ${S.age}`, title:'📞 The Debt Collector',
+    text:`A debt collector is on the line, demanding <b>${cur()}${owed.toLocaleString()}</b> — and threatening your credit. What do you do?`,
+    choices:[
+      {label:'Pay it off', tip:'Clear the slate', apply:()=>{ const pay=Math.min(Math.max(0,S.money),owed); if(pay>0)money(-pay); S.onTimePayments=(S.onTimePayments||0)+1; chg('happy',rng(1,4)); return {text:`You pay what you can and clear the debt. Your credit breathes a sigh of relief.`,tags:[['good','Paid the debt']]}; }},
+      {label:'Negotiate a settlement', tip:'Haggle it down', apply:()=>{ if(rng(0,100) < 45+S.stats.smarts/6){ const settle=Math.round(owed*rng(40,70)/100); const pay=Math.min(Math.max(0,S.money),settle); if(pay>0)money(-pay); return {text:`You talk them down to <b>${cur()}${settle.toLocaleString()}</b> and settle. A tidy save for a few firm phone calls.`,tags:[['good',`Settled for ${cur()}${settle.toLocaleString()}`]]}; } addStress(rng(3,8)); return {text:`They won't budge and get nastier. You'll have to find the full amount after all.`,tags:[['flag','No deal']]}; }},
+      {label:'Dodge their calls', tip:'Head in the sand', apply:()=>{ S.missedPayments=(S.missedPayments||0)+1; addStress(rng(4,10)); return {text:`You screen the calls and hope it goes away. It doesn't — the interest grows and your credit takes another hit.`,tags:[['bad','Dodged the debt']]}; }},
+    ]};}},
+/* ROMANCE — a rough patch in the marriage */
+{ id:'w4_marrrough', once:false, weight:13, when:S=>has('married')&&S.spouse&&S.people[S.spouse]&&S.people[S.spouse].alive&&(S.age-(S._lastW29||-99)>=3),
+  build:S=>{ S._lastW29=S.age; const sp=S.people[S.spouse]; return {yr:`Age ${S.age}`, title:'💔 A Rough Patch',
+    text:`You and <b>${sp.name}</b> have drifted — more silences than conversations lately. The spark's fading. What do you do?`,
+    choices:[
+      {label:'Suggest couples counseling', tip:'Do the work', apply:()=>{ const cost=rng(500,4000); if(S.money>0)money(-Math.min(cost,S.money)); sp.spark=clamp((sp.spark!=null?sp.spark:60)+rng(8,18),0,100); rel(S.spouse,+rng(3,7),+rng(3,6),`You went to counseling together.`); return {text:`You both commit to counseling. It's uncomfortable and honest — and slowly, you remember why you chose each other.`,tags:[['good','Fought for the marriage']]}; }},
+      {label:'Plan a proper date night', tip:'Rekindle it', apply:()=>{ const cost=rng(50,500); if(S.money>0)money(-Math.min(cost,S.money)); sp.spark=clamp((sp.spark!=null?sp.spark:60)+rng(4,10),0,100); chg('happy',rng(2,5)); return {text:`You plan a real date — no phones, no kids, just the two of you. The old chemistry flickers back to life.`,tags:[['good','Date night']]}; }},
+      {label:'Let it drift', tip:'Maybe it\'s just a phase', apply:()=>{ sp.spark=clamp((sp.spark!=null?sp.spark:60)-rng(5,12),0,100); addStress(rng(2,6)); chg('happy',-rng(1,4)); return {text:`You tell yourself it'll pass and do nothing. The distance quietly grows.`,tags:[['bad','Let it drift']]}; }},
+    ]};}},
+/* ROMANCE — temptation */
+{ id:'w4_temptation', once:false, weight:12, when:S=>((has('married')&&S.spouse&&S.people[S.spouse]&&S.people[S.spouse].alive)||Object.values(S.people).some(p=>p.alive&&p.romantic))&&(S.age-(S._lastW30||-99)>=4),
+  build:S=>{ S._lastW30=S.age; const wed=has('married')&&S.spouse; const partner=wed?S.people[S.spouse]:Object.values(S.people).find(p=>p.alive&&p.romantic); const flirt=nm(rng(0,1)?'m':'f'); return {yr:`Age ${S.age}`, title:'😳 Temptation',
+    text:`<b>${flirt}</b> — attractive, charming, and very interested — is flirting hard with you. You're with ${partner?partner.name:'someone'}. What do you do?`,
+    choices:[
+      {label:'Shut it down', tip:'Faithful', apply:()=>{ karma(2); driftPers('discipline',1); if(partner){ partner.spark=clamp((partner.spark!=null?partner.spark:60)+rng(1,5),0,100); } return {text:`You make it crystal clear you're taken and walk away. Temptation resisted — and you feel closer to ${partner?partner.name:'your partner'} for it.`,tags:[['good','Stayed faithful']]}; }},
+      {label:'Flirt back, harmlessly', tip:'Where\'s the harm?', apply:()=>{ chg('happy',rng(1,4)); if(rng(0,100)<25){ if(partner){ partner.spark=clamp((partner.spark!=null?partner.spark:60)-rng(3,8),0,100); rel(partner.id,-rng(2,6),-rng(2,5),`They caught you flirting.`); } return {text:`You enjoy the attention a little too openly — and ${partner?partner.name:'your partner'} notices. Now you're in the doghouse.`,tags:[['bad','Caught flirting']]}; } return {text:`You bask in the flirtation and leave it there. A harmless ego boost... probably.`,tags:[['flag','Flirted with fire']]}; }},
+      {label:'Cross the line', tip:'Betrayal', apply:()=>{ setFlag('cheater'); karma(-6); addStress(rng(6,16)); if(rng(0,100)<50){ if(partner){ partner.spark=clamp(0,0,100); rel(partner.id,-rng(20,40),-rng(15,30),`They found out you cheated.`); } setFlag('cheater_caught'); if(wed){ /* marriage on the rocks */ } return {text:`You cross the line — and it comes out. ${partner?partner.name:'Your partner'} is devastated. Your relationship may not survive this.`,tags:[['bad','Caught cheating']]}; } if(partner)partner.spark=clamp((partner.spark!=null?partner.spark:60)-rng(4,10),0,100); return {text:`You cheat and cover your tracks. No one knows — but the guilt sits heavy, and the distance grows.`,tags:[['bad','Cheated']]}; }},
+    ]};}},
+/* ROMANCE — the "should we have kids" talk */
+{ id:'w4_babytalk', once:false, weight:12, when:S=>S.age>=24&&S.age<=44&&((has('married')&&S.spouse&&S.people[S.spouse]&&S.people[S.spouse].alive)||Object.values(S.people).some(p=>p.alive&&p.romantic))&&Object.values(S.people).filter(p=>p.alive&&p.fam&&p.gen>=1).length<4&&(S.age-(S._lastW31||-99)>=4),
+  build:S=>{ S._lastW31=S.age; const wed=has('married')&&S.spouse; const partner=wed?S.people[S.spouse]:Object.values(S.people).find(p=>p.alive&&p.romantic); return {yr:`Age ${S.age}`, title:'👶 The Big Talk',
+    text:`You and <b>${partner?partner.name:'your partner'}</b> sit down for the conversation: do you want to try for ${Object.values(S.people).some(p=>p.alive&&p.fam&&p.gen>=1)?'another child':'a baby'}? What's your heart say?`,
+    choices:[
+      {label:'Yes — let\'s try', tip:'Start a family', apply:()=>{ setFlag('trying_for_baby'); if(partner)partner.spark=clamp((partner.spark!=null?partner.spark:60)+rng(4,10),0,100); chg('happy',rng(3,7)); return {text:`You decide you're ready. You and ${partner?partner.name:'your partner'} start trying — full of nervous, giddy hope for what's next.`,tags:[['good','Trying for a baby']]}; }},
+      {label:'Not yet — the timing\'s wrong', tip:'Wait a while', apply:()=>{ if(partner)partner.spark=clamp((partner.spark!=null?partner.spark:60)+rng(0,4),0,100); return {text:`You agree the time isn't right — careers, money, life. Maybe in a few years. You're on the same page, and that matters.`,tags:[['flag','Waiting on kids']]}; }},
+      {label:'Honestly? Never', tip:'Child-free by choice', apply:()=>{ setFlag('child_free'); if(partner){ if(rng(0,100)<30){ partner.spark=clamp((partner.spark!=null?partner.spark:60)-rng(6,14),0,100); rel(partner.id,-rng(3,8),-rng(2,5),`You wanted different things about kids.`); return {text:`You admit you don't want children. ${partner.name} did — and the mismatch opens a painful rift between you.`,tags:[['bad','A painful mismatch']]}; } } chg('happy',rng(1,4)); return {text:`You choose a child-free life, together and on purpose. Freedom, and no apologies.`,tags:[['flag','Child-free by choice']]}; }},
+    ]};}},
+/* ROMANCE — an anniversary */
+{ id:'w4_anniversary', once:false, weight:11, when:S=>has('married')&&S.spouse&&S.people[S.spouse]&&S.people[S.spouse].alive&&(S.age-(S._lastW32||-99)>=4),
+  build:S=>{ S._lastW32=S.age; const sp=S.people[S.spouse]; return {yr:`Age ${S.age}`, title:'💍 An Anniversary',
+    text:`It's your wedding anniversary with <b>${sp.name}</b>. How do you mark it?`,
+    choices:[
+      {label:'Go all out', tip:'A trip, a gift, the works', apply:()=>{ const cost=rng(1000,15000); if(S.money>0)money(-Math.min(cost,S.money)); sp.spark=clamp((sp.spark!=null?sp.spark:60)+rng(8,16),0,100); rel(S.spouse,+rng(4,9),+rng(3,6),`You made your anniversary unforgettable.`); chg('happy',rng(3,7)); return {text:`You surprise ${sp.name} with a getaway and a heartfelt gift. They're floored — it's the kind of gesture a marriage runs on.`,tags:[['good','Unforgettable anniversary']]}; }},
+      {label:'A quiet night in', tip:'Simple & sincere', apply:()=>{ sp.spark=clamp((sp.spark!=null?sp.spark:60)+rng(4,9),0,100); chg('happy',rng(2,5)); return {text:`You cook their favorite meal and just... be together. No fuss, all heart. Sometimes that's everything.`,tags:[['good','A sincere night in']]}; }},
+      {label:'...You forgot', tip:'Oh no', apply:()=>{ sp.spark=clamp((sp.spark!=null?sp.spark:60)-rng(6,14),0,100); rel(S.spouse,-rng(5,11),-rng(3,7),`You forgot your anniversary.`); addStress(rng(3,8)); return {text:`It hits you at 9 p.m. when ${sp.name} asks if you 'have anything to say.' You forgot entirely. The doghouse is real.`,tags:[['bad','Forgot the anniversary']]}; }},
+    ]};}},
+
 /* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
 { id:'award_nom', once:false, weight:14,
   when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
