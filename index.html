@@ -3236,9 +3236,9 @@ const EVENTS = [
   build:S=>({yr:`Age ${S.age}`,title:'Big Exam',
     text:`There's a big exam at ${S.schoolName}. How do you prepare?`,
     choices:[
-      {label:'Study all week 📚', apply:()=>{ S.grades=clamp(S.grades+rng(5,12)); chg('smarts',2); chg('happy',-2); return {text:`You ace it! Grades climb.`,tags:[['good',`Grades: ${S.grades}/100`]]};}},
-      {label:'Wing it', apply:()=>{ const ok=S.stats.smarts>65; S.grades=clamp(S.grades+(ok?rng(0,4):-rng(3,9))); return {text:ok?`You scrape by on raw talent.`:`You bomb it. Grades drop.`,tags:[[ok?'flag':'bad',`Grades: ${S.grades}/100`]]};}},
-      {label:'Cheat 😈', apply:()=>{ if(rng(0,10)<4){ S.grades=clamp(S.grades-15); karma(-4); setFlag('caught_cheating'); return {text:`You got CAUGHT cheating — detention and a grade penalty.`,tags:[['bad','Caught cheating']]}; } S.grades=clamp(S.grades+rng(6,12)); karma(-2); return {text:`You cheated and got away with it… this time.`,tags:[['flag',`Grades: ${S.grades}/100`]]};}},
+      {label:'Study all week 📚', apply:()=>{ S.grades=clamp(S.grades+rng(5,12)); chg('smarts',2); chg('happy',-2); return {text:`You ace it! Grades climb.`,tags:[['good',`Grades ${S.grades}`]]};}},
+      {label:'Wing it', apply:()=>{ const ok=S.stats.smarts>65; S.grades=clamp(S.grades+(ok?rng(0,4):-rng(3,9))); return {text:ok?`You scrape by on raw talent.`:`You bomb it. Grades drop.`,tags:[[ok?'flag':'bad',`Grades ${S.grades}`]]};}},
+      {label:'Cheat 😈', apply:()=>{ if(rng(0,10)<4){ S.grades=clamp(S.grades-15); karma(-4); setFlag('caught_cheating'); return {text:`You got CAUGHT cheating — detention and a grade penalty.`,tags:[['bad','Caught cheating']]}; } S.grades=clamp(S.grades+rng(6,12)); karma(-2); return {text:`You cheated and got away with it… this time.`,tags:[['flag',`Grades ${S.grades}`]]};}},
     ]})},
 
 /* --- SCHOOL: schoolyard drama → friend or rival --- */
@@ -3753,7 +3753,7 @@ function buildWorkScenario(S){
   if(roll===0) return {yr:`Age ${S.age}`, title:'Piled-On Workload',
     text:`${boss?boss.name:'Your boss'} drops a rush project on your desk — on top of everything else.`,
     choices:[
-      {label:'Take it all on', apply:()=>{ S.jobPerf=clamp((S.jobPerf||50)+rng(6,12)); chg('happy',-rng(2,5)); chg('health',-rng(0,3)); return {text:`You grind it out. Performance climbs — at a cost.`,tags:[['good',`Performance ${S.jobPerf}/100`]]};}},
+      {label:'Take it all on', apply:()=>{ S.jobPerf=clamp((S.jobPerf||50)+rng(6,12)); chg('happy',-rng(2,5)); chg('health',-rng(0,3)); return {text:`You grind it out. Performance climbs — at a cost.`,tags:[['good',`Performance ${S.jobPerf}`]]};}},
       {label:'Delegate part of it', alt:true, apply:()=>{ S.jobPerf=clamp((S.jobPerf||50)+rng(1,5)); if(co) rel(co.id,-rng(2,6),-rng(1,4),`You offloaded your work onto them.`); return {text:`You spread the load${co?` onto ${co.name}`:''}. It gets done, but ${co?`${co.name} resents it`:'people notice'}.`,tags:[['flag','Delegated']]};}},
       {label:'Push back', alt:true, apply:()=>{ S.jobPerf=clamp((S.jobPerf||50)-rng(4,9)); if(boss) rel(boss.id,-rng(3,7),-rng(2,5),`You refused extra work.`); return {text:`You set a boundary. ${boss?boss.name:'The boss'} isn't pleased.`,tags:[['bad','Boss annoyed']]};}},
     ]};
@@ -4141,7 +4141,7 @@ function ageUp(){
   if(S.age>=8 && rng(0,1000) < (C.crime||40)*1.1*(has('has_security')?0.35:1)){   // a bodyguard sharply cuts crime-victim odds
     const loss = S.money>0 ? Math.round(Math.min(S.money*0.1, rng(50,900))) : 0;
     chg('happy',-rng(2,6)); if(loss>0) money(-loss);
-    pushLog(`You were a victim of crime in ${S.city} (crime rate ${C.crime}/100).${loss>0?` Lost ${cur()}${loss.toLocaleString()}.`:''}`,[['bad','Crime victim']]);
+    pushLog(`You were a victim of crime in ${S.city} (crime index ${C.crime}).${loss>0?` Lost ${cur()}${loss.toLocaleString()}.`:''}`,[['bad','Crime victim']]);
   }
   // climate nudges mood & health a little each year
   if((C.climate==='tropical'||C.climate==='mediterranean') && rng(0,3)===0) chg('happy',1);
@@ -4176,7 +4176,7 @@ function ageUp(){
     // grades drift; if you neglect school they slide and you risk failing the year
     if(['primary','high','college','cc','grad'].includes(S.eduLevel)){
       S.grades=clamp(S.grades+rng(-3,3));
-      if(S.grades<30 && rng(0,100)<35) pushLog(`I'm <b>failing my classes</b> at ${S.schoolName}. If I don't turn it around I'll be held back. 📉`,[['bad',`Grades: ${S.grades}/100`]]); }
+      if(S.grades<30 && rng(0,100)<35) pushLog(`I'm <b>failing my classes</b> at ${S.schoolName}. If I don't turn it around I'll be held back. 📉`,[['bad',`Grades ${S.grades}`]]); }
   }
 
   // DEATH CHECK — from this year's drains or old age. MUST come BEFORE event selection:
@@ -4600,7 +4600,7 @@ function haunt(id){
   const bust = rng(0,100) < 45 + Math.min(35,(p.fear||0)/3) + S.hauntCount*2;
   if(bust){ bustedGhost(p); return; }
   pushLog(`👻 I haunted <b>${p.name}</b> — ${kind}. They're terrified.`,[['bad',`Haunted ${p.name}`]]);
-  resultModal('Haunting', p.name, '👻', [`You ${kind}.`, `${p.name} is shaken to the bone. 😱`, `Their fear is now <b>${p.fear}/100</b> — the more frightened they get, the likelier they call for help.`], ()=>setTab('life'));
+  resultModal('Haunting', p.name, '👻', [`You ${kind}.`, `${p.name} is shaken to the bone. 😱`, statBar('Their Fear',p.fear), `The more frightened they get, the likelier they call for help.`], ()=>setTab('life'));
 }
 function bustedGhost(p){
   S.ghost=false; setFlag('exorcised');
@@ -5567,7 +5567,7 @@ function renderConnections(){ const v=document.getElementById('connectionsView')
   { const dn=Object.keys(S.goalsAchieved||{}).length; h+=hubCard('🎯','Life Goals', `${dn} of ${LIFEGOALS.length} fulfilled · your bucket list`, "lifeGoalsView()"); }
   { const sc=S.scenario||{completed:{}}, beaten=Object.keys(sc.completed||{}).length; h+=hubCard('🎬','Scenario Packs', sc.key?`▶ ${scenarioDef(sc.key).name} (active)`:(beaten?`${beaten}/${SCENARIOS.length} beaten · take on a challenge`:'Themed dynasty challenges'), "scenarioMenu()"); }
   h+=hubCard('❤️','Family & Relationships', `${fam} ${fam===1?'person':'people'} in your life`, "setTab('people')");
-  { const t=fameTier(); h+=hubCard('🌟','Fame', fameScore()>=15?`${t.icon} ${t.name} · ${fameScore()}/100`:'Build a name for yourself', "fameView()"); }
+  { const t=fameTier(); h+=hubCard('🌟','Fame', fameScore()>=15?`${t.icon} ${t.name} · ${fameScore()} fame`:'Build a name for yourself', "fameView()"); }
   h+=hubCard('⭐','Celebrities', met?`${met} famous ${met===1?'person':'people'} you know`:'Meet the stars', "setTab('stars')");
   if(S.age>=16) h+=hubCard('🎉','Gather Everyone', `Throw a big party — family, friends, even a celebrity${S.partiesThisYear?` · ${2-S.partiesThisYear} left this year`:''}`, "gatherEveryone()");
   { const ln=(S.ledger||[]).filter(f=>decayedSev(f)>0).length, fz=activeFeuds().length, sb=standingBand();
@@ -7504,7 +7504,7 @@ function petAction(id,a){
   if(a==='play'){ p.affinity=clamp(p.affinity+5); chg('happy',3); msg=`You played fetch with ${p.name}! 🐾`; }
   else if(a==='feed'){ p.affinity=clamp(p.affinity+4); msg=`You fed ${p.name}. 🍖`; }
   else if(a==='cuddle'){ p.affinity=clamp(p.affinity+6); chg('happy',2); msg=`${p.name} curls up with you. 🤗`; }
-  pushLog(`I spent time with my ${p.rel.toLowerCase()} ${p.name}.`,[['rel',`${p.name}: ${p.affinity}/100`]]);
+  pushLog(`I spent time with my ${p.rel.toLowerCase()} ${p.name}.`,[['rel',`${p.name} · ${p.affinity}`]]);
   resultModal('Pet', p.name, '🐾', [msg], ()=>setTab('people'));
 }
 // every living connection has an occupation/responsibility — assigned once, then stable
@@ -7523,6 +7523,7 @@ function npcOcc(p){
 // reusable progress bar for any rated value
 function pbColor(v){ return v>=66?'var(--good)':v>=33?'var(--warn)':'var(--bad)'; }
 function pbar(label,pct,color){ pct=clamp(Math.round(pct)); return `<div class="rb"><span>${label}</span><div class="bar"><i style="width:${pct}%;background:${color||pbColor(pct)}"></i></div><b>${pct}${label.indexOf('%')>=0?'':''}</b></div>`; }
+function statBar(label,val,color){ return `<div class="relbars" style="text-align:left;margin:7px 0 2px">${pbar(label,val,color)}</div>`; }   // a 0–100 stat rendered as a bar inside modal/result text (never "X/100")
 // a labelled progress bar for ANY value/max stat (used game-wide so every stat reads as a bar, not a bare number).
 // invert:true → high is BAD (red when full), e.g. police heat, stress.
 function barRow(label,val,max,opts){ opts=opts||{}; max=max||100; val=Math.max(0,Math.round(val)); const pct=clamp(Math.round(val/max*100));
@@ -7822,9 +7823,9 @@ function mindBody(){ if(!S){toast('Start a life first.');return;} if(isLocked())
 }
 function mbDo(kind){ closeModal();
   if(kind==='gym'){ const cost=rng(0,600); if(S.money>0)money(-Math.min(cost,S.money)); S.fitness=clamp((S.fitness||50)+rng(5,12)); chg('looks',rng(1,3)); chg('health',rng(1,3));
-    pushLog(`I trained at the gym all year. 🏋️ Fitness ${S.fitness}/100.`,[['good','Gym']]); resultModal('Mind & Body','Workout','🏋️',[`You trained hard.`,`Fitness now <b>${S.fitness}/100</b> · +Looks, +Health.`],()=>mindBody()); }
+    pushLog(`I trained at the gym all year. 🏋️`,[['good','Gym']]); resultModal('Mind & Body','Workout','🏋️',[`You trained hard — +Looks, +Health.`,statBar('Fitness',S.fitness)],()=>mindBody()); }
   else if(kind==='diet'){ S.fitness=clamp((S.fitness||50)+rng(3,8)); chg('health',rng(2,4)); chg('looks',1);
-    pushLog(`I cleaned up my diet. 🥗`,[['good','Healthy diet']]); resultModal('Mind & Body','Eating Clean','🥗',[`You ate clean this year.`,`Fitness ${S.fitness}/100 · +Health.`],()=>mindBody()); }
+    pushLog(`I cleaned up my diet. 🥗`,[['good','Healthy diet']]); resultModal('Mind & Body','Eating Clean','🥗',[`You ate clean this year — +Health.`,statBar('Fitness',S.fitness)],()=>mindBody()); }
   else if(kind==='meditate'){ chg('happy',rng(4,9)); chg('health',1); addStress(-rng(8,16)); addMood(rng(3,7));
     pushLog(`I meditated daily. 🧘`,[['good','Meditation']]); resultModal('Mind & Body','Calm','🧘',[`A year of meditation.`,`Stress eased, mood lifted, and a clearer mind.`],()=>mindBody()); }
   else { const cost=rng(200,1500); if(!spend(cost))return; chg('happy',rng(6,12));
@@ -8373,7 +8374,7 @@ function underworldMenu(){ if(!S){toast('Start a life first.');return;} if(isLoc
 }
 function crimeMenu(){ const u=uw(); const pool=CRIMES.filter(c=>S.age>=c.minAge);
   openModal({banner:'The Underworld', title:'🔪 Pick a Score', icon:'🔪', closable:true,
-    text:`Bigger jobs pay more — and carry more risk and heat. Your current heat: <b>${u.heat}/100</b>.`,
+    text:`Bigger jobs pay more — and carry more risk and heat.<div class="relbars" style="text-align:left;margin-top:8px">${pbar('Police Heat',u.heat)}</div>`,
     choices: pool.map(c=>({label:`${c.icon} ${c.name}`, tip:`~${cur()}${c.pay[0].toLocaleString()}–${c.pay[1].toLocaleString()} · ${c.risk+Math.round(u.heat/4)}% risk${c.violent?' · violent':''}`, alt:true, fn:()=>commitCrime(c.k)})).concat([{label:'Back', fn:underworldMenu}]) });
 }
 function commitCrime(k){ const u=uw(); let c=CRIMES.find(x=>x.k===k);
@@ -8400,7 +8401,7 @@ function commitCrime(k){ const u=uw(); let c=CRIMES.find(x=>x.k===k);
     if(rng(0,100)<35) spawnFeud(pick(['Rourke','Vance','Salko','Marchetti','Okonkwo']), `You crossed them in a ${c.name.toLowerCase()}.`, 50); }
   if(c.big) unlockAchievement('master_thief','💎 Master Thief','Pull off a major heist.');
   pushLog(`🔫 I pulled off a <b>${c.name.toLowerCase()}</b> — scored <b>${cur()}${take.toLocaleString()}</b>. Street rep ${u.rep}.`,[['bad',`+${cur()}${take.toLocaleString()} (dirty)`]]);
-  resultModal('Score!', c.name, c.icon, [`Clean getaway — you scored <b>${cur()}${take.toLocaleString()}</b>.`,`Street rep is now <b>${u.rep}</b>${u.rank<0&&u.rep>=8?` — high enough that a crew might take notice.`:''}`,`🔥 Heat: ${u.heat}/100.`],()=>underworldMenu()); }
+  resultModal('Score!', c.name, c.icon, [`Clean getaway — you scored <b>${cur()}${take.toLocaleString()}</b>.`,`Street rep is now <b>${u.rep}</b>${u.rank<0&&u.rep>=8?` — high enough that a crew might take notice.`:''}`,statBar('🔥 Police Heat',u.heat)],()=>underworldMenu()); }
 function joinCrew(){ const u=uw(); if(u.rank>=0){ closeModal(); return; } closeModal();   // modalpick-covered → no logAct
   if(u.rep<8){ toast('Build more street rep first.'); return; }
   u.crew=u.crew||genCrew(); u.rank=0; setFlag('criminal'); setFlag('made_man');
@@ -8430,7 +8431,7 @@ function crewJob(){ const u=uw(); if(u.rank<0){ closeModal(); return; } closeMod
 function lieLow(){ const u=uw(); closeModal();   // modalpick-covered → no logAct
   u.heat=clamp(u.heat-rng(18,32),0,100); chg('happy',-rng(1,4));
   pushLog(`🤫 I lay low for a while — kept my head down and let the heat die down.`,[['flag',`Heat down to ${u.heat}`]]);
-  resultModal('Lying Low','Off the Radar 🤫','🤫',[`You stayed quiet and let things cool off.`,`🔥 Police heat is down to <b>${u.heat}/100</b>.`],()=>underworldMenu()); }
+  resultModal('Lying Low','Off the Radar 🤫','🤫',[`You stayed quiet and let things cool off.`,statBar('🔥 Police Heat',u.heat)],()=>underworldMenu()); }
 function underworldYear(){ const u=uw();
   u.heat=clamp(u.heat-rng(2,5),0,100);   // heat cools slowly over time
   if(inJail()){ chg('happy',-rng(2,5)); chg('health',-rng(0,2)); if(S.age>=u.jailUntil-0){} return; }
@@ -8522,7 +8523,7 @@ function interactCeleb(id,action){
     const lab={acquaintance:'met',friend:'became friends with',dating:'started dating',spouse:'married'}[c.rel]||'spent time with';
     pushLog(`I ${lab} <b>${c.name}</b>${c.rel==='spouse'?' 💍':c.rel==='dating'?' 💘':''}.`,[['rel',`${c.name}: ${c.rel}`]]);
   } else pushLog(`I spent time with ${c.name}.`,[['flag',`${c.name}: closeness ${c.affinity}`]]);
-  resultModal('Celebrity', c.name, '⭐', [msg, `Closeness with ${c.name}: ${c.affinity}/100.`], ()=>setTab('stars'));
+  resultModal('Celebrity', c.name, '⭐', [msg, statBar('Closeness with '+c.name, c.affinity)], ()=>setTab('stars'));
 }
 
 function renderStars(){
@@ -9458,7 +9459,7 @@ function askPromotion(){
     let line=`Not this time — the boss says to keep it up.`, tags=[['flag','Asked for a raise']];
     if(pester>=2){ S.jobPerf=clamp((S.jobPerf||50)-rng(4,11)); line=`The boss is getting tired of you asking — it's hurting how they see you.`; tags=[['bad','Boss annoyed']]; }
     pushLog(`I asked the boss for a promotion. ${pester>=2?'They were not impressed. 😬':'Not yet — but I planted the seed.'}`,tags);
-    resultModal('Job','Asked the Boss','💼',[line,`Promotion progress: ${j.promo}/100.`],()=>setTab('job'));
+    resultModal('Job','Asked the Boss','💼',[line,statBar('Promotion Progress',j.promo)],()=>setTab('job'));
   }
 }
 /* ---- Sleeping your way up — charm the boss, get used, or get reported (18+) ---- */
@@ -9809,8 +9810,8 @@ function bizAction(kind){ const b=S.business; if(!b)return; logAct('call',{fn:'b
       choices:[{label:`💸 Sell for ${cur()}${price.toLocaleString()}`, alt:true, fn:()=>{ money(price); pushLog(`I sold <b>${b.name}</b> for ${cur()}${price.toLocaleString()}. 💸`,[['good',`Sold business +${cur()}${price.toLocaleString()}`]]); S.business=null; if(S.job){ S.job.owner=false; S.job=null; } closeModal(); resultModal('Business','Sold 💸','💸',[`You cashed out of <b>${b.name}</b> for <b>${cur()}${price.toLocaleString()}</b>.`,`You're a free agent again.`],()=>setTab('career')); }},{label:'Keep it', fn:()=>setTab('business')}]}); }
 }
 function workHarder(){ if(!S.job)return; logAct('call',{fn:'workHarder'}); S.jobPerf=clamp((S.jobPerf||50)+rng(5,12)); chg('happy',-2); chg('smarts',1);
-  pushLog(`I put in extra hours at work. Performance up.`,[['good',`Performance: ${S.jobPerf}/100`]]);
-  resultModal('Job','Hard at Work','💼',[`I went above and beyond this year.`,`Performance now ${S.jobPerf}/100 — better promotion odds.`],()=>setTab('job')); }
+  pushLog(`I put in extra hours at work. Performance up.`,[['good',`Performance ${S.jobPerf}`]]);
+  resultModal('Job','Hard at Work','💼',[`I went above and beyond this year — better promotion odds.`,statBar('Performance',S.jobPerf)],()=>setTab('job')); }
 function quitJob(){ if(!S.job)return; if(!(S&&S._replaying) && typeof confirm==='function' && !confirm('Quit your job?'))return;
   logAct('call',{fn:'quitJob'});
   pushLog(`I quit my job as ${jobTitle(S.job)}.`,[['flag','Quit job']]); S.job=null; clearCoworkers(); setTab('life'); }
@@ -9829,9 +9830,9 @@ function renderJob(){
     const atTop=j.level>=jobMaxLevel(j);
     let h=hubBack('job')+`<div class="card profile"><div class="handle">${j.icon||'💼'} ${jobTitle(j)}</div>
       <div class="pf" style="margin-top:4px">${j.employer||j.field} · ${cur()}${j.salary.toLocaleString()}/yr · Rank ${j.level+1}/${jobMaxLevel(j)+1}${j.owner?'':` · ${j.years||0} yr${(j.years||0)===1?'':'s'}`}</div>
-      <div class="genlabel" style="margin:12px 0 6px">Performance <span>${S.jobPerf}/100</span></div>
+      <div class="genlabel" style="margin:12px 0 6px">Performance <span>${S.jobPerf}</span></div>
       <div class="bar"><i style="width:${S.jobPerf}%;background:var(--good)"></i></div>
-      <div class="genlabel" style="margin:12px 0 6px">${atTop?'🏆 Top of the ladder':'Promotion progress'} <span>${atTop?'':(j.promo||0)+'/100'}</span></div>
+      <div class="genlabel" style="margin:12px 0 6px">${atTop?'🏆 Top of the ladder':'Promotion progress'} <span>${atTop?'':(j.promo||0)}</span></div>
       <div class="bar"><i style="width:${atTop?100:(j.promo||0)}%;background:var(--accent)"></i></div></div>`;
     h+=`<div class="genlabel">Work</div><div class="composer">
       <button class="pbtn" onclick="workHarder()"><span class="pi">💪</span><span class="pl">Work Harder</span><span class="pd">Boost performance → climb faster.</span></button>
@@ -10180,8 +10181,8 @@ function studyHarder(){
   if(!['primary','high','college'].includes(S.eduLevel)){ toast('You’re not in school.'); return; }
   logAct('call',{fn:'studyHarder'});
   S.grades=clamp(S.grades+rng(4,9)); chg('smarts',rng(1,3)); chg('happy',-rng(1,3));
-  pushLog(`I put my nose in the books and studied my ${S.eduLevel} work for extra hours.`,[['good',`Grades: ${S.grades}/100`]]);
-  resultModal('Education','Nose in the Books','📚',[`I studied hard.`,`Grades now ${S.grades}/100 · +Smarts, −a little fun.`],()=>setTab('school'));
+  pushLog(`I put my nose in the books and studied my ${S.eduLevel} work for extra hours.`,[['good',`Grades ${S.grades}`]]);
+  resultModal('Education','Nose in the Books','📚',[`I studied hard — +Smarts, −a little fun.`,statBar('Grades',S.grades)],()=>setTab('school'));
 }
 function dropOut(){
   if(!(S&&S._replaying) && typeof confirm==='function' && !confirm('Drop out of school? This limits your future.'))return;
