@@ -3858,6 +3858,53 @@ const EVENTS = [
       {label:'Numb it with painkillers', tip:'Dangerous shortcut', apply:()=>{ a.p.form=clamp((a.p.form||60)+rng(2,6)); if(rng(0,100)<35){ setFlag('painkiller_habit'); chg('health',-rng(3,8)); addStress(rng(4,10)); return {text:`The injections get you on the pitch — and hook you. A painkiller habit is a hard, dark road for an athlete.`,tags:[['bad','Painkiller habit']]}; } chg('health',-rng(1,4)); return {text:`You numb it and play. It works this time, but you know you're borrowing against your body.`,tags:[['flag','Numbed the pain']]}; }},
     ]};}},
 
+/* ═══════════ 📖 STORY WAVE 3 — tie-ins to this session's systems (NIL / portal / agents / Greek / social) ═══════════ */
+/* SCHOOL SPORT — the transfer portal comes calling */
+{ id:'w3_transfer', once:false, weight:13, when:S=>schoolAthleteActive()&&(S.age-(S._lastW15||-99)>=3),
+  build:S=>{ S._lastW15=S.age; const a=schoolAthlete(); const p=a.prof; const bigger=pick(['a blue-blood powerhouse','a top-ranked program','a national contender','a football factory']); return {yr:`Age ${S.age}`, title:'🔁 The Transfer Portal',
+    text:`${bigger.charAt(0).toUpperCase()+bigger.slice(1)} is trying to poach you for their ${a.label} program — bigger stage, bigger NIL, brighter lights. Do you jump ship?`,
+    choices:[
+      {label:'Transfer to the bigger program', tip:'Chase the spotlight', apply:()=>{ if(p.rep!=null)p.rep=clamp(p.rep+rng(4,10),0,100); else p.schoolReputation=clamp((p.schoolReputation||0)+rng(4,10),0,100); if(p.draftStock!=null)p.draftStock=clamp(p.draftStock+rng(4,10),0,100); if(p.scoutInterest!=null)p.scoutInterest=clamp(p.scoutInterest+rng(4,10),0,100); p.nilOfferVal=Math.round((p.nilOfferVal||nilOffer(p,a.lvl)||5000)*rng(140,190)/100); p.lastTable=null; p.lastPos=null; setFlag('transfer_portal'); S.popularity=clamp((S.popularity||50)-rng(1,5)); return {text:`You enter the portal and commit to ${bigger}. Fresh league, fatter NIL offer — but you leave your old teammates (and their goodwill) behind.`,tags:[['flag','Transferred programs']]}; }},
+      {label:'Stay loyal to your school', tip:'Home means something', apply:()=>{ karma(2); S.popularity=clamp((S.popularity||50)+rng(3,8)); if(p.rep!=null)p.rep=clamp(p.rep+rng(1,4),0,100); else p.schoolReputation=clamp((p.schoolReputation||0)+rng(1,4),0,100); driftPers('warmth',1); return {text:`You turn them down and stay put. Your school adores you for it — a hometown hero who didn't chase the money.`,tags:[['good','Stayed loyal']]}; }},
+      {label:'Use it as leverage', tip:'Play hardball', apply:()=>{ if(rng(0,100)<60){ p.nilOfferVal=Math.round((p.nilOfferVal||nilOffer(p,a.lvl)||5000)*rng(130,170)/100); driftPers('ambition',1); return {text:`You leak the interest and let your current boosters sweat. They rush to match it — your NIL offer jumps to <b>${fcm(p.nilOfferVal)}</b>.`,tags:[['good',`Leveraged up to ${fcm(p.nilOfferVal)}`]]}; } S.popularity=clamp((S.popularity||50)-rng(2,6)); return {text:`You play both sides too hard and it leaks the wrong way. You come off as a mercenary and the offer cools.`,tags:[['bad','Overplayed it']]}; }},
+    ]};}},
+/* SCHOOL SPORT — a rogue booster with an envelope */
+{ id:'w3_booster', once:false, weight:12, when:S=>schoolAthleteActive()&&(S.age-(S._lastW16||-99)>=3),
+  build:S=>{ S._lastW16=S.age; const a=schoolAthlete(); const p=a.prof; const cash=rng(5000,40000); return {yr:`Age ${S.age}`, title:'💵 Under the Table',
+    text:`A rogue booster slips you <b>${cur()}${cash.toLocaleString()}</b> in cash — well outside the NIL rules — just for being the face of the ${a.label} team. Take it?`,
+    choices:[
+      {label:'Pocket the cash', tip:'Free money, big risk', apply:()=>{ if(rng(0,100)<30){ money(0); if(p.scholarship||p.scholarshipOffered){ p.scholarship=false; p.scholarshipOffered=false; S.schoolTuition=rng(8000,30000); } if(p.rep!=null)p.rep=clamp(p.rep-rng(10,20),0,100); else p.schoolReputation=clamp((p.schoolReputation||0)-rng(10,20),0,100); setFlag('recruiting_violation'); return {text:`Compliance catches wind of it. You're ruled ineligible, your scholarship is yanked, and the program's name is dragged through the mud. Disaster.`,tags:[['bad','Recruiting violation']]}; } money(cash); karma(-2); setFlag('took_booster_cash'); return {text:`You take the <b>${cur()}${cash.toLocaleString()}</b> and keep your mouth shut. Nobody's checking — for now.`,tags:[['flag',`+${cur()}${cash.toLocaleString()} (off the books)`]]}; }},
+      {label:'Decline — keep it clean', tip:'Play by the rules', apply:()=>{ karma(3); driftPers('discipline',1); return {text:`You hand it back. Your NIL money is real and legit; you're not risking your eligibility for a shady envelope.`,tags:[['good','Kept it clean']]}; }},
+      {label:'Report the booster', tip:'Blow the whistle', apply:()=>{ karma(4); if(rng(0,100)<70){ if(p.rep!=null)p.rep=clamp(p.rep+rng(2,6),0,100); else p.schoolReputation=clamp((p.schoolReputation||0)+rng(2,6),0,100); return {text:`You report the booster to compliance. The program cleans house and quietly respects your integrity.`,tags:[['good','Reported the booster']]}; } S.popularity=clamp((S.popularity||50)-rng(2,6)); return {text:`You report it, but teammates who liked the extra cash flowing around freeze you out. Doing right isn't always popular.`,tags:[['flag','Snitched on a booster']]}; }},
+    ]};}},
+/* PRO SPORT — a flashy agent wants to sign you */
+{ id:'w3_agent', once:false, weight:12, when:S=>proAthleteActive()&&!has('has_sports_agent')&&(S.age-(S._lastW17||-99)>=2),
+  build:S=>{ S._lastW17=S.age; const a=proAthlete(); const nme=nm(rng(0,1)?'m':'f')+' '+pick(LAST); return {yr:`Age ${S.age}`, title:'🕴️ The Super-Agent',
+    text:`<b>${nme}</b>, a big-time sports agent, wants to represent you — promising bigger ${a.label} contracts and endorsement deals, for the standard 10% cut. Do you sign?`,
+    choices:[
+      {label:'Sign with them', tip:'They open doors', apply:()=>{ setFlag('has_sports_agent'); if(a.p.contract){ a.p.contract.wagePerYear=Math.round(a.p.contract.wagePerYear*rng(115,140)/100); } const bonus=rng(20000,200000); money(bonus); if(S.people)S.people.agent={id:'agent',name:nme,rel:'Agent',affinity:60,trust:55,alive:true,memory:[],keyMoments:[],gender:'m',age:rng(35,60),fam:false,gen:9}; return {text:`You sign with ${nme}. They renegotiate your deal upward and land you a <b>${cur()}${bonus.toLocaleString()}</b> endorsement to start. Worth every percent.`,tags:[['good',`Signed an agent · +${cur()}${bonus.toLocaleString()}`]]}; }},
+      {label:'Stay independent', tip:'Keep 100%', apply:()=>{ driftPers('discipline',1); return {text:`You keep your own counsel and every last penny. More work for you, but nobody's taking a cut.`,tags:[['flag','Went independent']]}; }},
+      {label:'Do your homework first', tip:'Due diligence', apply:()=>{ if(rng(0,100)<35){ setFlag('dodged_bad_agent'); chg('smarts',1); return {text:`You dig into ${nme}'s track record and find a trail of ripped-off clients. You dodge a con artist — good instincts.`,tags:[['good','Dodged a shark']]}; } setFlag('has_sports_agent'); const bonus=rng(15000,120000); money(bonus); return {text:`You vet ${nme} thoroughly — they check out. You sign on solid ground and bank a <b>${cur()}${bonus.toLocaleString()}</b> deal.`,tags:[['good',`Signed smart · +${cur()}${bonus.toLocaleString()}`]]}; }},
+    ]};}},
+/* GREEK LIFE — do you haze the new pledges? */
+{ id:'w3_greekhaze', once:false, weight:12, when:S=>S.greek&&(S.greek.role==='member'||S.greek.role==='president')&&(S.eduLevel==='college'||S.eduLevel==='cc')&&(S.age-(S._lastW18||-99)>=2),
+  build:S=>{ S._lastW18=S.age; return {yr:`Age ${S.age}`, title:'😈 Hell Week, From the Other Side',
+    text:`You're an upperclassman in <b>${S.greek.house}</b> now, and it's your turn to run hell week for the new pledges. How do you handle the power?`,
+    choices:[
+      {label:'Haze them hard', tip:'Tradition is tradition', apply:()=>{ karma(-3); S.popularity=clamp((S.popularity||50)+rng(1,5)); driftPers('warmth',-1); if(rng(0,100)<22){ setFlag('hazing_incident'); S.popularity=clamp((S.popularity||50)-rng(4,10)); return {text:`A pledge gets hurt and it makes the campus paper. The chapter faces suspension and your name is on the incident report.`,tags:[['bad','Hazing scandal']]}; } return {text:`You put the pledges through the wringer, just like you had it. Some call it brotherhood; some call it cruelty.`,tags:[['flag','Hazed the pledges']]}; }},
+      {label:'Go easy on them', tip:'Silly, not cruel', apply:()=>{ chg('happy',rng(1,4)); if(rng(0,100)<40)greekAddSib(); return {text:`You keep it goofy and harmless — scavenger hunts and dumb costumes, no cruelty. The pledges love you for it.`,tags:[['good','Kind hazing']]}; }},
+      {label:'Abolish hazing entirely', tip:'Break the cycle', apply:()=>{ karma(5); driftPers('boldness',2); if(rng(0,100)<55){ setFlag('ended_hazing'); return {text:`You stand up and end the tradition for good. Some old-guard brothers grumble, but the chapter is safer and better for it. A real leader's move.`,tags:[['good','Ended hazing']]}; } S.popularity=clamp((S.popularity||50)-rng(2,6)); return {text:`You try to abolish hazing, but the traditionalists overrule you and you're branded soft. The cycle grinds on without you.`,tags:[['flag','Tried to end hazing']]}; }},
+    ]};}},
+/* SOCIAL — a dangerous viral challenge */
+{ id:'w3_challenge', once:false, weight:12, when:S=>S.age>=13&&S.sm&&S.sm.active&&(S.age-(S._lastW19||-99)>=3),
+  build:S=>{ S._lastW19=S.age; const plat=S.sm.platforms[S.sm.active]; const chal=pick(['the rooftop-ledge challenge','a chili-pepper eating dare','a blindfolded stunt trend','a "borrow a stranger\'s car" prank','the hold-your-breath challenge']); return {yr:`Age ${S.age}`, title:'📱 The Viral Challenge',
+    text:`Everyone's doing <b>${chal}</b> for views, and it's genuinely dangerous. Your feed is begging you to join in. What do you do?`,
+    choices:[
+      {label:'Do it for the clout', tip:'Views over safety', apply:()=>{ if(rng(0,100)<38){ chg('health',-rng(6,16)); addStress(rng(4,10)); if(plat)plat.followers=Math.max(0,plat.followers-Math.round((plat.followers||0)*rng(1,4)/100)); setFlag('challenge_gone_wrong'); return {text:`It goes horribly wrong. You end up hurt, the clip's a cautionary tale, and even the internet thinks you're an idiot.`,tags:[['bad','Challenge gone wrong']]}; } const g=Math.round((plat?plat.followers:1000)*rng(3,12)/100)+rng(500,8000); if(plat)plat.followers=(plat.followers||0)+g; gainFame(rng(1,4)); return {text:`You pull off ${chal} and the clip explodes — <b>+${fc(g)}</b> followers. Reckless, but the algorithm loved it.`,tags:[['flag',`Viral · +${fc(g)}`]]}; }},
+      {label:'Do a safe parody instead', tip:'Clout without the ER', apply:()=>{ const g=Math.round((plat?plat.followers:1000)*rng(2,8)/100)+rng(300,4000); if(plat){ plat.followers=(plat.followers||0)+g; plat.sentiment=clamp((plat.sentiment||0)+rng(2,6),-100,100); } chg('happy',rng(1,4)); return {text:`You film a hilarious, totally safe parody of ${chal}. It does numbers <b>and</b> makes people laugh — <b>+${fc(g)}</b> followers.`,tags:[['good',`Smart content · +${fc(g)}`]]}; }},
+      {label:'Post a warning against it', tip:'Be responsible', apply:()=>{ karma(4); if(plat)plat.sentiment=clamp((plat.sentiment||0)+rng(4,9),-100,100); if(rng(0,100)<30){ gainFame(rng(1,3)); return {text:`Your video warning kids off ${chal} gets picked up by the news. You become a bit of a responsible-role-model figure.`,tags:[['good','Voice of reason']]}; } return {text:`You post a heartfelt warning. It won't go viral, but a few parents in the comments thank you.`,tags:[['good','Did the responsible thing']]}; }},
+    ]};}},
+
 /* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
 { id:'award_nom', once:false, weight:14,
   when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
@@ -6818,6 +6865,14 @@ function proAthlete(){
   return null;
 }
 function proAthleteActive(){ return !!proAthlete(); }
+// the player's active SCHOOL-sports profile (feeds the NIL / transfer-portal / booster beats)
+function schoolAthlete(){
+  if(S.schoolSport&&S.schoolSport.onTeam)return {prof:S.schoolSport, sport:'soccer', lvl:schoolSportLevel(), label:'⚽ football'};
+  if(S.bball&&S.bball.youth&&S.bball.youth.onTeam)return {prof:S.bball.youth, sport:'bball', lvl:bbYouthLevel(), label:'🏀 basketball'};
+  if(S.nfl&&S.nfl.youth&&S.nfl.youth.onTeam)return {prof:S.nfl.youth, sport:'nfl', lvl:nflYouthLevel(), label:'🏈 football'};
+  return null;
+}
+function schoolAthleteActive(){ const a=schoolAthlete(); return !!(a && (a.lvl==='highSchool'||a.lvl==='college')); }
 // ---- Go pro: join an academy (era-gated, choose a position). Logged action. ----
 /* ============================================================
    ⚽ SCHOOL SPORTS → SOCCER PIPELINE — the youth feeder. Builds a
