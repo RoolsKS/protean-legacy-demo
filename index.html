@@ -1999,7 +1999,7 @@ function lifeRecord(){
   const famAlive=ppl.filter(p=>p.fam&&p.alive&&!p.pet);
   return {
     age:S.age, netWorth:nw, nwBase:Math.round(Math.max(nw,S.peakMoney||0)*base),
-    fame:Math.max(S.fame||0,S.peakFame||0), karma:S.karma||0, gen:S.legacyGen||1,
+    fame:Math.max(S.fame||0,S.peakFame||0), karma:S.karma||0, gen:S.legacyGen||1, awardWinner:has('award_winner'),
     smarts:S.stats.smarts, looks:S.stats.looks, health:S.stats.health, happy:S.stats.happy,
     kids, edu, topOffice, everOffice, uwRank, criminal, married,
     faithful: married && !has('cheater_caught') && !has('divorced'),
@@ -2027,6 +2027,7 @@ const RIBBONS=[
   // Fame
   {id:'famous', name:'Famous', icon:'🌟', rarity:'rare', priority:6, track:'maxFame', desc:'Become a household name.', q:r=>_frac(r.fame,70)},
   {id:'legend', name:'Living Legend', icon:'✨', rarity:'epic', priority:8, track:'maxFame', desc:'Reach the very pinnacle of fame.', q:r=>_frac(r.fame,95)},
+  {id:'award_winner', name:'Award Winner', icon:'🏆', rarity:'rare', priority:6, desc:'Win a major industry award.', q:r=>r.awardWinner?1:0},
   // Crime
   {id:'notorious', name:'Notorious', icon:'😈', rarity:'rare', priority:6, desc:'Leave a trail of crime behind you.', q:r=>_frac(r.crimeScore,40)},
   {id:'kingpin', name:'Kingpin', icon:'🩸', rarity:'epic', priority:8, desc:'Rise to the top of the underworld.', q:r=>_frac(r.uwRank+1,5)},
@@ -2109,7 +2110,7 @@ function _eulogy(r, earned, headline){
 function _ord(n){ return n+({1:'st',2:'nd',3:'rd'}[n%10>3||(n%100>=11&&n%100<=13)?0:n%10]||'th'); }
 function _artFor(w){ return /^[aeiou]/i.test(w)?'an':'a'; }
 // Ambition nudge plumbing (Fix 3) — which broad theme an ambition belongs to, so events & feed tips can surface toward it.
-const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame', scholar:'mind',genius:'mind',
+const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame',award_winner:'fame', scholar:'mind',genius:'mind',
   powerful:'power',sovereign:'power',self_made_monarch:'power', notorious:'crime',kingpin:'crime',conqueror:'crime',
   saintly:'virtue',devoted:'virtue',redemption:'virtue', dynasty_legend:'dynasty',polymath_founder:'dynasty',matriarch:'dynasty',
   centenarian:'health', pioneer:'era', deviant:'vice',
@@ -3486,6 +3487,22 @@ const EVENTS = [
       {label:'Vent to '+sp.name, tip:'Risk their loyalty',
         apply:()=>{ ensureSpark(sp); const ok=(sp.affinity||50)>=55; rel(S.spouse, ok?+rng(2,5):-rng(2,6), ok?+2:-2, 'You vented about their parent.');
           return {text: ok?`${sp.name} takes your side without hesitation — you feel like a team against the world.`:`${sp.name} gets defensive about their own parent. It turns into a spat.`, tags:[[ok?'good':'bad', ok?'United front':'Friction']]};}},
+    ]};}},
+
+/* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
+{ id:'award_nom', once:false, weight:14,
+  when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
+  build:S=>{ S._lastAward=S.age; let cat,cer;
+    if(has('talent_acting')){cat='Best Actor';cer='the Golden Reels';}
+    else if(has('talent_music')){cat='Artist of the Year';cer='the Harmony Awards';}
+    else if(has('influencer')||(typeof totalFollowers==='function'&&totalFollowers()>=250000)){cat='Creator of the Year';cer='the Creator Awards';}
+    else {cat='Icon of the Year';cer='the Star Gala';}
+    return {yr:`Age ${S.age}`, title:'🏆 Award Nomination',
+    text:`You've been nominated for <b>${cat}</b> at <b>${cer}</b>! The whole industry — and the internet — will be watching.`,
+    choices:[
+      {label:'Attend & give a gracious speech', apply:()=>awardResolve(cat,cer,'gracious')},
+      {label:'Attend & make a statement', tip:'High risk · high reward', apply:()=>awardResolve(cat,cer,'bold')},
+      {label:'Skip it — too cool for this', apply:()=>awardResolve(cat,cer,'skip')},
     ]};}},
 
 /* --- FAMILY: aunt/uncle visit (recurring) --- */
@@ -8125,6 +8142,20 @@ const FAME_TIERS=[
 function fameScore(){ return clamp(Math.round(S.fame||0)); }
 function fameTier(v){ v=(v==null)?fameScore():v; let t=FAME_TIERS[0]; for(const x of FAME_TIERS) if(v>=x.min)t=x; return t; }
 function gainFame(n){ S.fame=clamp((S.fame||0)+n); if(S.fame>=52) setFlag('famous'); }
+function awardResolve(cat,cer,mode){   // resolve an award nomination (called from an event choice's apply → returns {text,tags})
+  if(mode==='skip'){ S.rep=clamp((S.rep||0)+rng(-2,3),-100,100); return {text:`You skipped ${cer}. A little mystique — some respect the no-show, some call it a snub.`,tags:[['flag','Skipped the ceremony']]}; }
+  const winChance=clamp(Math.round(26+(S.fame||0)*0.42+(S.karma||0)*0.08+(mode==='bold'?rng(-8,12):6)),8,88);
+  if(rng(0,100)<winChance){   // WON
+    gainFame(rng(6,12)); (S.awards=S.awards||[]).push({name:cat,ceremony:cer,age:S.age}); setFlag('award_winner'); chg('happy',10); ledgerAdd('triumph',20,{note:`Won ${cat} at ${cer}.`});
+    let fg=0; if(S.sm&&S.sm.joined&&S.sm.platforms){ const joined=Object.values(S.sm.platforms).filter(p=>p.joined); if(joined.length){ fg=Math.round(Math.max(3000,(typeof totalFollowers==='function'?totalFollowers():0)*(mode==='bold'?0.16:0.11))); const per=Math.round(fg/joined.length); joined.forEach(p=>p.followers=(p.followers||0)+per); } }
+    return {text:`🏆 You <b>WON ${cat}</b> at ${cer}!${mode==='bold'?' Your bold speech sets the internet on fire.':' A gracious speech — the room is on its feet.'}${fg?` +${fc(fg)} followers.`:''}`,tags:[['good',`Won ${cat}`]]};
+  }
+  gainFame(rng(1,4));
+  if(mode==='bold' && rng(0,100)<38){ S.rep=clamp((S.rep||0)-rng(5,12),-100,100); chg('happy',-3); karma(-1);
+    return {text:`You lost ${cat} — and your provocative moment on stage drew boos and bad headlines.`,tags:[['bad','Awards backlash']]}; }
+  chg('happy',1);
+  return {text:`You didn't take home ${cat}, but walking ${cer}'s red carpet kept your name in every feed.`,tags:[['flag','Nominated']]};
+}
 function fameYear(){ const f=S.fame||0; const followers=(typeof totalFollowers==='function'?totalFollowers():0);
   const star = S.job && /Actor|Actress|Musician|Singer|Pop Star|Star|Influencer|Model|Athlete|Author|Writer/i.test(S.job.title||'');
   const target = Math.min(100, Math.round((followers>0?Math.log10(followers+1)*16:0) + (star?22:0) + (has('famous_family')?8:0)));
