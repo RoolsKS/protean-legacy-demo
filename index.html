@@ -7823,14 +7823,18 @@ function mindBody(){ if(!S){toast('Start a life first.');return;} if(isLocked())
 }
 function mbDo(kind){ closeModal();
   if(kind==='gym'){ const cost=rng(0,600); if(S.money>0)money(-Math.min(cost,S.money)); S.fitness=clamp((S.fitness||50)+rng(5,12)); chg('looks',rng(1,3)); chg('health',rng(1,3));
-    pushLog(`I trained at the gym all year. 🏋️`,[['good','Gym']]); resultModal('Mind & Body','Workout','🏋️',[`You trained hard — +Looks, +Health.`,statBar('Fitness',S.fitness)],()=>mindBody()); }
+    const story=pick(['You hit the weights hard — heavy squats, deadlifts and a brutal leg day every week.','Dawn runs, boxing three nights a week, and you finally stopped skipping cardio.','You practically lived at the gym: circuit training, spin class, and a new bench PR.','A year of CrossFit chewed you up and spat you back out — stronger.','Long swims and a couch-to-5K that quietly became a 10K.','You found a training partner who wouldn\'t let you quit, and it showed.','Powerlifting became an obsession; the plates kept going up.']);
+    pushLog(`🏋️ ${story}`,[['good','Gym']]); resultModal('Mind & Body','Workout','🏋️',[story+' <span style="color:var(--dim);font-size:12px">(+Looks · +Health)</span>',statBar('Fitness',S.fitness)],()=>mindBody()); }
   else if(kind==='diet'){ S.fitness=clamp((S.fitness||50)+rng(3,8)); chg('health',rng(2,4)); chg('looks',1);
-    pushLog(`I cleaned up my diet. 🥗`,[['good','Healthy diet']]); resultModal('Mind & Body','Eating Clean','🥗',[`You ate clean this year — +Health.`,statBar('Fitness',S.fitness)],()=>mindBody()); }
+    const story=pick(['You swapped takeout for home-cooked meals, meal-prepped every Sunday, and ditched the soda.','You went mostly plant-based, learned to actually cook, and your energy took off.','Cut the junk, dialed in your macros, and rediscovered your kitchen.','Intermittent fasting, more water, and greens with every plate.','You quit the late-night snacking and started eating like someone planning to stick around.']);
+    pushLog(`🥗 ${story}`,[['good','Healthy diet']]); resultModal('Mind & Body','Eating Clean','🥗',[story+' <span style="color:var(--dim);font-size:12px">(+Health)</span>',statBar('Fitness',S.fitness)],()=>mindBody()); }
   else if(kind==='meditate'){ chg('happy',rng(4,9)); chg('health',1); addStress(-rng(8,16)); addMood(rng(3,7));
-    pushLog(`I meditated daily. 🧘`,[['good','Meditation']]); resultModal('Mind & Body','Calm','🧘',[`A year of meditation.`,`Stress eased, mood lifted, and a clearer mind.`],()=>mindBody()); }
+    const story=pick(['Ten quiet minutes each morning grew into a real practice.','You learned to breathe through the noise — a daily sit, rain or shine.','Guided sessions, then silence, then a stillness you carried into the day.','A weekend retreat quietly rewired how you handle stress.','You journaled at night and sat at dawn, and the mental chatter finally hushed.']);
+    pushLog(`🧘 ${story}`,[['good','Meditation']]); resultModal('Mind & Body','Calm','🧘',[story,`Stress eased, mood lifted, a clearer mind. <span style="color:var(--dim);font-size:12px">(+Happiness)</span>`],()=>mindBody()); }
   else { const cost=rng(200,1500); if(!spend(cost))return; chg('happy',rng(6,12));
     const dep=(S.illnesses||[]).find(i=>i.key==='depression'&&!i.treated); let eased=false; if(dep&&rng(0,100)<60){ S.illnesses=S.illnesses.filter(i=>i!==dep); eased=true; }
-    pushLog(`I started seeing a therapist. 🛋️${eased?' My depression lifted.':''}`,[['good','Therapy']]); resultModal('Mind & Body','Therapy','🛋️',[`Therapy cost ${cur()}${cost.toLocaleString()}.`,`Your head feels lighter. +Happiness${eased?' · depression eased':''}.`],()=>setTab('life')); }
+    const story=pick(['You finally talked through the things you\'d buried for years.','Week after week, you untangled knots you\'d carried since childhood.','Hard, honest sessions — you learned to name what you actually felt.','You did the work: the patterns, the triggers, the old wounds.','It wasn\'t easy, but you slowly started to forgive yourself.']);
+    pushLog(`🛋️ ${story}${eased?' My depression lifted.':''}`,[['good','Therapy']]); resultModal('Mind & Body','Therapy','🛋️',[story,`Your head feels lighter. <span style="color:var(--dim);font-size:12px">(+Happiness${eased?' · depression eased':''})</span> · ${cur()}${cost.toLocaleString()}`],()=>setTab('life')); }
 }
 /* ---- Emigrate — kids ask parents (usually no); 18+ move freely ---- */
 function emigrate(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
