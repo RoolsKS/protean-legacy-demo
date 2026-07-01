@@ -1385,8 +1385,13 @@ function ageFamily(){
     if(rand()<risk){ p.alive=false; onRelativeDeath(p); }
   }
 }
+function deathCause(p){ const age=p.age||0;
+  if(age>=72) return pick(['old age','heart failure in their sleep','a long illness','natural causes','complications from pneumonia']);
+  if(age<18)  return pick(['complications from scarlet fever','a sudden illness','a tragic accident','meningitis','a rare infection']);
+  return pick(['a car accident','a sudden heart attack','cancer','a stroke','an accident','a rare illness','an overdose']); }
 function onRelativeDeath(p){
-  let txt=`<b>${p.name}</b> (${p.rel}) has passed away at ${p.age}.`;
+  const cause=deathCause(p);
+  let txt=`<b>${p.name}</b> (${p.rel}) has passed away at ${p.age} — ${cause}.`;
   const tags=[['bad',`Lost: ${p.rel}`]];
   chg('happy', -Math.round(p.affinity/12));
   if(p.gen<0 && p.affinity>=55){            // first seed of the LEGACY system
@@ -1396,6 +1401,7 @@ function onRelativeDeath(p){
     tags.push(['echo',`Inheritance +$${inh.toLocaleString()}`]);
   }
   pushLog(txt,tags);
+  (S._deathQueue=S._deathQueue||[]).push({id:p.id,name:p.name,rel:p.rel,age:p.age,cause,aff:p.affinity||40});   // → a funeral pop-up with choices (fired via the event system)
 }
 
 /* ---------- mutation helpers (the "memory writers") ---------- */
@@ -3195,6 +3201,21 @@ const EVENTS = [
         return {text:`You and ${fn} hit it off! A new friendship begins.`,tags:[['rel',`New friend: ${fn}`]]};}},
       {label:'Reject them', apply:()=>{ chg('happy',-1);
         return {text:`You brush ${fn} off. Their little face falls.`,tags:[['bad','Stayed solo']]};}},
+    ]};}},
+
+/* --- ⚰️ FUNERAL — an interactive pop-up when a relative dies (fired from S._deathQueue) --- */
+{ id:'relative_funeral', once:false, weight:1600,
+  when:S=>(S._deathQueue||[]).length>0,
+  build:S=>{ const d=S._deathQueue.shift();
+    return {yr:`Age ${S.age}`, title:'⚰️ A Funeral',
+    text:`Your ${d.rel.toLowerCase()}, <b>${d.name}</b>, passed away at ${d.age} — ${d.cause}. The funeral is this week.`,
+    choices:[
+      {label:'Attend the funeral', apply:()=>{ addStress(rng(4,10)); chg('happy',-rng(2,5)); if(typeof addSelfWorth==='function')addSelfWorth(2); if(d.aff>=50 && typeof addTrauma==='function') addTrauma('grief',rng(10,24),`saying goodbye to ${d.name}`); ledgerAdd('milestone',8,{note:`Mourned ${d.name} at their funeral.`});
+        return {text:`You said your goodbyes to <b>${d.name}</b>. Grief is the price of love — but you were there.`,tags:[['flag','Attended the funeral']]}; }},
+      {label:'Give the eulogy', tip:'Honour them', apply:()=>{ chg('happy',-rng(1,4)); gainFame(rng(0,2)); if(typeof addSelfWorth==='function')addSelfWorth(4); if(d.aff>=50 && typeof addTrauma==='function') addTrauma('grief',rng(8,18),`eulogising ${d.name}`);
+        return {text:`You stood up and spoke for <b>${d.name}</b>. Through tears, you made the whole room laugh and cry. They'd have been proud.`,tags:[['good','Gave the eulogy']]}; }},
+      {label:'Skip it', tip:'The family will notice', apply:()=>{ karma(-3); chg('happy',rng(0,2)); if(d.rel&&/Mother|Father|Brother|Sister|Son|Daughter/.test(d.rel)) ledgerAdd('scandal',10,{note:`Skipped ${d.name}'s funeral.`});
+        return {text:`You skipped <b>${d.name}</b>'s funeral. The family noticed — and they'll remember.`,tags:[['bad','Skipped the funeral']]}; }},
     ]};}},
 
 /* --- CHILDHOOD: parents have another baby --- */
@@ -9285,11 +9306,12 @@ const VENUE_EVENTS=[
   {id:'f1',      name:'F1 Grand Prix',  icon:'🏎️', cost:400, happy:12, fame:1, sport:true,  countries:['ae','it','es','uk','jp','br','mx','au']},
 ];
 const OVERSEAS=[
-  {id:'worldcup', name:'World Cup Final',     icon:'🏆', country:'br', cost:1200, travel:2500, happy:18, fame:3},
-  {id:'superbowl',name:'Super Bowl',          icon:'🏈', country:'us', cost:2000, travel:2000, happy:16, fame:3},
-  {id:'olympics', name:'The Olympics',        icon:'🥇', country:'jp', cost:900,  travel:2200, happy:15, fame:2},
-  {id:'fashion',  name:'Paris Fashion Week',  icon:'👗', country:'fr', cost:1500, travel:1800, happy:14, fame:3},
+  {id:'worldcup', name:'World Cup Final',     icon:'🏆', country:'br', cost:1200, travel:2500, happy:18, fame:3, period:4},   // every 4 years
+  {id:'superbowl',name:'Super Bowl',          icon:'🏈', country:'us', cost:2000, travel:2000, happy:16, fame:3, period:1},   // yearly
+  {id:'olympics', name:'The Olympics',        icon:'🥇', country:'jp', cost:900,  travel:2200, happy:15, fame:2, period:4},   // every 4 years
+  {id:'fashion',  name:'Paris Fashion Week',  icon:'👗', country:'fr', cost:1500, travel:1800, happy:14, fame:3, period:1},   // yearly
 ];
+function marqueeCooldown(e){ if(!e.period) return 0; const last=(S._lastMarquee||{})[e.id]; if(last==null) return 0; return Math.max(0, e.period-(S.age-last)); }
 /* ---- Passport — a real multi-step process: photo → office → file → wait → come back to collect ---- */
 let _ppPhoto=null;
 function applyPassport(){
@@ -9370,9 +9392,11 @@ function attendVenue(id){
 }
 function attendOverseas(id){
   const e=OVERSEAS.find(x=>x.id===id); if(!e)return;
+  const cd=marqueeCooldown(e); if(cd>0){ toast(`🗓️ The ${e.name} isn't on again for <b>${cd}</b> more year${cd===1?'':'s'}.`.replace(/<[^>]+>/g,'')); return; }
   const abroad=e.country!==S.country;
   if(abroad && !passportValid()){ toast('🛂 You need a passport to travel abroad.'); return; }
   logAct('call',{fn:'attendOverseas',args:[id]});
+  S._lastMarquee=S._lastMarquee||{}; S._lastMarquee[id]=S.age;   // 🗓️ mark it attended so it can't be spammed (World Cup/Olympics every 4 yrs; Super Bowl/Fashion yearly)
   if(!abroad){ doTravel(e,false,'economy'); return; }
   const c=e.cost, t=e.travel;
   openModal({banner:'Travel', title:e.name, icon:'✈️', text:'Pick your travel class — a better class means more comfort and a better chance to meet people.', closable:true,
@@ -9414,8 +9438,8 @@ function renderEvents(){
   h+=VENUE_EVENTS.filter(e=>e.countries==='all'||e.countries.includes(S.country))
       .map(e=>eventRow(e.icon,e.name,`${cur()}${e.cost.toLocaleString()}`,`attendVenue('${e.id}')`)).join('');
   h+=`<div class="genlabel">Overseas Experiences ✈️</div>`;
-  h+=OVERSEAS.map(e=>{ const abroad=e.country!==S.country, tot=e.cost+(abroad?e.travel:0);
-    const note=(abroad&&!passportValid())?'🛂 needs passport':'';
+  h+=OVERSEAS.map(e=>{ const abroad=e.country!==S.country, tot=e.cost+(abroad?e.travel:0); const cd=marqueeCooldown(e);
+    const note=cd>0?`🗓️ next in ${cd} yr${cd===1?'':'s'}`:(abroad&&!passportValid())?'🛂 needs passport':(e.period?`every ${e.period} yr${e.period===1?'':'s'}`:'');
     return eventRow(e.icon,`${e.name} · ${COUNTRIES[e.country].flag}`,`${cur()}${tot.toLocaleString()}`,`attendOverseas('${e.id}')`,note);
   }).join('');
   v.innerHTML=h;
@@ -10532,6 +10556,17 @@ function skipSchool(){ if(!S||isLocked())return;
     resultModal('Skip School','Free Day','😎',[`You ditched class and got away with it.`,`+Happiness, but your grades took a small hit.`],()=>setTab('school'));
   }
 }
+/* ---- 💃 SCHOOL DANCE — a themed dance you can hit each school year (energy-gated). ---- */
+const DANCE_THEMES=['Neon Nights','Masquerade','Under the Sea','Hollywood Glam','Winter Wonderland','TikTok Trends','Retro 80s','Enchanted Forest','Roaring 20s','Galaxy Gala','Spring Fling','Midnight Masquerade'];
+function schoolDance(){ if(!S||isLocked())return; if(!['primary','high','college'].includes(S.eduLevel)){ toast('You need to be in school for that.'); return; }
+  logAct('call',{fn:'schoolDance'});
+  if(!spendEnergy(20,'the school dance')){ setTab('school'); return; }
+  const theme=pick(DANCE_THEMES); const roll=rng(0,100); let title,icon,line,tags;
+  if(roll<45){ S.popularity=clamp((S.popularity||50)+rng(3,8)); chg('happy',rng(4,8)); if(rng(0,100)<40)addSchoolFriend('the school dance'); title='A Night to Remember 💃'; icon='💃'; line=`You went to the <b>${theme}</b>-themed school dance and had a blast — you danced all night.`; tags=[['good','School dance']]; }
+  else if(roll<70){ S.popularity=clamp((S.popularity||50)+rng(1,4)); chg('happy',rng(2,5)); title=`${theme} Dance 🕺`; icon='🕺'; line=`You hit the <b>${theme}</b> dance — a fun, low-key night out.`; tags=[['flag','School dance']]; }
+  else if(roll<88){ chg('happy',-rng(1,4)); title='Wallflower 🥲'; icon='🥲'; line=`The <b>${theme}</b> dance was awkward — you spent most of it by the punch bowl.`; tags=[['flag','Awkward dance']]; }
+  else { S.popularity=clamp((S.popularity||50)-rng(2,6)); chg('happy',-rng(3,7)); title='Dance Drama 😬'; icon='😬'; line=`Drama erupted at the <b>${theme}</b> dance and you got dragged right into the middle.`; tags=[['bad','Dance drama']]; }
+  pushLog(`💃 ${line.replace(/<[^>]+>/g,m=>m)}`,tags); resultModal('School Dance',title,icon,[line],()=>setTab('school')); }
 function renderSchool(){
   const v=document.getElementById('schoolView'); if(!v||!S)return;
   if(!['primary','high','college','cc','grad'].includes(S.eduLevel)){
@@ -10566,6 +10601,7 @@ function renderSchool(){
     <button class="pbtn" onclick="schoolActivities()"><span class="pi">🎽</span><span class="pl">Activities</span><span class="pd">Join a club or try out for a sports team.</span></button>
     <button class="pbtn" onclick="cliques()"><span class="pi">🫂</span><span class="pl">Cliques</span><span class="pd">Join a school crowd — fit in, boost popularity.</span></button>
     <button class="pbtn" onclick="houseParty()"><span class="pi">🎉</span><span class="pl">House Party</span><span class="pd">Throw a bash — popularity up, but it can go sideways.</span></button>
+    <button class="pbtn" onclick="schoolDance()"><span class="pi">💃</span><span class="pl">School Dance</span><span class="pd">Hit the themed dance — popularity & a fun night.</span></button>
     <button class="pbtn" onclick="studyHarder()"><span class="pi">📚</span><span class="pl">Study Harder</span><span class="pd">Extra effort → grades & smarts.</span></button>
     <button class="pbtn" onclick="skipSchool()"><span class="pi">🫢</span><span class="pl">Skip School</span><span class="pd">Ditch class — fun, but risky for your grades.</span></button>
     <button class="pbtn" onclick="switchSchool()"><span class="pi">🔁</span><span class="pl">Switch School</span><span class="pd">Ask your parents to transfer you — pricier schools, richer friends.</span></button>
