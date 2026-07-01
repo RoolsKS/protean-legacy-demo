@@ -3558,6 +3558,60 @@ const EVENTS = [
         return {text:`You accept 'engagement' gifts worth ${cur()}${grab.toLocaleString()}… then vanish. ${d.name} is humiliated and furious. 🏃`,tags:[['bad',`Conned ${d.name} +${fc(grab)}`]]}; }},
     ]};}},
 
+/* --- FOSTER CARE (child side): orphaned as a minor → relatives take you in, or you enter the system --- */
+{ id:'orphaned_minor', once:true, weight:80,
+  when:S=>S.age>=2 && S.age<=15 && !has('was_orphaned') && !(P('mom')&&P('mom').alive) && !(P('dad')&&P('dad').alive),
+  build:S=>{ setFlag('was_orphaned'); const relatives=Object.values(S.people).filter(p=>p.alive&&p.fam&&p.gen<0&&!p.romantic&&!p.inlaw);
+    if(relatives.length){ const r=pick(relatives);
+      return {yr:`Age ${S.age}`, title:'Taken In by Family',
+      text:`With your parents gone, your ${r.rel.toLowerCase()} <b>${r.name}</b> steps up to raise you.`,
+      choices:[{label:'A new home', apply:()=>{ rel(r.id,+rng(6,14),+rng(4,10),`They took you in when you had no one.`); setFlag('raised_by_relatives'); chg('happy',-2);
+        return {text:`${r.name} takes you in. Family looks after its own. 💛`,tags:[['good','Raised by relatives']]}; }}]}; }
+    setFlag('in_foster_care');
+    return {yr:`Age ${S.age}`, title:'Into the System',
+    text:`With no parents and no family to take you in, you enter <b>foster care</b>.`,
+    choices:[{label:'Make the best of it', apply:()=>{ const g=rand()<.5?'m':'f'; S.people.foster_parent=person('foster_parent', nm(g)+' '+pick(LAST), g==='f'?'Foster Mother':'Foster Father', rng(45,66), rng(40,58), {gender:g,gen:-1,age:rng(38,58)}); S.people.foster_parent.fosterParent=true; chg('happy',-6); if(typeof addTrauma==='function') addTrauma('adverse_childhood',20,'growing up in foster care');
+      return {text:`A foster family takes you in. It's hard, but ${S.people.foster_parent.name} tries. 🏠`,tags:[['flag','Entered foster care']]}; }}]};
+  }},
+/* --- FOSTER CARE (child side): be adopted out of the system into a forever home --- */
+{ id:'foster_adopted', once:true, weight:70,
+  when:S=>has('in_foster_care') && !has('adopted_out') && S.age>=3 && S.age<=16,
+  build:S=>{ setFlag('adopted_out');
+    return {yr:`Age ${S.age}`, title:'A Forever Home',
+    text:`A loving family wants to <b>adopt you</b> out of foster care.`,
+    choices:[
+      {label:'Accept — a real family', apply:()=>{ setFlag('adopted'); chg('happy',12); if(typeof addSelfWorth==='function')addSelfWorth(4); const fp=S.people.foster_parent; if(fp){ fp.rel=fp.gender==='f'?'Adoptive Mother':'Adoptive Father'; fp.fosterParent=false; rel(fp.id,+rng(8,16),+rng(6,12),'They adopted you and made it forever.'); }
+        return {text:`You're adopted into a real family at last — a forever home. 💛`,tags:[['good','Adopted into a family']]}; }},
+      {label:'Stay in the system', apply:()=>{ if(typeof addSelfWorth==='function')addSelfWorth(2); return {text:`You choose to stay put for now. The system is what you know.`,tags:[['flag','Stayed in foster care']]}; }},
+    ]};}},
+/* --- FOSTER CARE (parent side): an unfit parent loses a child to the system --- */
+{ id:'foster_removal', once:false, weight:20,
+  when:S=>S.age>=18 && (S.housing==='homeless'||(S.addictions||[]).length>0||(((S.stats&&S.stats.happy)||50)<18)) && Object.values(S.people).some(p=>p.alive&&p.fam&&p.gen>=1&&(p.age||0)<16&&p.custody!=='ex'&&p.custody!=='foster') && (S.age-(S._lastFoster||-99)>=2),
+  build:S=>{ S._lastFoster=S.age; const kid=pick(Object.values(S.people).filter(p=>p.alive&&p.fam&&p.gen>=1&&(p.age||0)<16&&p.custody!=='ex'&&p.custody!=='foster'));
+    const reason = S.housing==='homeless'?'you have no stable home' : (S.addictions||[]).length?'your addiction' : 'concerns about your wellbeing';
+    return {yr:`Age ${S.age}`, title:'⚠️ Child Services',
+    text:`Child services are at the door about <b>${kid.name}</b> — citing ${reason}. They intend to place ${kid.name} in foster care.`,
+    choices:[
+      {label:'Fight to keep them', tip:'Prove you can provide', apply:()=>{ const okk=rng(0,100) < clamp(40 + (S.housing!=='homeless'?15:0) - ((S.addictions||[]).length*15) + (S.karma||0)*0.1, 8, 80);
+        if(okk){ return {text:`You convince the caseworker you can turn it around. ${kid.name} stays — but you're on notice.`,tags:[['flag','Kept your child — on notice']]}; }
+        kid.custody='foster'; kid.fosterCare=true; chg('happy',-14); addStress(rng(12,24)); return {text:`It isn't enough. ${kid.name} is taken into foster care. 💔`,tags:[['bad',`Lost ${kid.name} to foster care`]]}; }},
+      {label:'Let them go — it’s better for them', apply:()=>{ kid.custody='foster'; kid.fosterCare=true; chg('happy',-8); karma(+1);
+        return {text:`You let ${kid.name} go somewhere safer. It breaks you, but you know it's right for now. 💔`,tags:[['bad',`${kid.name} → foster care`]]}; }},
+    ]};}},
+/* --- FOSTER CARE (parent side): stabilize your life and win a child back --- */
+{ id:'foster_reunify', once:false, weight:16,
+  when:S=>S.housing!=='homeless' && (S.addictions||[]).length===0 && (((S.stats&&S.stats.happy)||50)>=40) && Object.values(S.people).some(p=>p.alive&&p.fosterCare&&(p.age||0)<18) && (S.age-(S._lastReunify||-99)>=2),
+  build:S=>{ S._lastReunify=S.age; const kid=pick(Object.values(S.people).filter(p=>p.alive&&p.fosterCare&&(p.age||0)<18));
+    return {yr:`Age ${S.age}`, title:'A Chance to Reunify',
+    text:`You've got your life back on track. You can petition to bring <b>${kid.name}</b> home from foster care.`,
+    choices:[
+      {label:'Petition for reunification', tip:'Fees + a home study', apply:()=>{ const fee=Math.round(rng(3000,12000)*priceMult()); spend(Math.min(S.money,fee)); const okk=rng(0,100) < clamp(48 + (S.karma||0)*0.2 + (netWorth()>100000?10:0), 15, 88);
+        if(okk){ kid.fosterCare=false; kid.custody='you'; setFlag('reunited_family'); chg('happy',14); ledgerAdd('triumph',16,{who:kid.id,note:`Brought ${kid.name} home from foster care.`});
+          return {text:`The court is satisfied — <b>${kid.name} comes home</b>. A second chance you didn't waste. 💛`,tags:[['good',`${kid.name} came home`]]}; }
+        return {text:`Not yet — the court wants to see more stability. You can petition again.`,tags:[['flag','Reunification denied']]}; }},
+      {label:'Leave them where they’re settled', apply:()=>{ if(typeof addSelfWorth==='function')addSelfWorth(2); return {text:`They're safe and settled. You decide not to upend that right now.`,tags:[['flag','Left them settled']]}; }},
+    ]};}},
+
 /* --- FAMILY: aunt/uncle visit (recurring) --- */
 { id:'aunt_visit', once:false, weight:25,
   when:S=>S.age>=5 && S.age<=14 && livingKin(p=>/Aunt|Uncle/.test(p.rel)).length>0,
@@ -6839,7 +6893,7 @@ function openPerson(id){
   if(p.fam && p.gen>=1 && !p.romantic){             // your child — raise them
     if(p.age<18) ch.push({label:'🧒 Raise Them', alt:true, fn:()=>parentingMenu(id)});   // shape who they'll become
     if(p.age<18) ch.push({label:'🎂 Celebrate Birthday', alt:true, fn:()=>personAction(id,'birthday')});
-    if(p.custody!=='ex'){   // you can only arrange care/schooling for a child in your care
+    if(p.custody!=='ex' && p.custody!=='foster'){   // you can only arrange care/schooling for a child in your care
       if(p.age<=5) ch.push({label: p.nanny?'👶 Nanny: on — dismiss':'👶 Hire a Nanny', alt:true, fn:()=> p.nanny?dismissNanny(id):hireNanny(id)});
       if(p.age>=5 && p.age<18) ch.push({label: p.privateSchool?'🎓 Private School: enrolled':'🎓 Enroll in Private School', alt:true, fn:()=>togglePrivateSchool(id)});
     }
@@ -6866,7 +6920,7 @@ function openPerson(id){
   const detail=`<div style="text-align:left;font-size:13px;color:var(--dim);line-height:1.6">
     ${p.rel}${p.fam?` · Age ${p.age}`:''} · <b style="color:${col}">${relStatus(p)}</b> · ${TRAIT_EMO[tr]||'🙂'} <b style="color:var(--text)">${tr.charAt(0).toUpperCase()+tr.slice(1)}</b>
     ${occ?`<br>💼 ${occ}`:''}${est!=null?`<br>💰 ~${fcm(est)} est. net worth${p.affinity<60?' <span style="font-size:11px">(likely more — get closer)</span>':''}`:''}
-    ${p.custody&&(p.age||0)<18?`<br>🧑‍⚖️ Custody: <b style="color:var(--text)">${p.custody==='you'?'lives with you':p.custody==='ex'?'lives with '+(p.coParentName||'your ex'):'joint custody'}</b>`:''}
+    ${p.custody&&(p.age||0)<18?`<br>🧑‍⚖️ Custody: <b style="color:var(--text)">${p.custody==='you'?'lives with you':p.custody==='ex'?'lives with '+(p.coParentName||'your ex'):p.custody==='foster'?'in foster care':'joint custody'}</b>`:''}
     ${p.adopted?`<br>💛 <b style="color:var(--text)">Adopted</b> into the family`:''}${p.privateSchool?`<br>🎓 <b style="color:var(--text)">Private school</b>${p.eduInvest?` · ${p.eduInvest}yr`:''}`:''}${p.nanny?`<br>👶 <b style="color:var(--text)">Nanny</b> in the home`:''}
     <br>🧠 Recently: <i>“${last}”</i>${moments}${summ}</div>
     <div class="relbars" style="margin-top:9px">${pbar('Relationship',p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}
@@ -7141,7 +7195,7 @@ function childSupportYear(){ if(!S||!S.alive) return;
 /* ---- KIDS PILLAR — childcare (nanny) + private schooling, billed yearly, with a
    dynasty payoff: a privately-educated heir starts life smarter. Deterministic. ---- */
 function kidsCareYear(){ if(!S||!S.alive) return;
-  const kids=Object.values(S.people).filter(k=>k.fam&&k.gen>=1&&k.alive&&k.custody!=='ex');   // you don't fund kids the ex is raising
+  const kids=Object.values(S.people).filter(k=>k.fam&&k.gen>=1&&k.alive&&k.custody!=='ex'&&k.custody!=='foster');   // you don't fund kids the ex (or foster care) is raising
   let nanny=0, tuition=0;
   kids.forEach(k=>{ const age=k.age||0;
     if(k.nanny){ if(age>5){ k.nanny=false; } else { const c=Math.round(rng(6000,14000)*priceMult()); money(-c); nanny+=c; k.affinity=clamp(k.affinity+rng(0,1)); } }
