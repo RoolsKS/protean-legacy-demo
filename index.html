@@ -4424,7 +4424,7 @@ function practiceHobby(k){ const h=hobbyDef(k); if(!h)return; closeModal();   //
   if(canSell) ch.push({label:`💰 Sell ${h.sell}`, fn:()=>sellHobby(k)});
   ch.push({label:'Keep practicing', alt:true, fn:()=>practiceHobby(k)});
   ch.push({label:'Done', alt:true, fn:()=>setTab('life')});
-  resultModal('Passions', h.name, h.icon, [`A year of ${h.name.toLowerCase()}. You're <b>${hobbyTier(r.level)}</b> (${r.level}%).`, `It eased your mind${extra?' — '+extra.replace(/<[^>]+>/g,'').trim():''}.`, canSell?`Your skill is good enough to <b>earn from it</b> now.`:''].filter(Boolean), ()=>{ openModal({banner:'Passions',title:h.name,icon:h.icon,closable:true,text:`What next?`,choices:ch}); });
+  resultModal('Passions', h.name, h.icon, [`A year of ${h.name.toLowerCase()}. You're now <b>${hobbyTier(r.level)}</b>.${extra?' '+extra.replace(/<[^>]+>/g,'').trim():' It eased your mind.'}`, statBar(hobbyTier(r.level)+' skill', r.level), canSell?`Your skill is good enough to <b>earn from it</b> now.`:''].filter(Boolean), ()=>{ openModal({banner:'Passions',title:h.name,icon:h.icon,closable:true,text:`What next?`,choices:ch}); });
 }
 function sellHobby(k){ const h=hobbyDef(k), r=S.hobbies&&S.hobbies[k]; if(!h||!r||!h.sell){ closeModal(); return; } closeModal();   // reached only via modalpick → must NOT logAct (mutates money/followers + rng; double-log double-executes on replay)
   if(r.level<40){ toast('Build your skill higher first.'); return; }
@@ -4439,7 +4439,7 @@ function sellHobby(k){ const h=hobbyDef(k), r=S.hobbies&&S.hobbies[k]; if(!h||!r
     line=`🔥 My ${h.name.toLowerCase()} <b>blew up</b> — ${h.sell} earned <b>${cur()}${income.toLocaleString()}</b>${S.sm&&S.sm.joined?' and a wave of new followers':''}!`; }
   else line=`I sold ${h.sell} from my ${h.name.toLowerCase()} for <b>${cur()}${income.toLocaleString()}</b>. 💰`;
   pushLog(line,[[viral?'good':'flag',`+${cur()}${income.toLocaleString()} ${h.name}`]]);
-  resultModal('Passions', viral?'It Went Viral! 🔥':'Sold', h.icon, [line.replace(/<[^>]+>/g,m=>m), `Skill: ${hobbyTier(r.level)} (${r.level}%).`], ()=>hobbiesMenu());
+  resultModal('Passions', viral?'It Went Viral! 🔥':'Sold', h.icon, [line.replace(/<[^>]+>/g,m=>m), statBar(hobbyTier(r.level)+' skill', r.level)], ()=>hobbiesMenu());
 }
 
 function legacyLine(){
@@ -8267,7 +8267,7 @@ function politicsOffice(){ const off=S.office, o=officeDef(off.tier);
   if(off.yearsInTerm>=o.term) choices.push({label:'🚪 Step Down', alt:true, fn:()=>{ closeModal(); pushLog(`I stepped down as ${off.title}.`,[['flag','Stepped down']]); leaveOffice(); setTab('life'); }});
   choices.push({label:'Close', fn:closeModal});
   openModal({banner:'Politics', title:`🏛️ ${off.title}`, icon:'🏛️', closable:true,
-    text:`<b>${partyName(off.party)}</b> · Term ${off.termsServed+1}, year ${off.yearsInTerm}/${o.term}<br><b style="color:${ac}">Approval ${off.approval}%</b>${off.yearsInTerm>=o.term?'<br>📋 Your term is up — run again or step down.':''}<br><span style="font-size:12px;color:var(--dim)">Agenda: ${off.agenda.map(a=>`${a.name}${a.focus?' ⭐':''} (${a.progress}%)`).join(' · ')}</span>`,
+    text:`<b>${partyName(off.party)}</b> · Term ${off.termsServed+1}, year ${off.yearsInTerm}/${o.term}<div class="relbars" style="text-align:left;margin:8px 0 4px">${pbar('Approval',off.approval)}</div>${off.yearsInTerm>=o.term?'📋 Your term is up — run again or step down.<br>':''}<span style="font-size:12px;color:var(--dim)">Agenda: ${off.agenda.map(a=>`${a.name}${a.focus?' ⭐':''} (${a.progress}%)`).join(' · ')}</span>`,
     choices});
 }
 function agendaFocus(){ const off=S.office; closeModal();
@@ -8277,8 +8277,8 @@ function agendaFocus(){ const off=S.office; closeModal();
 }
 function givePoliticalSpeech(){ const off=S.office; closeModal();   /* reached via the office modal → modalpick covers it, no logAct */
   const issue=pick(off.agenda); const win=rng(0,100) < (45+S.stats.looks*0.3+S.stats.smarts*0.2);
-  if(win){ off.approval=clamp(off.approval+rng(3,8)); pushLog(`🎤 I gave a rousing speech on <b>${issue.name}</b> — my approval climbed.`,[['good','Great speech']]); resultModal('Politics','Standing Ovation 🎤','🎤',[`Your speech on <b>${issue.name}</b> landed beautifully.`,`Approval up to ${off.approval}%.`],()=>politicsOffice()); }
-  else { off.approval=clamp(off.approval-rng(1,5)); pushLog(`🎤 My speech on ${issue.name} fell flat.`,[['bad','Flat speech']]); resultModal('Politics','Crickets 🦗','🦗',[`Your speech on <b>${issue.name}</b> didn't connect.`,`Approval slipped to ${off.approval}%.`],()=>politicsOffice()); }
+  if(win){ off.approval=clamp(off.approval+rng(3,8)); pushLog(`🎤 I gave a rousing speech on <b>${issue.name}</b> — my approval climbed.`,[['good','Great speech']]); resultModal('Politics','Standing Ovation 🎤','🎤',[`Your speech on <b>${issue.name}</b> landed beautifully.`,statBar('Approval',off.approval)],()=>politicsOffice()); }
+  else { off.approval=clamp(off.approval-rng(1,5)); pushLog(`🎤 My speech on ${issue.name} fell flat.`,[['bad','Flat speech']]); resultModal('Politics','Crickets 🦗','🦗',[`Your speech on <b>${issue.name}</b> didn't connect.`,statBar('Approval',off.approval)],()=>politicsOffice()); }
 }
 function impeach(reason){ const off=S.office; if(!off)return; keyMoment(off,'impeached',-85,`Impeached: ${reason}.`); setFlag('impeached'); chg('happy',-15);
   ledgerAdd('scandal', 90, {note:`Impeached and removed as ${off.title} — ${reason}.`});   // a stain that haunts the dynasty
