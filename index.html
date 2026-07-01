@@ -3775,6 +3775,7 @@ function ageUp(){
   if(S.nfl && S.nfl.youth && S.nfl.youth.onTeam) nflYouthSeason();   // 🏈 high-school/college football season (deterministic)
   if(typeof nflActive==='function' && nflActive()) nflSeasonEnd();   // 🏈 conclude the pro NFL season (deterministic, feed-only)
   if(S.nfl && S.nfl.owned) nflOwnerSeason();                         // 🏈 run the owned NFL franchise's season (deterministic, feed-only)
+  childSupportYear();                                                 // 👨‍👧 post-divorce custody: pay/receive child support each year (deterministic)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -6763,6 +6764,7 @@ function openPerson(id){
   const detail=`<div style="text-align:left;font-size:13px;color:var(--dim);line-height:1.6">
     ${p.rel}${p.fam?` · Age ${p.age}`:''} · <b style="color:${col}">${relStatus(p)}</b> · ${TRAIT_EMO[tr]||'🙂'} <b style="color:var(--text)">${tr.charAt(0).toUpperCase()+tr.slice(1)}</b>
     ${occ?`<br>💼 ${occ}`:''}${est!=null?`<br>💰 ~${fcm(est)} est. net worth${p.affinity<60?' <span style="font-size:11px">(likely more — get closer)</span>':''}`:''}
+    ${p.custody&&(p.age||0)<18?`<br>🧑‍⚖️ Custody: <b style="color:var(--text)">${p.custody==='you'?'lives with you':p.custody==='ex'?'lives with '+(p.coParentName||'your ex'):'joint custody'}</b>`:''}
     <br>🧠 Recently: <i>“${last}”</i>${moments}${summ}</div>
     <div class="relbars" style="margin-top:9px">${pbar('Relationship',p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}
       ${p.romantic?barRow('💞 Spark',ensureSpark(p),100,{color:sparkBand(ensureSpark(p)).c}):''}
@@ -6962,12 +6964,75 @@ function endRelationship(id){ const p=S.people[id]; if(!p||!p.romantic)return; c
     p.rel = p.gender==='f'?'Ex-Wife':'Ex-Husband'; p.romantic=false; p.affinity=clamp(p.affinity-30); S.spouse=null; setFlag('divorced'); chg('happy',-12); addStress(rng(8,16));
     keyMoment(p,'betrayal',-50,`Your marriage ended in divorce.`); if(rng(0,100)<25) spawnFeud(p.name, `A bitter divorce.`, 45);
     pushLog(`💔 I divorced <b>${p.name}</b>.${settlement>0?` The settlement cost me ${cur()}${settlement.toLocaleString()}${p.prenup?' (the prenup saved me a fortune)':''}.`:''}`,[['bad','Divorced']]);
+    // CUSTODY — if there are shared minor kids, the divorce goes to a custody decision (support follows)
+    const sharedKids=Object.values(S.people).filter(k=>k.fam&&k.gen>=1&&k.alive&&(k.age||0)<18 && k.otherParent===p.name && !k.custody);
+    if(sharedKids.length){ custodyPrompt(id); return; }
     resultModal('Divorce','💔 It’s Over','💔',[`You and ${p.name} are divorced.`, settlement>0?`Settlement: <b>${cur()}${settlement.toLocaleString()}</b>${p.prenup?' — your prenup held.':''}.`:`No assets to split.`, `The children stay in the family line.`],()=>setTab('people'));
   } else {
     p.rel='Ex'; p.romantic=false; p.affinity=clamp(p.affinity-25); chg('happy',-6);
     pushLog(`💔 I broke up with <b>${p.name}</b>.`,[['bad',`Broke up with ${p.name}`]]);
     resultModal('Breakup','💔 Broke Up','💔',[`You ended things with ${p.name}.`],()=>setTab('people'));
   }
+}
+/* ---- CUSTODY & CHILD SUPPORT — a divorce with minor kids goes to a custody decision,
+   then support is paid/received each year until each child turns 18. Deterministic. ---- */
+function custodyLawyerFee(){ return clamp(Math.round(Math.max(8000,(S.peakMoney||0)*0.03)*priceMult()), Math.round(5000*priceMult()), Math.round(150000*priceMult())); }
+function custodyPrompt(exId){ const ex=S.people[exId]; if(!ex){ closeModal(); setTab('people'); return; }
+  const kids=Object.values(S.people).filter(k=>k.fam&&k.gen>=1&&k.alive&&(k.age||0)<18 && k.otherParent===ex.name && !k.custody);
+  if(!kids.length){ resultModal('Divorce','💔 It’s Over','💔',[`You and ${ex.name} are divorced.`],()=>setTab('people')); return; }
+  const fee=custodyLawyerFee(), names=kids.map(k=>k.name).join(', ');
+  openModal({banner:'Custody', title:'🧑‍⚖️ Custody of the Kids', icon:'🧑‍⚖️', closable:false,
+    text:`You and ${ex.name} share <b>${kids.length}</b> child${kids.length>1?'ren':''} under 18 (${names}). How do you settle custody?`,
+    choices:[
+      {label:'🧑‍⚖️ Fight for custody', tip:`Lawyer ~${fcm(fee)} · best odds`, alt:true, fn:()=>custodyResolve(exId,'fight')},
+      {label:'🤝 Agree to joint custody', tip:'Amicable — shared time, no support', alt:true, fn:()=>custodyResolve(exId,'joint')},
+      {label:'💔 Let them take the kids', tip:'They get primary — you pay support', alt:true, fn:()=>custodyResolve(exId,'concede')},
+    ]}); }
+function custodyResolve(exId, mode){ const ex=S.people[exId]; if(!ex){ closeModal(); setTab('people'); return; }
+  const kids=Object.values(S.people).filter(k=>k.fam&&k.gen>=1&&k.alive&&(k.age||0)<18 && k.otherParent===ex.name && !k.custody);
+  let fee=0;
+  if(mode==='fight'){ fee=custodyLawyerFee(); if(S.money<fee) fee=Math.max(0,Math.round(Math.max(0,S.money)*0.7)); if(fee>0) money(-fee); }
+  const avgAff = kids.length? Math.round(kids.reduce((a,k)=>a+(k.affinity||50),0)/kids.length) : 60;
+  let score = 45 + (S.karma||0)*0.25 + (avgAff-60)*0.5 + (S.gender==='f'?8:-6) - (has('cheater_caught')?14:0) + ((S.stats.smarts||50)-50)*0.1;
+  if(mode==='fight') score += rng(12,26);
+  else if(mode==='concede') score -= rng(12,26);
+  score += rng(-12,12);
+  let arrangement;
+  if(mode==='joint') arrangement = rng(0,100)<72?'joint':(score>=50?'you':'ex');
+  else arrangement = score>=62?'you':(score<=42?'ex':'joint');
+  kids.forEach(k=>{ k.custody=arrangement; k.coParentId=exId; k.coParentName=ex.name; });
+  setFlag('divorced_with_kids'); if(arrangement==='you') setFlag('custodial_parent');
+  let title,icon,lines;
+  if(arrangement==='you'){ icon='👨‍👧'; title='You Got Custody'; chg('happy',4); kids.forEach(k=>k.affinity=clamp(k.affinity+rng(2,6)));
+    lines=[`The court grants <b>you</b> primary custody of your ${kids.length>1?kids.length+' kids':'child'}.`, `${ex.name} will pay you child support until each turns 18.`]; }
+  else if(arrangement==='ex'){ icon='💔'; title='They Got Custody'; chg('happy',-8); addStress(rng(6,14));
+    lines=[`${ex.name} is granted primary custody.`, `You'll <b>pay child support</b> each year until each child turns 18${mode==='fight'?' — the lawyer fees stung and it still didn’t go your way.':'.'}`]; }
+  else { icon='🤝'; title='Joint Custody'; lines=[`You and ${ex.name} agree to <b>joint custody</b> — you share the kids and the costs, with no support owed either way.`]; }
+  if(fee>0) lines.push(`Legal fees: <b>${cur()}${fee.toLocaleString()}</b>.`);
+  pushLog(`🧑‍⚖️ Custody settled — <b>${arrangement==='you'?'you have primary custody':arrangement==='ex'?ex.name+' has primary custody':'joint custody'}</b>.`,[[arrangement==='ex'?'bad':'flag','Custody: '+arrangement]]);
+  resultModal('Custody',title,icon,lines,()=>setTab('people')); }
+function childSupportYear(){ if(!S||!S.alive) return;
+  const kids=Object.values(S.people).filter(k=>k.custody && k.fam && k.gen>=1);
+  if(!kids.length) return;
+  let paid=0, received=0; const ended=[];
+  const myIncome = (S.job&&S.job.salary) || Math.max(4000, Math.round((S.peakMoney||0)*0.03));
+  kids.forEach(k=>{
+    if(!k.alive){ return; }
+    if((k.age||0)>=18){ if(!k._supportEnded){ k._supportEnded=true; ended.push(k.name); } return; }
+    if(k.custody==='ex'){                                   // you pay the co-parent
+      const amt=clamp(Math.round(myIncome*0.13), Math.round(2000*priceMult()), Math.round(70000*priceMult()));
+      money(-amt); paid+=amt; k.affinity=clamp(k.affinity-rng(0,2));
+    } else if(k.custody==='you'){                           // the co-parent pays you (some years they default)
+      const ex=k.coParentId&&S.people[k.coParentId]; const nw=ex?estNetWorth(ex):null;
+      const exInc = nw? Math.max(6000,Math.round(nw*0.05)) : 18000;
+      const amt=clamp(Math.round(exInc*0.13*priceMult()), Math.round(1500*priceMult()), Math.round(60000*priceMult()));
+      if(rng(0,100)<74){ money(amt); received+=amt; }
+      k.affinity=clamp(k.affinity+rng(0,1));
+    }                                                        // joint → costs cancel out, no transfer
+  });
+  if(paid>0) pushLog(`👨‍👧 Child support — I paid <b>${cur()}${paid.toLocaleString()}</b> this year.`,[['flag',`-${cur()}${paid.toLocaleString()} support`]]);
+  if(received>0) pushLog(`👨‍👧 Child support — I received <b>${cur()}${received.toLocaleString()}</b> this year.`,[['good',`+${cur()}${received.toLocaleString()} support`]]);
+  ended.forEach(n=>pushLog(`🎓 Child support for <b>${n}</b> has ended — they're grown now.`,[['flag','Support ended']]));
 }
 /* ---- MARRIAGE DEPTH — a "spark" that lives, fades, and can be rekindled ---- */
 function ensureSpark(p){ if(p.spark==null) p.spark=clamp(50+Math.round(((p.affinity||50)-50)/2)); return p.spark; }
