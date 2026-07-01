@@ -8847,6 +8847,8 @@ function seeDoctor(){
   const addic=(S.addictions||[]).slice(); if(has('smoker')&&!addic.some(a=>a.key==='smoking')) addic.push({key:'smoking',name:'Smoking'});
   const illTxt = (S.illnesses||[]).length ? (S.illnesses||[]).map(i=>`${i.treated?'✅':'🤒'} ${i.name}${i.treated?' — managed':i.curable?' — treatable':' — chronic'}`).join('<br>') : 'No conditions detected. ✅';
   const choices=[{label:'🩺 General check-up', fn:doctorCheckup}];
+  const serious=(S.illnesses||[]).find(i=>!i.treated && (i.tough||i.sev>=4));
+  if(serious && worldRules.cap('modernMedicine')) choices.push({label:`🏥 Treatment plan — ${serious.name}`, alt:true, fn:()=>seriousTreatMenu(serious.key)});
   if(ill.length) choices.push({label:`💊 Treat illnesses (${ill.length})`, alt:true, fn:treatIllness});
   if(stds.length) choices.push({label:`💉 Treat infections (${stds.length})`, alt:true, fn:treatSTDs});
   if(addic.length) choices.push({label:`🚭 Get help quitting (${addic.length})`, alt:true, fn:quitAddiction});
@@ -8879,6 +8881,35 @@ function treatIllness(){ closeModal();
   pushLog(`I got treated for ${(S.illnesses.concat(cured.map(n=>({name:n})))).map(x=>x.name).slice(0,3).join(', ')||'my condition'} at the clinic. 💊`,[['good','Saw a doctor']]);
   resultModal('Doctor','Treatment','💊',lines,()=>seeDoctor());
 }
+/* 🏥 INTERACTIVE TREATMENT PLAN — for serious illnesses (tough or sev≥4): pick an approach, each trading cost / odds / toll. Deterministic. */
+function seriousTreatMenu(key){ const i=(S.illnesses||[]).find(x=>x.key===key&&!x.treated); if(!i){ seeDoctor(); return; }
+  const base=Math.round(clamp(55 - i.sev*6 + (S.fitness||50)/5, 8, 85));
+  openModal({banner:'Treatment Plan', title:`🏥 ${i.name}`, icon:'🏥', closable:true,
+    text:`<b>${i.name}</b> is serious. How will you fight it? Each path trades cost, odds and toll on your body. <span style="color:var(--dim)">Baseline odds ~${base}% — better the fitter you are.</span>`,
+    choices:[
+      {label:'⚔️ Aggressive (surgery + chemo)', tip:'Best odds, hard on the body', alt:true, fn:()=>doSeriousTreat(key,'aggressive')},
+      {label:'🩺 Standard care', tip:'Balanced cost & odds', alt:true, fn:()=>doSeriousTreat(key,'standard')},
+      {label:'🧪 Experimental therapy', tip:'A gamble — miracle or setback', alt:true, fn:()=>doSeriousTreat(key,'experimental')},
+      {label:'🕊️ Palliative — just manage it', tip:'No cure, but stops the decline', alt:true, fn:()=>doSeriousTreat(key,'palliative')},
+      {label:'‹ Back', fn:seeDoctor},
+    ]});
+}
+function doSeriousTreat(key,approach){ closeModal(); const i=(S.illnesses||[]).find(x=>x.key===key&&!x.treated); if(!i){ seeDoctor(); return; }
+  const base=clamp(55 - i.sev*6 + (S.fitness||50)/5, 8, 85);
+  let cost, cured=false, note;
+  if(approach==='aggressive'){ cost=Math.round(i.sev*rng(4000,12000)*priceMult()); if(!spend(cost))return; cured=rng(0,100)<clamp(base+18,10,94); chg('health',-rng(4,10)); S.fitness=clamp((S.fitness||50)-rng(5,12),0,100); addStress(rng(4,10));
+    note= cured?`The aggressive course was brutal — but it worked.`:`You threw everything at it, but <b>${i.name}</b> held on. The toll was heavy.`; }
+  else if(approach==='standard'){ cost=Math.round(i.sev*rng(1500,5000)*priceMult()); if(!spend(cost))return; cured=rng(0,100)<clamp(base,8,90); chg('health',-rng(1,4));
+    note= cured?`Standard treatment did the job.`:`The standard course wasn't enough this time — <b>${i.name}</b> persists.`; }
+  else if(approach==='experimental'){ cost=Math.round(i.sev*rng(500,3000)*priceMult()); if(!spend(cost))return; const roll=rng(0,100);
+    if(roll<12){ cured=true; chg('health',rng(3,8)); note=`A miracle — the experimental therapy wiped out <b>${i.name}</b> completely. 🍀`; }
+    else { cured=rng(0,100)<clamp(base-12,4,80); if(!cured){ chg('health',-rng(3,8)); note=`The experimental therapy backfired — no cure, and you feel worse for trying.`; } else note=`Against the odds, the experimental therapy came through.`; } }
+  else { cost=Math.round(i.sev*rng(300,1500)*priceMult()); if(!spend(cost))return; i.treated=true; chg('happy',rng(2,6)); addStress(-rng(3,8));
+    pushLog(`I chose to manage my <b>${i.name.toLowerCase()}</b> with palliative care.`,[['flag',`Managing ${i.name}`]]);
+    resultModal('Treatment Plan','Managed 🕊️','🕊️',[`Palliative care (${cur()}${cost.toLocaleString()}) won't cure <b>${i.name}</b>, but it stops the yearly decline and eases the suffering.`],()=>seeDoctor()); return; }
+  if(cured){ S.illnesses=S.illnesses.filter(x=>x!==i); chg('health',rng(3,8)); setFlag('beat_serious_illness'); pushLog(`💪 I beat <b>${i.name.toLowerCase()}</b> after a hard fight.`,[['good',`Beat ${i.name}`]]); }
+  else pushLog(`My <b>${i.name.toLowerCase()}</b> treatment didn't take. The fight goes on.`,[['bad',`${i.name} persists`]]);
+  resultModal('Treatment Plan', cured?'You Beat It 💪':'The Fight Goes On 💔', cured?'💪':'💔', [note,`Cost: ${cur()}${cost.toLocaleString()}.`], ()=>seeDoctor()); }
 function quitAddiction(){ closeModal();
   const list=(S.addictions||[]).slice(); if(has('smoker')&&!list.some(a=>a.key==='smoking')) list.push({key:'smoking',name:'Smoking'});
   if(!list.length){ toast('No habits to kick.'); return; }
