@@ -4022,6 +4022,103 @@ const EVENTS = [
       {label:'...You forgot', tip:'Oh no', apply:()=>{ sp.spark=clamp((sp.spark!=null?sp.spark:60)-rng(6,14),0,100); rel(S.spouse,-rng(5,11),-rng(3,7),`You forgot your anniversary.`); addStress(rng(3,8)); return {text:`It hits you at 9 p.m. when ${sp.name} asks if you 'have anything to say.' You forgot entirely. The doghouse is real.`,tags:[['bad','Forgot the anniversary']]}; }},
     ]};}},
 
+/* ═══════════ 📖 STORY WAVE 5 — career/education · friendship · travel/adventure · faith · pets ═══════════ */
+/* CAREER — a rival company tries to poach you */
+{ id:'w5_poach', once:false, weight:13, when:S=>S.age>=22&&S.job&&!S.job.owner&&(S.age-(S._lastW33||-99)>=3),
+  build:S=>{ S._lastW33=S.age; const bump=rng(15,45); return {yr:`Age ${S.age}`, title:'📞 A Rival Comes Calling',
+    text:`A competitor offers you the same role with a <b>${bump}% raise</b> to jump ship. Do you take it?`,
+    choices:[
+      {label:'Take the offer', tip:'Follow the money', apply:()=>{ S.job.salary=Math.round(S.job.salary*(1+bump/100)); S.jobPerf=clamp((S.jobPerf||50)-rng(0,6)); driftPers('ambition',1); return {text:`You jump ship for the <b>${bump}%</b> bump. New desk, new faces — and a noticeably fatter paycheck.`,tags:[['good',`+${bump}% salary`]]}; }},
+      {label:'Stay loyal', tip:'The devil you know', apply:()=>{ S.jobPerf=clamp((S.jobPerf||50)+rng(2,6)); chg('happy',rng(0,3)); return {text:`You turn them down and stay put. Your boss notices the loyalty — it won't be forgotten at review time.`,tags:[['flag','Stayed loyal']]}; }},
+      {label:'Use it to demand a raise', tip:'Leverage', apply:()=>{ if(rng(0,100)<60){ S.job.salary=Math.round(S.job.salary*(1+bump/200)); return {text:`You show your boss the offer. They scramble to counter — you land a solid raise without even changing jobs.`,tags:[['good','Leveraged a raise']]}; } S.jobPerf=clamp((S.jobPerf||50)-rng(3,9)); return {text:`Your boss calls your bluff and is quietly annoyed you went shopping. Awkward. You stay, at the same pay.`,tags:[['bad','Bluff called']]}; }},
+    ]};}},
+/* CAREER — a toxic workplace */
+{ id:'w5_toxic', once:false, weight:12, when:S=>S.age>=20&&S.job&&(S.age-(S._lastW34||-99)>=3),
+  build:S=>{ S._lastW34=S.age; return {yr:`Age ${S.age}`, title:'☠️ A Toxic Job',
+    text:`Your workplace has turned toxic — a bullying manager, brutal hours, zero respect. It's wearing you down. What do you do?`,
+    choices:[
+      {label:'Quit on the spot', tip:'Freedom, but no income', apply:()=>{ const old=jobTitle?jobTitle(S.job):'your job'; S.job=null; chg('happy',rng(3,9)); addStress(-rng(6,14)); driftPers('boldness',2); return {text:`You walk out mid-shift and never look back. Terrifying and exhilarating — you'll find something better than that.`,tags:[['flag','Quit a toxic job']]}; }},
+      {label:'Grit your teeth and stay', tip:'Pay the bills', apply:()=>{ addStress(rng(6,14)); chg('happy',-rng(3,8)); chg('health',-rng(0,4)); return {text:`You need the income, so you swallow it and keep clocking in. The stress quietly eats at you.`,tags:[['bad','Endured it']]}; }},
+      {label:'Report it to HR', tip:'Go through channels', apply:()=>{ if(rng(0,100)<50){ chg('happy',rng(2,6)); addStress(-rng(4,10)); return {text:`You document everything and take it to HR. The manager is reined in and the air clears. The system worked, for once.`,tags:[['good','HR stepped in']]}; } addStress(rng(4,10)); return {text:`HR sides with management and now you've a target on your back. It gets worse before you find the door.`,tags:[['bad','HR did nothing']]}; }},
+    ]};}},
+/* EDUCATION — a mentor takes interest */
+{ id:'w5_mentor', once:true, weight:14, when:S=>S.age>=16&&S.age<=34,
+  build:S=>{ const field=pick(['your craft','business','the arts','science','leadership']); const nme=nm(rng(0,1)?'m':'f')+' '+pick(LAST); return {yr:`Age ${S.age}`, title:'🧭 A Mentor',
+    text:`<b>${nme}</b>, someone accomplished and respected in ${field}, sees potential in you and offers to mentor you. Do you embrace it?`,
+    choices:[
+      {label:'Soak up everything they offer', tip:'Learn from the best', apply:()=>{ chg('smarts',rng(2,5)); driftPers('ambition',2); driftPers('discipline',1); if(S.job)S.jobPerf=clamp((S.jobPerf||50)+rng(5,12)); if(S.people)S.people.mentor={id:'mentor',name:nme,rel:'Mentor',affinity:65,trust:60,alive:true,memory:[],keyMoments:[],gender:'m',age:rng(45,68),fam:false,gen:9}; setFlag('had_a_mentor'); return {text:`You show up early, ask the right questions, and absorb everything ${nme} teaches. Doors start opening you never knew existed.`,tags:[['good','Found a mentor']]}; }},
+      {label:'Politely decline', tip:'Do it your way', apply:()=>{ driftPers('boldness',1); return {text:`You thank ${nme} but decide to forge your own path. Harder road — but it'll be entirely yours.`,tags:[['flag','Went it alone']]}; }},
+    ]};}},
+/* EDUCATION — go back to school as an adult */
+{ id:'w5_backtoschool', once:false, weight:11, when:S=>S.age>=28&&!['primary','high','college','cc','grad'].includes(S.eduLevel)&&!has('graduated_college')&&(S.age-(S._lastW35||-99)>=6),
+  build:S=>{ S._lastW35=S.age; return {yr:`Age ${S.age}`, title:'🎓 Never Too Late',
+    text:`You've always regretted not finishing your education. There's a program that fits around your life. Do you go back to school as an adult?`,
+    choices:[
+      {label:'Enroll and commit', tip:'Invest in yourself', apply:()=>{ const cost=rng(2000,15000); if(S.money>0)money(-Math.min(cost,S.money)); chg('smarts',rng(2,6)); driftPers('discipline',2); setFlag('adult_learner'); return {text:`You enroll (head to the Education hub to keep going). Juggling study with life is exhausting — but you're finally chasing that qualification. Proud of yourself already.`,tags:[['good','Back to school']]}; }},
+      {label:'Not the right time', tip:'Maybe later', apply:()=>{ chg('happy',-rng(0,2)); return {text:`You look at the tuition, the hours, the life you already have — and shelve it again. Someday.`,tags:[['flag','Shelved it']]}; }},
+    ]};}},
+/* FRIENDSHIP — a friend betrays you */
+{ id:'w5_betray', once:false, weight:12, when:S=>Object.values(S.people).some(p=>p.alive&&!p.fam&&!p.pet&&!p.romantic&&!p.coworker&&!p.teacher)&&(S.age-(S._lastW36||-99)>=4),
+  build:S=>{ S._lastW36=S.age; const friends=Object.values(S.people).filter(p=>p.alive&&!p.fam&&!p.pet&&!p.romantic&&!p.coworker&&!p.teacher); const f=friends[rng(0,friends.length-1)]; const sin=pick(['spread your secret around','went behind your back to your partner','stole an idea and claimed it as theirs','lied to your face and got caught','left you to take the blame']); return {yr:`Age ${S.age}`, title:'🗡️ Betrayed by a Friend',
+    text:`Your friend <b>${f.name}</b> ${sin}. It stings deep. How do you respond?`,
+    choices:[
+      {label:'Confront them', tip:'Demand an answer', apply:()=>{ if(rng(0,100)<45){ rel(f.id,-rng(2,6),+rng(0,3),`You confronted them and cleared the air.`); return {text:`You lay it all out. ${f.name} is genuinely ashamed and owns it. The friendship is bruised — but honest again.`,tags:[['flag','Cleared the air']]}; } rel(f.id,-rng(8,16),-rng(6,12),`The confrontation ended the friendship.`); addStress(rng(3,8)); return {text:`The confrontation explodes and there's no coming back. A friendship, over.`,tags:[['bad','Friendship ended']]}; }},
+      {label:'Forgive and move on', tip:'Take the high road', apply:()=>{ rel(f.id,+rng(1,5),-rng(1,4),`You forgave their betrayal.`); karma(3); driftPers('warmth',1); return {text:`You choose to forgive ${f.name}. It doesn't erase the hurt, but you refuse to let it poison you.`,tags:[['good','Forgave them']]}; }},
+      {label:'Cut them off cold', tip:'No second chances', apply:()=>{ rel(f.id,-rng(15,30),-rng(10,20),`You cut them out of your life for good.`); driftPers('warmth',-1); return {text:`You block ${f.name} everywhere and never speak again. Some bridges deserve to burn.`,tags:[['flag','Cut them off']]}; }},
+    ]};}},
+/* FRIENDSHIP — a friend in crisis */
+{ id:'w5_crisis', once:false, weight:12, when:S=>Object.values(S.people).some(p=>p.alive&&!p.fam&&!p.pet&&!p.romantic)&&(S.age-(S._lastW37||-99)>=4),
+  build:S=>{ S._lastW37=S.age; const friends=Object.values(S.people).filter(p=>p.alive&&!p.fam&&!p.pet&&!p.romantic); const f=friends[rng(0,friends.length-1)]; const crisis=pick(['is going through a brutal breakup','just lost their job','is spiraling into depression','has nowhere to stay','lost a parent']); return {yr:`Age ${S.age}`, title:'🤲 A Friend in Need',
+    text:`Your friend <b>${f.name}</b> ${crisis} and reaches out to you in the middle of the night. What do you do?`,
+    choices:[
+      {label:'Drop everything for them', tip:'Be there', apply:()=>{ rel(f.id,+rng(8,15),+rng(6,12),`You were there when it mattered most.`); karma(4); addStress(rng(2,6)); chg('happy',rng(-1,3)); return {text:`You show up, no questions asked, and stay as long as they need. ${f.name} will never forget who was there in the dark.`,tags:[['good','A true friend']]}; }},
+      {label:'Help where you can', tip:'Support, within limits', apply:()=>{ rel(f.id,+rng(3,7),+rng(2,5),`You supported them through a rough time.`); karma(2); return {text:`You check in, lend an ear and a little money, but keep your own life running too. A steady, sensible kind of support.`,tags:[['good','Lent support']]}; }},
+      {label:'You\'re too busy right now', tip:'Not your problem', apply:()=>{ rel(f.id,-rng(6,14),-rng(4,10),`You weren't there when they needed you.`); karma(-2); return {text:`You send a quick 'so sorry, swamped right now' and go back to sleep. ${f.name} learns exactly where they stand with you.`,tags:[['bad','Left them hanging']]}; }},
+    ]};}},
+/* TRAVEL — a spontaneous trip */
+{ id:'w5_trip', once:false, weight:11, when:S=>S.age>=18&&(S.money||0)>1500&&(S.age-(S._lastW38||-99)>=4),
+  build:S=>{ S._lastW38=S.age; const dest=pick(['a road trip across the country','a last-minute flight to somewhere sunny','a backpacking route through the mountains','a spontaneous city break abroad','a festival two states over']); return {yr:`Age ${S.age}`, title:'✈️ Say Yes?',
+    text:`A friend calls: pack a bag, we leave tomorrow — <b>${dest}</b>. It's reckless and the timing's terrible. Do you go?`,
+    choices:[
+      {label:'Say yes — life\'s short', tip:'Make the memory', apply:()=>{ const cost=Math.round(Math.min(S.money,rng(500,5000))); money(-cost); chg('happy',rng(5,11)); addStress(-rng(4,10)); driftPers('boldness',1); return {text:`You throw caution to the wind and go. <b>${dest.charAt(0).toUpperCase()+dest.slice(1)}</b> becomes the story you'll tell for decades. Worth every penny of the ${cur()}${cost.toLocaleString()}.`,tags:[['good','Made a memory']]}; }},
+      {label:'Be responsible and stay', tip:'Real life calls', apply:()=>{ chg('happy',-rng(1,4)); return {text:`You've got responsibilities, so you wave them off and stay behind. Sensible — but you scroll their photos with a pang of regret.`,tags:[['flag','Stayed home']]}; }},
+    ]};}},
+/* ADVENTURE — an extreme thrill */
+{ id:'w5_adventure', once:false, weight:11, when:S=>S.age>=16&&S.age<=55&&(S.age-(S._lastW39||-99)>=4),
+  build:S=>{ S._lastW39=S.age; const feat=pick(['skydiving','a deep free-dive','a cliff bungee jump','climbing a sheer rock face','running with the bulls']); return {yr:`Age ${S.age}`, title:'🪂 The Edge',
+    text:`You've got the chance to try <b>${feat}</b>. Your heart's pounding just thinking about it. Do you do it?`,
+    choices:[
+      {label:'Send it', tip:'Feel alive', apply:()=>{ if(rng(0,100)<14){ chg('health',-rng(5,15)); addStress(rng(3,8)); return {text:`It goes wrong — a hard landing, a bad call — and you end up injured. A hell of a story, told from a hospital bed.`,tags:[['bad','Adventure gone wrong']]}; } chg('happy',rng(6,13)); addStress(-rng(5,12)); gainFame(rng(0,2)); driftPers('boldness',2); return {text:`You do <b>${feat}</b> and it's pure, terrifying euphoria. You feel more alive than you have in years.`,tags:[['good','Felt truly alive']]}; }},
+      {label:'Chicken out', tip:'Live to be boring', apply:()=>{ chg('happy',-rng(1,3)); driftPers('boldness',-1); return {text:`You get to the edge, look down, and back out. Safe — but you'll always wonder what it felt like.`,tags:[['flag','Backed out']]}; }},
+    ]};}},
+/* COMMUNITY — a chance to volunteer */
+{ id:'w5_volunteer', once:false, weight:11, when:S=>S.age>=14&&(S.age-(S._lastW40||-99)>=4),
+  build:S=>{ S._lastW40=S.age; const cause=pick(['a homeless shelter','a food bank','a youth mentoring program','a beach cleanup','a hospital ward','an animal rescue']); return {yr:`Age ${S.age}`, title:'🤝 Give Back',
+    text:`There's a chance to volunteer at <b>${cause}</b>. It'd cost you time you don't really have. Do you sign up?`,
+    choices:[
+      {label:'Commit to it regularly', tip:'Make it a habit', apply:()=>{ karma(5); chg('happy',rng(3,7)); addMood(rng(3,8)); driftPers('warmth',2); setFlag('volunteer'); if(rng(0,100)<20)gainFame(rng(0,2)); return {text:`You start showing up every week at ${cause}. The work is humbling and it fills a part of you that money never could.`,tags:[['good','Regular volunteer']]}; }},
+      {label:'Help out once', tip:'A one-off', apply:()=>{ karma(2); chg('happy',rng(1,4)); return {text:`You put in one solid day at ${cause}. A small good deed, and a reminder of how much you have.`,tags:[['good','Lent a hand']]}; }},
+      {label:'Not this time', tip:'Too busy', apply:()=>{ return {text:`You mean to, you really do — but life gets in the way and you never sign up.`,tags:[['flag','Meant to']]}; }},
+    ]};}},
+/* FAITH — a spiritual crossroads */
+{ id:'w5_faith', once:false, weight:10, when:S=>S.age>=14&&(S.age-(S._lastW41||-99)>=6),
+  build:S=>{ S._lastW41=S.age; return {yr:`Age ${S.age}`, title:'🕊️ A Question of Faith',
+    text:`A hard year has you searching for something bigger — meaning, faith, a sense of the sacred. Where do you turn?`,
+    choices:[
+      {label:'Embrace a faith', tip:'Find belonging', apply:()=>{ chg('happy',rng(3,8)); addMood(rng(4,9)); addStress(-rng(4,10)); driftPers('warmth',1); setFlag('found_faith'); return {text:`You find a community of belief and it gives you comfort, structure, and a place to belong. Something in you finally settles.`,tags:[['good','Found faith']]}; }},
+      {label:'Explore, but stay open', tip:'Seek, don\'t commit', apply:()=>{ chg('smarts',1); addMood(rng(1,4)); return {text:`You read, you question, you meditate — taking wisdom from many places and committing to none. The search itself becomes the point.`,tags:[['flag','A seeker']]}; }},
+      {label:'Find meaning without religion', tip:'Your own way', apply:()=>{ addMood(rng(2,6)); driftPers('discipline',1); return {text:`You decide meaning is something you build, not receive — in your work, your people, your choices. Faith in yourself.`,tags:[['flag','Made your own meaning']]}; }},
+    ]};}},
+/* PETS — a beloved pet falls ill */
+{ id:'w5_petvet', once:false, weight:13, when:S=>Object.values(S.people).some(p=>p.alive&&p.pet)&&(S.age-(S._lastW42||-99)>=3),
+  build:S=>{ S._lastW42=S.age; const pets=Object.values(S.people).filter(p=>p.alive&&p.pet); const pet=pets[rng(0,pets.length-1)]; const cost=rng(1500,12000); return {yr:`Age ${S.age}`, title:'🐾 A Sick Pet',
+    text:`Your beloved pet <b>${pet.name}</b> is seriously ill. The vet says surgery could save them — for <b>${cur()}${cost.toLocaleString()}</b>. What do you do?`,
+    choices:[
+      {label:'Pay for the surgery', tip:'Whatever it takes', apply:()=>{ const pay=Math.min(Math.max(0,S.money),cost); if(pay>0)money(-pay); if(rng(0,100)<75){ chg('happy',rng(3,7)); return {text:`You empty your wallet without hesitation. The surgery works — <b>${pet.name}</b> pulls through and curls up beside you, good as new. Priceless.`,tags:[['good',`Saved ${pet.name}`]]}; } pet.alive=false; chg('happy',-rng(6,14)); addStress(rng(6,14)); return {text:`You pay for everything, but ${pet.name} doesn't make it through. You did all you could — that has to be enough.`,tags:[['bad',`Lost ${pet.name}`]]}; }},
+      {label:'Basic care and hope', tip:'Can\'t afford surgery', apply:()=>{ const cost2=rng(100,800); if(S.money>0)money(-Math.min(cost2,S.money)); if(rng(0,100)<45){ chg('happy',rng(1,4)); return {text:`You do what you can afford and nurse ${pet.name} at home. Against the odds, they slowly recover. A little miracle.`,tags:[['good',`${pet.name} pulled through`]]}; } pet.alive=false; chg('happy',-rng(6,13)); addStress(rng(5,12)); return {text:`Without the surgery, ${pet.name} fades. You hold them at the end. Goodbye, old friend.`,tags:[['bad',`Lost ${pet.name}`]]}; }},
+      {label:'Let them go peacefully', tip:'End the suffering', apply:()=>{ pet.alive=false; chg('happy',-rng(5,11)); addStress(rng(4,10)); karma(1); return {text:`You can't bear to see ${pet.name} suffer, so you choose a gentle goodbye. The kindest, hardest call a pet owner makes.`,tags:[['flag',`Said goodbye to ${pet.name}`]]}; }},
+    ]};}},
+
 /* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
 { id:'award_nom', once:false, weight:14,
   when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
