@@ -5824,6 +5824,7 @@ function bbHub(){ const b=bb(); if(!b||!b.player){ bballMenuRoute(); return; } c
   const ch=[]; const senior=!p.retired;
   if(senior){ ch.push({label:`🏀 Play a Game${b._gamedThisSeason?` (${b._gamedThisSeason})`:''}`, alt:true, fn:bbPlayGame}); ch.push({label:'🏋️ Train', alt:true, fn:bbProTrain}); }
   if((b.trophies||[]).length||(b.awards||[]).length) ch.push({label:'🏆 Trophy Cabinet', alt:true, fn:bbCabinet});
+  if((S.seasonHistory||[]).some(r=>r.sport==='bball')) ch.push({label:'📋 Season History', alt:true, fn:()=>seasonHistoryView('bball', bbHub)});
   if(!b.owned && S.age>=18) ch.push({label:`🏟️ Buy a Franchise${p.retired?'':' (own & run)'}`, alt:true, fn:()=>{ const min=Math.round(3000000*priceMult()); if(netWorth()<min){ toast(`Need ${fcm(min)}+ net worth to buy a franchise.`); bbHub(); return; } bbBuyFranchisePrompt(); }});
   if(senior && S.age>=31) ch.push({label:'🚪 Retire', alt:true, fn:bbRetirePrompt});
   ch.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
@@ -5867,6 +5868,11 @@ function bbSeasonEnd(){ const b=bb(); if(!b||!bbActive()||S.age<18) return; cons
   bbAgeCurve(p); bbContractCheck(p, ov, ppg); bbTradeCheck(p, ov, ppg);
   const cs=p.careerStats; cs.games+=82; cs.pts+=p.seasonStats.pts; cs.reb+=p.seasonStats.reb; cs.ast+=p.seasonStats.ast; cs.seasons++;
   bbRecent(`S${cs.seasons}: ${ppg.toFixed(1)}/${rpg.toFixed(1)}/${apg.toFixed(1)}${wonRing?' 🏆':''}.`);
+  logSeason({ sport:'bball', emoji:'🏀', n:cs.seasons, age:S.age, team:team.name,
+    line:lines.join(' ').replace(/<[^>]+>/g,''),
+    stats:{ PPG:ppg.toFixed(1), RPG:rpg.toFixed(1), APG:apg.toFixed(1), GP:82 },
+    trophies:(b.trophies||[]).filter(t=>t.age===S.age).map(t=>t.name),
+    awards:(b.awards||[]).filter(a=>a.age===S.age).map(a=>a.name) });
   pushLog(`🏀 <b>Season ${cs.seasons}</b>: ${ppg.toFixed(1)} ppg, ${rpg.toFixed(1)} reb, ${apg.toFixed(1)} ast. ${lines.join(' ')}`, (wonRing||lines.some(l=>/🏅|🌟|⭐/.test(l)))?[['good','🏀 Season']]:[['flag','🏀 Season']]);
   p.seasonStats={games:0,pts:0,reb:0,ast:0,ratingSum:0,ratingN:0}; b._gamedThisSeason=0;
   if(p.fitness<=12 || S.age>=40 || ov<58 && S.age>=35) bbAutoRetire(); }
@@ -6126,6 +6132,7 @@ function nflHub(){ const b=nf(); if(!b||!b.player){ nflMenuRoute(); return; } co
   const ch=[]; const senior=!p.retired;
   if(senior){ ch.push({label:`🏈 Play a Game${b._gamedThisSeason?` (${b._gamedThisSeason})`:''}`, alt:true, fn:nflPlayGame}); ch.push({label:'🏋️ Train', alt:true, fn:nflProTrain}); }
   if((b.trophies||[]).length||(b.awards||[]).length) ch.push({label:'🏆 Trophy Cabinet', alt:true, fn:nflCabinet});
+  if((S.seasonHistory||[]).some(r=>r.sport==='nfl')) ch.push({label:'📋 Season History', alt:true, fn:()=>seasonHistoryView('nfl', nflHub)});
   if(!b.owned && S.age>=18) ch.push({label:`🏟️ Buy a Franchise${p.retired?'':' (own & run)'}`, alt:true, fn:()=>{ const min=Math.round(5000000*priceMult()); if(netWorth()<min){ toast(`Need ${fcm(min)}+ net worth to buy a franchise.`); nflHub(); return; } nflBuyFranchisePrompt(); }});
   if(senior && S.age>=30) ch.push({label:'🚪 Retire', alt:true, fn:nflRetirePrompt});
   ch.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
@@ -6168,6 +6175,11 @@ function nflSeasonEnd(){ const b=nf(); if(!b||!nflActive()||S.age<18) return; co
   const cs=p.careerStats; cs.games+=17; cs.yards+=ss.yards; cs.tds+=ss.tds; cs.tackles+=ss.tackles; cs.splash+=ss.splash; cs.seasons++;
   const headline = grp==='offense'?`${ss.yards} yds, ${ss.tds} TD`:grp==='defense'?`${ss.tackles} tkl, ${ss.splash} splash`:`17 starts`;
   nflRecent(`S${cs.seasons}: ${headline}${wonRing?' 🏆':''}.`);
+  logSeason({ sport:'nfl', emoji:'🏈', n:cs.seasons, age:S.age, team:team.name,
+    line:lines.join(' ').replace(/<[^>]+>/g,''),
+    stats: grp==='offense'?{ Yards:ss.yards, TDs:ss.tds, GP:17 } : grp==='defense'?{ Tackles:ss.tackles, Splash:ss.splash, GP:17 } : { Starts:17 },
+    trophies:(b.trophies||[]).filter(t=>t.age===S.age).map(t=>t.name),
+    awards:(b.awards||[]).filter(a=>a.age===S.age).map(a=>a.name) });
   pushLog(`🏈 <b>Season ${cs.seasons}</b>: ${headline}. ${lines.join(' ')}`, (wonRing||lines.some(l=>/🏅|🌟|⭐/.test(l)))?[['good','🏈 Season']]:[['flag','🏈 Season']]);
   p.seasonStats={games:0,yards:0,tds:0,tackles:0,splash:0}; b._gamedThisSeason=0;
   if(p.fitness<=12 || S.age>=38 || (ov<60 && S.age>=34)) nflAutoRetire(); }
@@ -6352,6 +6364,7 @@ function sp2Hub(k){ const def=SP2_DEFS[k], s=S[k]; if(!s||!s.player){ sp2Route(k
     <div class="genlabel" style="margin:2px 0 4px">Career <span>${p.careerStats.seasons} season${p.careerStats.seasons===1?'':'s'}</span></div>${socStatLine('Titles · Awards',`🏆 ${(s.trophies||[]).length} · 🏅 ${(s.awards||[]).length}`)}${p.contract?socStatLine('Contract',`${cur()}${p.contract.wagePerYear.toLocaleString()}/yr · ${p.contract.yearsRemaining}yr`):''}</div>`;
   const ch=[]; if(!p.retired){ ch.push({label:`${def.emoji} Play a Big Match${s._gamed?` (${s._gamed})`:''}`, alt:true, fn:()=>sp2PlayBig(k)}); ch.push({label:'🏋️ Train', alt:true, fn:()=>sp2Train(k)}); }
   if((s.trophies||[]).length||(s.awards||[]).length) ch.push({label:'🏆 Trophy Cabinet', alt:true, fn:()=>sp2Cabinet(k)});
+  if((S.seasonHistory||[]).some(r=>r.sport==='sp2_'+k)) ch.push({label:'📋 Season History', alt:true, fn:()=>seasonHistoryView('sp2_'+k, ()=>sp2Hub(k))});
   if(!p.retired && S.age>=(def.peak+2)) ch.push({label:'🚪 Retire', alt:true, fn:()=>sp2RetirePrompt(k)});
   ch.push({label:'‹ Back', fn:()=>{closeModal();setTab('specialcareers');}});
   openModal({banner:def.name, title:`${def.emoji} My Career`, icon:def.emoji, closable:true, text:body, choices:ch}); }
@@ -6384,6 +6397,11 @@ function sp2Season(k){ const def=SP2_DEFS[k], s=S[k]; if(!s||!s.player||s.player
   if(p.isRookie){ if(ov>=72){ sp2Award(k,'Rookie of the Year'); gainFame(rng(2,5)); lines.push(`🏅 Rookie of the Year!`); } p.isRookie=false; }
   money(p.contract?p.contract.wagePerYear:60000); if(p.contract){ p.contract.yearsRemaining=Math.max(0,p.contract.yearsRemaining-1); if(p.contract.yearsRemaining<=0) p.contract={wagePerYear:Math.round((60000+ov*ov*1500)*priceMult()),yearsRemaining:rng(2,4)}; }
   sp2AgeCurve(k); p.careerStats.seasons++; s._gamed=0;
+  logSeason({ sport:'sp2_'+k, emoji:def.emoji, n:p.careerStats.seasons, age:S.age, team:def.indiv?def.name:sp2Team(def,p),
+    line:lines.join(' ').replace(/<[^>]+>/g,'')||'a quiet campaign',
+    stats: def.indiv?{ 'World rank':'#'+p.rank, Majors:p.careerStats.majors } : { Titles:p.careerStats.titles },
+    trophies:(s.trophies||[]).filter(t=>t.age===S.age).map(t=>t.name),
+    awards:(s.awards||[]).filter(a=>a.age===S.age).map(a=>a.name) });
   pushLog(`${def.emoji} <b>${def.name} season ${p.careerStats.seasons}</b>: ${lines.join(' ')||'a quiet campaign.'}`, (won||lines.some(l=>/🌟|🏅|⭐/.test(l)))?[['good',`${def.emoji} Season`]]:[['flag',`${def.emoji} Season`]]);
   if(p.fitness<=12 || S.age>=def.retAge || (ov<58 && S.age>=34)) sp2Retire(k,true); }
 function sp2AgeCurve(k){ const def=SP2_DEFS[k], p=S[k].player, cap=Math.min(99,p.potential);
@@ -6661,6 +6679,7 @@ function socHub(){ if(!S){toast('Start a life first.');return;} const sc=soc(); 
     choices.push({label:'🏋️ Train', alt:true, fn:socTrain}); }
   else if(!p.retired){ choices.push({label:'🧒 Still in the academy', fn:socHub, tip:`Senior football from age 16 (you're ${S.age})`}); }
   if((sc.trophies||[]).length||(sc.awards||[]).length) choices.push({label:'🏆 Trophy Cabinet', alt:true, fn:socCabinet});
+  if((S.seasonHistory||[]).some(r=>r.sport==='soccer')) choices.push({label:'📋 Season History', alt:true, fn:()=>seasonHistoryView('soccer', socHub)});
   if(senior && S.age>=30) choices.push({label:'🚪 Retire from playing', alt:true, fn:socRetirePrompt});
   if(!sc.owned && S.age>=18) choices.push({label:`🏟️ Buy a Club${p.retired?'':' (own & manage)'}`, alt:true, fn:()=>{ const min=Math.round(3000000*priceMult()); if(netWorth()<min){ toast(`Need ${fcm(min)}+ net worth to buy a club.`); socHub(); return; } socBuyClubPrompt(); }});
   choices.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
@@ -6720,6 +6739,26 @@ function socTransferWindow(ov, avg){ const sc=soc(), p=sc.player, world=sc.world
   }
   return ''; }
 // ---- The whole season, concluded deterministically each ageUp (FEED-only — no modal, never collides with ageUp's event/death flow) ----
+/* ---- 📋 SEASON HISTORY — every sport records a structured box score each season so the player
+        can open a full season-by-season breakdown (the "view details" under the feed recap). Deterministic. ---- */
+function logSeason(rec){ if(!S)return; const h=S.seasonHistory=S.seasonHistory||[]; h.push(rec); if(h.length>80) h.shift(); }
+function seasonHistoryView(sport, back){
+  const all=(S.seasonHistory||[]).filter(r=>!sport||r.sport===sport);
+  if(!all.length){ toast('No completed seasons yet — play a season, then Age Up.'); if(back)back(); return; }
+  const rows=all.slice().reverse().map(r=>{
+    const st=Object.entries(r.stats||{}).map(([k,v])=>`${k} <b>${v}</b>`).join(' · ');
+    const tr=(r.trophies||[]).length?`<div class="pf" style="color:var(--good)">🏆 ${r.trophies.join(', ')}</div>`:'';
+    const aw=(r.awards||[]).length?`<div class="pf" style="color:var(--accent)">🏅 ${r.awards.join(', ')}</div>`:'';
+    return `<div class="platrow" style="cursor:default">
+      <div class="picon" style="background:linear-gradient(135deg,#2a3340,#1b222d)">${r.emoji||'📋'}</div>
+      <div class="pinfo"><div class="pn">S${r.n} · ${r.team||''} <span style="color:var(--dim);font-weight:400;font-size:12px">age ${r.age}</span></div>
+      ${r.line?`<div class="pf">${r.line}</div>`:''}${st?`<div class="pf">${st}</div>`:''}${tr}${aw}</div></div>`;
+  }).join('');
+  const emoji=all[all.length-1].emoji||'📋';
+  openModal({banner:'Season History', title:`${emoji} Season Details`, icon:'📋', closable:true,
+    text:`<div style="text-align:left">Every season you've played, newest first — full box score, trophies & awards.<div style="margin-top:8px">${rows}</div></div>`,
+    choices:[{label:'‹ Back', fn:()=>{ closeModal(); if(back)back(); }}] });
+}
 function socSeasonEnd(){
   const sc=soc(); if(!sc||!socActive()||S.age<16) return;
   const p=sc.player, world=sc.world; const club=world.clubs[p.clubId]; if(!club) return;
@@ -6763,6 +6802,11 @@ function socSeasonEnd(){
   p.fitness=clamp(p.fitness+rng(20,40)); p.morale=clamp(p.morale + (rank<=3?rng(2,6):-rng(0,4)));
   p.seasonStats={apps:0,goals:0,assists:0,ratingSum:0,ratingN:0}; sc._matchedThisSeason=0;
   if(S.age>=38 || (injured && S.age>=34 && rng(0,100)<45)){ socDoRetire(true); lines.unshift(`🚪 The body said no — you hung up your boots.`); }
+  logSeason({ sport:'soccer', emoji:'⚽', n:sc.seasonsPlayed, age:S.age, team:club.name,
+    line:`${_ord(rank)} in the ${SOC_TIERS[club.tier].name}${injured?' · 🩹 injury-hit':''}`,
+    stats:{ Apps:apps, Goals:goals, Assists:assists, 'Avg rating':avg.toFixed(1) },
+    trophies:(sc.trophies||[]).filter(t=>t.age===S.age).map(t=>t.competitionName||t.name),
+    awards:(sc.awards||[]).filter(a=>a.age===S.age).map(a=>a.name) });
   pushLog(`⚽ <b>Season ${sc.seasonsPlayed}</b> · ${club.name}: <b>${apps}</b> apps, <b>${goals}</b> goals, <b>${assists}</b> assists (avg ${avg.toFixed(1)}). ${lines.join(' ')}`, /🏆|🌟|🌍🏆/.test(lines.join(''))?[['good','⚽ Season']]:[['flag','⚽ Season']]);
 }
 function socRetirePrompt(){ const sc=soc(),p=sc&&sc.player; if(!p){socHub();return;}
