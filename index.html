@@ -7821,6 +7821,7 @@ function activityEntries(){
   add(S.age>=18,'politics','🏛️','Politics', S.office&&S.office.inOffice?`${S.office.title} · ${S.office.approval}% approval`:'Run for office & climb the ladder', "politics()");
   { const era=currentEra(), sh=worldShockAt(); add(true,'times','🌍','The Times', `${era.icon} ${era.name}${sh?` · ${sh.shock.icon} ${sh.shock.name}`:''}`, "worldView()"); }
   if(S.age>=18){ const ph=econPhase(); add(true,'invest','📈','Investments', `${ph.icon} ${ph.name}${investValue()>0?` · holdings ${fcm(investValue())}`:''} · ride the market`, "investMenu()"); }
+  add(S.age>=18 && !S.business && !(S.job&&S.job.owner),'startup','🚀','Found a Startup','Launch your own company from scratch — bet on yourself', "foundStartup()");
   add(S.age>=18,'casino','🎰','Casino', 'Slots, blackjack, roulette, horses — bet at your own risk', "casino()");
   add(S.age>=18,'lottery','🎟️','Lottery', `Rolling jackpot ${fcm(S.lottoJackpot||3000000)}${(S.lottoTickets||[]).length?` · ${S.lottoTickets.length} ticket(s) in`:''}`, "lottery()");
   add(S.age>=13,'blackmarket','🕶️','Black Market', 'Fake ID, booze, guns — get busted at your own risk', "blackMarket()");
@@ -11057,6 +11058,52 @@ function buyBusiness(cost){ if(!spend(cost)) return; const j=S.job;
   unlockAchievement('business_owner','🏢 Mogul','Own your own business.');
   pushLog(`I bought <b>${S.business.name}</b> — I'm the <b>owner</b> now. Time to run it my way. 🏢`,[['good',`Bought ${S.business.name}`]]);
   resultModal('Business','You Own It! 🏢','🏢',[`<b>${S.business.name}</b> is yours, 100%.`,`You control everything now — run it from <b>Career → My Business</b>. It pays <b>${cur()}${baseProfit.toLocaleString()}/yr</b> in profit to start, on top of your salary.`],()=>setTab('business'));
+}
+/* 🚀 FOUND A STARTUP — an alternative path into business ownership (vs buying your employer after 15 yrs).
+   Pick an industry, sink seed capital, roll on your smarts+ambition → a company you then grow via the existing bizAction loop. Deterministic. */
+const STARTUP_FIELDS=[
+  {k:'tech',    name:'Tech Startup',        icon:'💻', seed:[20000,90000], risk:0.52, mult:[3,10]},
+  {k:'food',    name:'Restaurant / Café',   icon:'🍽️', seed:[15000,65000], risk:0.44, mult:[2,5]},
+  {k:'retail',  name:'Retail Shop',         icon:'🛍️', seed:[10000,45000], risk:0.36, mult:[2,4]},
+  {k:'creative',name:'Creative Agency',     icon:'🎨', seed:[8000,38000],  risk:0.42, mult:[2,7]},
+  {k:'trades',  name:'Trades / Contracting',icon:'🔧', seed:[12000,50000], risk:0.30, mult:[2,4]},
+];
+const STARTUP_PRE=['Nova','Apex','Peak','Iron','Vertex','Lumen','North','Summit','Cobalt','Nimbus','Forge','Atlas','Onyx','Pioneer','Sable','Halcyon'];
+const STARTUP_SUF={tech:['Labs','Digital','Systems','AI','Software'],food:['Kitchen','Bistro','& Co.','Eatery','Table'],retail:['Goods','Market','Supply','Store','Emporium'],creative:['Studio','Creative','Media','Collective','Agency'],trades:['Works','Contracting','Builders','Services','Trades']};
+function startupName(k){ return pick(STARTUP_PRE)+' '+pick(STARTUP_SUF[k]||['Co.']); }
+function foundStartup(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  if(S.age<18){ toast('You must be 18 to found a company.'); return; }
+  if(S.business){ toast('You already run a business — head to My Business.'); setTab('business'); return; }
+  logAct('call',{fn:'foundStartup'});
+  const pool=STARTUP_FIELDS.slice(), opts=[]; while(opts.length<3 && pool.length){ opts.push(pool.splice(rng(0,pool.length-1),1)[0]); }
+  openModal({banner:'Startup', title:'🚀 Found a Startup', icon:'🚀', closable:true,
+    text:`Bet on yourself. Pick an industry and sink in seed capital — the bigger the risk, the bigger the potential payoff. Your smarts and ambition tilt the odds.`,
+    choices: opts.map(f=>({label:`${f.icon} ${f.name}`, tip:`Seed ~${fcm(Math.round(f.seed[1]*priceMult()))} · ${f.risk>=0.5?'high risk':f.risk>=0.4?'medium risk':'lower risk'}`, alt:true, fn:()=>foundStartupGo(f.k)}))
+      .concat([{label:'‹ Not now', fn:()=>{ closeModal(); setTab('activities'); }}]) });
+}
+function foundStartupGo(k){ const f=STARTUP_FIELDS.find(x=>x.k===k); if(!f){ setTab('activities'); return; } closeModal();
+  const seed=Math.round(rng(f.seed[0],f.seed[1])*priceMult());
+  if((S.money||0)<seed){ toast(`You need about ${fcm(seed)} in seed capital for that.`); return; }
+  money(-seed);
+  const succ=clamp(45 + S.stats.smarts/4 + ((S.personality&&S.personality.ambition)||50)/6 - f.risk*40, 12, 85);
+  const roll=rng(0,100);
+  if(roll<succ){   // it takes off
+    const value=Math.round(seed*rng(f.mult[0],f.mult[1])); const profit=Math.round(value*rng(10,24)/100);
+    S.business={ name:startupName(k), field:f.name, icon:f.icon, value, profit, salary:0, morale:rng(56,68), since:S.age, staff:rng(1,6), founded:true };
+    setFlag('founder'); driftPers('ambition',2);
+    pushLog(`🚀 I founded <b>${S.business.name}</b> — and it's taking off!`,[['good',`Founded ${S.business.name}`]]);
+    resultModal('Startup','It\'s Alive! 🚀','🚀',[`You launched <b>${S.business.name}</b> for ${cur()}${seed.toLocaleString()} — and it's working. Valuation <b>${fcm(value)}</b>, profit <b>${cur()}${profit.toLocaleString()}/yr</b>.`,`Run it from <b>Career → My Business</b>.`],()=>setTab('business'));
+  } else if(roll<succ+22){   // scraping by
+    const value=Math.round(seed*rng(10,18)/10); const profit=Math.round(value*rng(-4,8)/100);
+    S.business={ name:startupName(k), field:f.name, icon:f.icon, value, profit, salary:0, morale:rng(46,58), since:S.age, staff:rng(1,3), founded:true };
+    setFlag('founder');
+    pushLog(`🚀 I founded <b>${S.business.name}</b> — it's scraping by.`,[['flag',`Founded ${S.business.name}`]]);
+    resultModal('Startup','Off the Ground 🚀','🚀',[`<b>${S.business.name}</b> is live, but it's a grind — valuation <b>${fcm(value)}</b>, ${profit<0?'running a small loss':'barely profitable'}. Nurture it in <b>Career → My Business</b>.`],()=>setTab('business'));
+  } else {   // it folds
+    chg('happy',-rng(3,8)); addStress(rng(4,10)); driftPers('boldness',1);
+    pushLog(`🚀 My startup folded before it began — the ${cur()}${seed.toLocaleString()} seed is gone.`,[['bad','Startup folded']]);
+    resultModal('Startup','It Folded 📉','📉',[`Your venture never got off the ground and the <b>${cur()}${seed.toLocaleString()}</b> seed is gone.`,`A hard lesson — but every founder has a failure story. Try again when you're ready.`],()=>setTab('activities'));
+  }
 }
 function businessYear(){ const b=S.business; if(!b)return;
   const market=rng(-15,22)/100, moraleF=(b.morale-50)/220;
