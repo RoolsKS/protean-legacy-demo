@@ -3882,7 +3882,7 @@ const EVENTS = [
   build:S=>{ S._lastW17=S.age; const a=proAthlete(); const nme=nm(rng(0,1)?'m':'f')+' '+pick(LAST); return {yr:`Age ${S.age}`, title:'🕴️ The Super-Agent',
     text:`<b>${nme}</b>, a big-time sports agent, wants to represent you — promising bigger ${a.label} contracts and endorsement deals, for the standard 10% cut. Do you sign?`,
     choices:[
-      {label:'Sign with them', tip:'They open doors', apply:()=>{ setFlag('has_sports_agent'); if(a.p.contract){ a.p.contract.wagePerYear=Math.round(a.p.contract.wagePerYear*rng(115,140)/100); } const bonus=rng(20000,200000); money(bonus); if(S.people)S.people.agent={id:'agent',name:nme,rel:'Agent',affinity:60,trust:55,alive:true,memory:[],keyMoments:[],gender:'m',age:rng(35,60),fam:false,gen:9}; return {text:`You sign with ${nme}. They renegotiate your deal upward and land you a <b>${cur()}${bonus.toLocaleString()}</b> endorsement to start. Worth every percent.`,tags:[['good',`Signed an agent · +${cur()}${bonus.toLocaleString()}`]]}; }},
+      {label:'Sign with them', tip:'They open doors', apply:()=>{ setFlag('has_sports_agent'); if(a.p.contract){ a.p.contract.wagePerYear=Math.round(a.p.contract.wagePerYear*rng(115,140)/100); } const bonus=rng(20000,200000); money(bonus); if(S.people)S.people.agent={id:'agent',name:nme,rel:'Agent',affinity:60,trust:55,alive:true,memory:[],keyMoments:[],gender:'m',age:rng(35,60),fam:false,gen:9,agent:true}; return {text:`You sign with ${nme}. They renegotiate your deal upward and land you a <b>${cur()}${bonus.toLocaleString()}</b> endorsement to start. Worth every percent.`,tags:[['good',`Signed an agent · +${cur()}${bonus.toLocaleString()}`]]}; }},
       {label:'Stay independent', tip:'Keep 100%', apply:()=>{ driftPers('discipline',1); return {text:`You keep your own counsel and every last penny. More work for you, but nobody's taking a cut.`,tags:[['flag','Went independent']]}; }},
       {label:'Do your homework first', tip:'Due diligence', apply:()=>{ if(rng(0,100)<35){ setFlag('dodged_bad_agent'); chg('smarts',1); return {text:`You dig into ${nme}'s track record and find a trail of ripped-off clients. You dodge a con artist — good instincts.`,tags:[['good','Dodged a shark']]}; } setFlag('has_sports_agent'); const bonus=rng(15000,120000); money(bonus); return {text:`You vet ${nme} thoroughly — they check out. You sign on solid ground and bank a <b>${cur()}${bonus.toLocaleString()}</b> deal.`,tags:[['good',`Signed smart · +${cur()}${bonus.toLocaleString()}`]]}; }},
     ]};}},
@@ -4046,7 +4046,7 @@ const EVENTS = [
   build:S=>{ const field=pick(['your craft','business','the arts','science','leadership']); const nme=nm(rng(0,1)?'m':'f')+' '+pick(LAST); return {yr:`Age ${S.age}`, title:'🧭 A Mentor',
     text:`<b>${nme}</b>, someone accomplished and respected in ${field}, sees potential in you and offers to mentor you. Do you embrace it?`,
     choices:[
-      {label:'Soak up everything they offer', tip:'Learn from the best', apply:()=>{ chg('smarts',rng(2,5)); driftPers('ambition',2); driftPers('discipline',1); if(S.job)S.jobPerf=clamp((S.jobPerf||50)+rng(5,12)); if(S.people)S.people.mentor={id:'mentor',name:nme,rel:'Mentor',affinity:65,trust:60,alive:true,memory:[],keyMoments:[],gender:'m',age:rng(45,68),fam:false,gen:9}; setFlag('had_a_mentor'); return {text:`You show up early, ask the right questions, and absorb everything ${nme} teaches. Doors start opening you never knew existed.`,tags:[['good','Found a mentor']]}; }},
+      {label:'Soak up everything they offer', tip:'Learn from the best', apply:()=>{ chg('smarts',rng(2,5)); driftPers('ambition',2); driftPers('discipline',1); if(S.job)S.jobPerf=clamp((S.jobPerf||50)+rng(5,12)); if(S.people)S.people.mentor={id:'mentor',name:nme,rel:'Mentor',affinity:65,trust:60,alive:true,memory:[],keyMoments:[],gender:'m',age:rng(45,68),fam:false,gen:9,mentor:true}; setFlag('had_a_mentor'); return {text:`You show up early, ask the right questions, and absorb everything ${nme} teaches. Doors start opening you never knew existed.`,tags:[['good','Found a mentor']]}; }},
       {label:'Politely decline', tip:'Do it your way', apply:()=>{ driftPers('boldness',1); return {text:`You thank ${nme} but decide to forge your own path. Harder road — but it'll be entirely yours.`,tags:[['flag','Went it alone']]}; }},
     ]};}},
 /* EDUCATION — go back to school as an adult */
@@ -5298,12 +5298,13 @@ function render(){
     {label:'🏫 Classmates',         test:p=>p.alive&&p.classmate},
     {label:'🍎 Faculty',            test:p=>p.alive&&p.teacher},
     {label:'💼 Coworkers',          test:p=>p.alive&&p.coworker},
+    {label:'🎯 Coaches, Agents & Mentors', test:p=>p.alive&&(p.coach||p.agent||p.mentor)},
     {label:'💘 Partners',           test:p=>p.alive&&p.romantic},
     {label:'💒 Stepfamily',         test:p=>p.alive&&p.step},
     {label:'🏛️ Greek Life',         test:p=>p.alive&&p.greek},
     {label:'💍 In-Laws',            test:p=>p.alive&&p.inlaw},
     {label:'🍯 Sugar Arrangements',  test:p=>p.alive&&p.sugar},
-    {label:'Friends & Others',      test:p=>p.alive&&!p.fam&&!p.pet&&!p.classmate&&!p.teacher&&!p.coworker&&!p.romantic&&!p.greek},
+    {label:'Friends & Others',      test:p=>p.alive&&!p.fam&&!p.pet&&!p.classmate&&!p.teacher&&!p.coworker&&!p.romantic&&!p.greek&&!p.coach&&!p.agent&&!p.mentor},
     {label:'🐾 Pets',               test:p=>p.alive&&p.pet},
     {label:'⚰️ Late Relationships', test:p=>!p.alive},
   ];
