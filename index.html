@@ -3598,6 +3598,138 @@ const EVENTS = [
           return {text:`“You're not my ${par.gender==='f'?'dad':'mom'}!” The wedding goes ahead anyway — but the house is tense, and ${sp.name} keeps their distance.`,tags:[['bad','Rejected the stepfamily']]}; }},
     ]};}},
 
+/* ═══════════ 📖 STORY BATCH — interactive scenarios across every pillar ═══════════ */
+/* CHILDHOOD — a lemonade stand */
+{ id:'st_lemonade', once:false, weight:14, when:S=>S.age>=6&&S.age<=11&&(S.age-(S._lastSt1||-99)>=2),
+  build:S=>{ S._lastSt1=S.age; return {yr:`Age ${S.age}`, title:'🍋 Lemonade Stand',
+    text:`You set up a lemonade stand on a hot afternoon. A thirsty crowd gathers. How do you run it?`,
+    choices:[
+      {label:'Fair prices, big smile', tip:'Honest hustle', apply:()=>{ const m=rng(4,20); money(m); chg('happy',rng(2,5)); driftPers('warmth',1);
+        return {text:`You charm every customer and sell out — <b>${cur()}${m}</b> in the jar, and a lot of happy neighbours.`,tags:[['good',`+${cur()}${m}`]]}; }},
+      {label:'Charge tourists double', tip:'Sneaky profit', apply:()=>{ const m=rng(15,45); money(m); karma(-2); driftPers('ambition',1);
+        return {text:`You gouge the out-of-towners and rake in <b>${cur()}${m}</b> — a tiny tycoon with a guilty grin.`,tags:[['flag',`+${cur()}${m}`]]}; }},
+      {label:'Give it away for free', tip:'Kindness', apply:()=>{ chg('happy',rng(3,7)); karma(3); driftPers('warmth',2);
+        return {text:`You hand out free cups all afternoon. No money — but the whole street loves you.`,tags:[['good','A kind kid']]}; }},
+    ]};}},
+/* CHILDHOOD — the school talent show */
+{ id:'st_talent', once:false, weight:13, when:S=>S.age>=7&&S.age<=13&&['primary','high'].includes(S.eduLevel)&&(S.age-(S._lastSt2||-99)>=2),
+  build:S=>{ S._lastSt2=S.age; const act=pick(['a magic trick','a dance routine','a stand-up bit','a song','a card-throwing act']); return {yr:`Age ${S.age}`, title:'🎤 Talent Show',
+    text:`Your school's talent show is tonight and you've signed up for <b>${act}</b>. The gym is packed. What do you do?`,
+    choices:[
+      {label:'Give it everything', tip:'Go big', apply:()=>{ const win=rng(0,100) < 45+S.stats.looks/6+S.stats.smarts/8; if(win){ S.popularity=clamp((S.popularity||50)+rng(4,10)); chg('happy',rng(4,8)); gainFame(rng(0,2)); return {text:`You nail ${act} and bring the house down. You're the talk of the school.`,tags:[['good','Show stealer']]}; } chg('happy',-rng(1,4)); return {text:`${act} didn't quite land — a few polite claps and a long walk offstage.`,tags:[['flag','Nerves got you']]}; }},
+      {label:'Chicken out backstage', tip:'Safe', apply:()=>{ chg('happy',-rng(2,5)); driftPers('boldness',-1); return {text:`You freeze behind the curtain and never go on. You'll always wonder.`,tags:[['bad','Stage fright']]}; }},
+      {label:'Turn it into a prank', tip:'Chaos', apply:()=>{ S.popularity=clamp((S.popularity||50)+rng(-3,7)); chg('happy',rng(2,6)); karma(-1); driftPers('boldness',1); return {text:`You hijack your act into a ridiculous prank. Half the room is crying laughing; the teachers are not amused.`,tags:[['flag','Class clown']]}; }},
+    ]};}},
+/* TEEN — a friend offers exam answers */
+{ id:'st_cheat', once:false, weight:14, when:S=>S.age>=13&&S.age<=19&&['high','college'].includes(S.eduLevel)&&(S.age-(S._lastSt3||-99)>=3),
+  build:S=>{ S._lastSt3=S.age; return {yr:`Age ${S.age}`, title:'📝 The Answer Key',
+    text:`A classmate slides you a stolen copy of tomorrow's exam answers. Do you take them?`,
+    choices:[
+      {label:'Take them — easy A', tip:'Risky', apply:()=>{ if(rng(0,100) < 22){ S.grades=clamp(S.grades-rng(8,16)); S.popularity=clamp((S.popularity||50)-rng(2,6)); setFlag('caught_cheating'); karma(-3); return {text:`You're caught with the answer key mid-exam. Zero on the test, a black mark on your record, and a very disappointed principal.`,tags:[['bad','Caught cheating']]}; } S.grades=clamp(S.grades+rng(4,9)); karma(-2); return {text:`You ace the exam on stolen answers. Nobody suspects — but you know.`,tags:[['flag','Cheated & got away']]}; }},
+      {label:'Refuse and walk away', tip:'Integrity', apply:()=>{ karma(3); driftPers('discipline',1); chg('smarts',1); return {text:`You hand it back. You'll earn your grade or not at all.`,tags:[['good','Kept your integrity']]}; }},
+      {label:'Report them', tip:'Bold', apply:()=>{ karma(2); S.popularity=clamp((S.popularity||50)-rng(3,8)); driftPers('boldness',1); return {text:`You tip off a teacher. The ring gets busted — and word gets around that you're a snitch.`,tags:[['flag','Did the right thing']]}; }},
+    ]};}},
+/* TEEN — a rumor spreads about you */
+{ id:'st_rumor', once:false, weight:12, when:S=>S.age>=12&&S.age<=19&&['high','college'].includes(S.eduLevel)&&(S.age-(S._lastSt4||-99)>=3),
+  build:S=>{ S._lastSt4=S.age; return {yr:`Age ${S.age}`, title:'🗣️ A Nasty Rumor',
+    text:`A cruel rumor about you is racing through the school group chat. How do you handle it?`,
+    choices:[
+      {label:'Confront the source', tip:'Face it head-on', apply:()=>{ const ok=rng(0,100)<50+S.stats.smarts/6; if(ok){ S.popularity=clamp((S.popularity||50)+rng(2,6)); driftPers('boldness',1); return {text:`You calmly call it out in front of everyone. The rumor dies and you come off as unbothered.`,tags:[['good','Owned it']]}; } S.popularity=clamp((S.popularity||50)-rng(2,5)); addStress(rng(4,10)); return {text:`The confrontation blows up into a scene and only feeds the fire.`,tags:[['bad','Made it worse']]}; }},
+      {label:'Laugh it off', tip:'Stay above it', apply:()=>{ chg('happy',-rng(0,3)); addMood(rng(2,5)); driftPers('discipline',1); return {text:`You refuse to give it oxygen. Within a week it's forgotten and you look mature.`,tags:[['good','Rose above it']]}; }},
+      {label:'Spread one right back', tip:'Petty revenge', apply:()=>{ karma(-3); S.popularity=clamp((S.popularity||50)+rng(-4,4)); addStress(rng(3,8)); return {text:`You fire back with a rumor of your own. It gets ugly fast — the whole grade takes sides.`,tags:[['flag','Fought fire with fire']]}; }},
+    ]};}},
+/* TEEN — a first part-time job */
+{ id:'st_firstjob', once:false, weight:12, when:S=>S.age>=15&&S.age<=18&&['high','college'].includes(S.eduLevel)&&!has('had_first_job'),
+  build:S=>{ const place=pick(['a burger joint','the local grocery','a coffee shop','a cinema','a car wash']); return {yr:`Age ${S.age}`, title:'💼 A First Job',
+    text:`${place.charAt(0).toUpperCase()+place.slice(1)} is hiring part-time. It's your first shot at your own money. Do you take it?`,
+    choices:[
+      {label:'Take the job', tip:'Earn & grow up fast', apply:()=>{ setFlag('had_first_job'); const m=rng(600,2500); money(m); driftPers('discipline',2); S.grades=clamp(S.grades-rng(0,3)); chg('happy',rng(1,4));
+        return {text:`You clock in at ${place} after school. It's tiring and the grades dip a little, but you pocket <b>${cur()}${m.toLocaleString()}</b> and learn the value of a paycheck.`,tags:[['good',`+${cur()}${m.toLocaleString()}`]]}; }},
+      {label:'Focus on school instead', tip:'Play the long game', apply:()=>{ setFlag('had_first_job'); S.grades=clamp(S.grades+rng(2,5)); chg('smarts',1); return {text:`You keep your head in the books instead. Your grades thank you.`,tags:[['good','Studies first']]}; }},
+      {label:'Not interested', apply:()=>{ setFlag('had_first_job'); chg('happy',rng(0,2)); return {text:`You'd rather enjoy being young while it lasts.`,tags:[['flag','Skipped the grind']]}; }},
+    ]};}},
+/* ADULT — a coworker steals your credit */
+{ id:'st_credit', once:false, weight:14, when:S=>S.age>=21&&S.job&&!S.job.owner&&(S.age-(S._lastSt5||-99)>=3),
+  build:S=>{ S._lastSt5=S.age; const co=samName(); return {yr:`Age ${S.age}`, title:'💼 Stolen Credit',
+    text:`A coworker presents <b>your</b> project to the boss as their own — and the boss is impressed. What do you do?`,
+    choices:[
+      {label:'Set the record straight', tip:'Professionally', apply:()=>{ const ok=rng(0,100)<45+S.stats.smarts/5; if(ok){ S.jobPerf=clamp((S.jobPerf||50)+rng(6,14)); return {text:`You calmly walk the boss through your paper trail. The truth comes out and you look sharp for handling it well.`,tags:[['good','Credit reclaimed']]}; } S.jobPerf=clamp((S.jobPerf||50)-rng(2,6)); addStress(rng(4,10)); return {text:`It becomes a he-said-she-said and the boss just wants it to stop. You look petty.`,tags:[['bad','It backfired']]}; }},
+      {label:'Let it slide', tip:'Keep the peace', apply:()=>{ addStress(rng(5,12)); chg('happy',-rng(2,5)); driftPers('discipline',1); return {text:`You swallow it and say nothing. The resentment simmers — but you keep your reputation as easy to work with.`,tags:[['flag','Bit your tongue']]}; }},
+      {label:'Quietly sabotage them', tip:'Cold revenge', apply:()=>{ karma(-4); if(rng(0,100)<30){ S.jobPerf=clamp((S.jobPerf||50)-rng(8,16)); setFlag('office_schemer'); return {text:`Your sabotage is traced back to you. HR gets involved and your name is mud.`,tags:[['bad','Caught scheming']]}; } return {text:`You quietly undermine their next project. Revenge is a dish best served in spreadsheets.`,tags:[['flag','Got even']]}; }},
+    ]};}},
+/* ADULT — jury duty */
+{ id:'st_jury', once:false, weight:11, when:S=>S.age>=21&&(S.age-(S._lastSt6||-99)>=6),
+  build:S=>{ S._lastSt6=S.age; return {yr:`Age ${S.age}`, title:'⚖️ Jury Duty',
+    text:`A jury-duty summons lands in your mailbox. A week of your time, for a token stipend. What do you do?`,
+    choices:[
+      {label:'Serve your civic duty', tip:'Do it right', apply:()=>{ karma(3); money(rng(50,300)); driftPers('discipline',1); chg('smarts',1); return {text:`You serve on the jury and weigh the case fairly. It's tedious, but you did your part for justice.`,tags:[['good','Served with honor']]}; }},
+      {label:'Invent an excuse to skip', tip:'Dodge it', apply:()=>{ if(rng(0,100)<25){ money(-rng(200,800)); karma(-2); return {text:`Your excuse doesn't fly and you're fined for wasting the court's time.`,tags:[['bad','Fined for dodging']]}; } return {text:`You wriggle out of it with a convenient excuse and reclaim your week.`,tags:[['flag','Dodged jury duty']]}; }},
+      {label:'Show up but zone out', apply:()=>{ money(rng(50,150)); chg('happy',-rng(0,3)); return {text:`You show up, doodle through deliberations, and collect the tiny stipend.`,tags:[['flag','Warm body on the jury']]}; }},
+    ]};}},
+/* MONEY — find a wallet */
+{ id:'st_wallet', once:false, weight:13, when:S=>S.age>=8&&(S.age-(S._lastSt7||-99)>=4),
+  build:S=>{ S._lastSt7=S.age; const cash=rng(40,600); return {yr:`Age ${S.age}`, title:'👛 A Lost Wallet',
+    text:`You find a fat wallet on the pavement — <b>${cur()}${cash}</b> in cash and an ID inside. Nobody's watching. What do you do?`,
+    choices:[
+      {label:'Track down the owner', tip:'Return it all', apply:()=>{ karma(5); chg('happy',rng(2,5)); if(rng(0,100)<40){ const r=rng(20,200); money(r); return {text:`You return it untouched. The grateful owner presses <b>${cur()}${r}</b> on you as a reward. Good karma pays.`,tags:[['good',`Honest · +${cur()}${r}`]]}; } return {text:`You return every penny. No reward — just the quiet satisfaction of doing right.`,tags:[['good','Returned it']]}; }},
+      {label:'Keep the cash, ditch the wallet', tip:'Finders keepers', apply:()=>{ money(cash); karma(-4); return {text:`You pocket the <b>${cur()}${cash}</b> and toss the wallet in a bin. Somewhere, someone's having a very bad day.`,tags:[['flag',`+${cur()}${cash}`]]}; }},
+      {label:'Take half, hand it in', tip:'Grey area', apply:()=>{ const half=Math.round(cash/2); money(half); karma(-1); return {text:`You skim <b>${cur()}${half}</b> and hand the rest to a shopkeeper. A little for you, a little for your conscience.`,tags:[['flag',`+${cur()}${half}`]]}; }},
+    ]};}},
+/* MONEY — a scam call */
+{ id:'st_scam', once:false, weight:12, when:S=>S.age>=18&&(S.age-(S._lastSt8||-99)>=4),
+  build:S=>{ S._lastSt8=S.age; return {yr:`Age ${S.age}`, title:'📞 "You Owe Back Taxes"',
+    text:`A caller with an official-sounding voice says you owe back taxes and will be arrested unless you pay <b>right now</b> in gift cards. What do you do?`,
+    choices:[
+      {label:'Hang up — obvious scam', tip:'Smart', apply:()=>{ chg('smarts',1); driftPers('discipline',1); return {text:`You hang up instantly. The tax office doesn't take gift cards, Karen.`,tags:[['good','Saw through it']]}; }},
+      {label:'Panic and pay', tip:'They sound serious', apply:()=>{ const loss=Math.min(Math.max(0,S.money), rng(300,3000)); if(loss>0)money(-loss); addStress(rng(6,14)); return {text:`Terrified, you buy <b>${cur()}${loss.toLocaleString()}</b> in gift cards and read out the codes. The 'agent' vanishes. You've been scammed.`,tags:[['bad',`Scammed −${cur()}${loss.toLocaleString()}`]]}; }},
+      {label:'Waste their time', tip:'Troll them', apply:()=>{ chg('happy',rng(2,5)); if(rng(0,100)<60) return {text:`You string the scammer along for twenty glorious minutes until they hang up in fury. Public service.`,tags:[['good','Scambaited them']]}; return {text:`You try to troll them but they flip it and nearly get a real detail out of you. You hang up, rattled.`,tags:[['flag','Played with fire']]}; }},
+    ]};}},
+/* ROMANCE — an old flame returns */
+{ id:'st_ex', once:false, weight:12, when:S=>S.age>=18&&has('sexually_active')&&(S.age-(S._lastSt9||-99)>=4),
+  build:S=>{ S._lastSt9=S.age; const nme=nm(rng(0,1)?'m':'f'); const wed=has('married'); return {yr:`Age ${S.age}`, title:'💘 An Old Flame',
+    text:`<b>${nme}</b>, someone you once loved, slides back into your messages after all these years.${wed?' You\'re married now.':''} What do you do?`,
+    choices:[
+      {label:wed?'Shut it down — you\'re married':'Rekindle it', tip:wed?'Loyal':'Second chance', apply:()=>{ if(wed){ karma(2); driftPers('discipline',1); const sp=S.spouse&&S.people[S.spouse]; if(sp&&sp.spark!=null)sp.spark=clamp(sp.spark+rng(1,4)); return {text:`You politely but firmly say you're happily married, and block the number. Your marriage is stronger for it.`,tags:[['good','Stayed loyal']]}; } chg('happy',rng(3,8)); addMood(rng(3,7)); return {text:`You meet ${nme} for coffee and the old spark is still there. Maybe the timing is finally right.`,tags:[['good','Rekindled a flame']]}; }},
+      {label:'Keep it friendly', tip:'Just catch up', apply:()=>{ chg('happy',rng(1,4)); return {text:`You catch up as old friends, no drama, no regrets. Some doors are nicer left as windows.`,tags:[['flag','Old friends']]}; }},
+      {label:'Ignore the message', tip:'Leave the past there', apply:()=>{ driftPers('discipline',1); return {text:`You leave ${nme} on read. That chapter's closed for a reason.`,tags:[['flag','Left it in the past']]}; }},
+    ]};}},
+/* HEALTH — a nagging symptom */
+{ id:'st_healthscare', once:false, weight:12, when:S=>S.age>=30&&(S.age-(S._lastSt10||-99)>=5),
+  build:S=>{ S._lastSt10=S.age; const sym=pick(['a cough that won\'t quit','a strange recurring headache','a weird mole you hadn\'t noticed','a persistent ache in your chest','dizzy spells']); return {yr:`Age ${S.age}`, title:'🩺 A Nagging Symptom',
+    text:`You've had <b>${sym}</b> for weeks now. What do you do about it?`,
+    choices:[
+      {label:'See a doctor', tip:'Get it checked', apply:()=>{ const cost=rng(40,400); if(S.money>0)money(-Math.min(cost,S.money)); if(rng(0,100)<25){ chg('health',rng(3,8)); return {text:`The doctor catches something early and treats it before it becomes serious. That visit may have saved your life.`,tags:[['good','Caught it early']]}; } chg('happy',rng(1,4)); return {text:`The doctor runs some tests — it's nothing serious. Peace of mind for <b>${cur()}${cost}</b>.`,tags:[['good','All clear']]}; }},
+      {label:'Ignore it, it\'ll pass', tip:'Risky', apply:()=>{ if(rng(0,100)<38){ chg('health',-rng(5,14)); addStress(rng(4,10)); return {text:`It doesn't pass — it gets worse, and by the time you act it's a real problem.`,tags:[['bad','Should\'ve got it checked']]}; } chg('health',rng(0,2)); return {text:`You tough it out and, luckily, it fades on its own this time.`,tags:[['flag','Got lucky']]}; }},
+      {label:'Google your symptoms', tip:'Down the rabbit hole', apply:()=>{ addStress(rng(6,14)); chg('happy',-rng(1,4)); return {text:`Three hours of WebMD later, you're convinced you have everything from scurvy to a rare tropical parasite. You sleep terribly.`,tags:[['flag','Cyberchondria']]}; }},
+    ]};}},
+/* FAMILY — a relative asks for a loan */
+{ id:'st_famloan', once:false, weight:12, when:S=>S.age>=20&&(S.money||0)>2000&&Object.values(S.people).some(p=>p.alive&&p.fam&&p.gen>=-1&&!p.romantic)&&(S.age-(S._lastSt11||-99)>=4),
+  build:S=>{ S._lastSt11=S.age; const kin=Object.values(S.people).filter(p=>p.alive&&p.fam&&p.gen>=-1&&!p.romantic); const r=kin[rng(0,kin.length-1)]; const ask=rng(500,Math.max(1000,Math.round((S.money||0)*0.2))); return {yr:`Age ${S.age}`, title:'💸 A Loan Request',
+    text:`Your ${r.rel.toLowerCase()}, <b>${r.name}</b>, is in a tight spot and asks to borrow <b>${cur()}${ask.toLocaleString()}</b>. What do you say?`,
+    choices:[
+      {label:'Give it, no strings', tip:'Family first', apply:()=>{ money(-ask); rel(r.id,+rng(6,12),+rng(4,8),`You bailed them out when it counted.`); karma(3); return {text:`You hand ${r.name} the money and tell them not to worry about paying it back. They're moved to tears.`,tags:[['good',`Helped family −${cur()}${ask.toLocaleString()}`]]}; }},
+      {label:'Lend it — with terms', tip:'Business is business', apply:()=>{ money(-ask); rel(r.id,+rng(1,4),0,`You lent them money on terms.`); if(rng(0,100)<55){ /* repaid later—simplified immediate */ return {text:`You lend ${r.name} the ${cur()}${ask.toLocaleString()} with a clear repayment plan. They respect the boundary.`,tags:[['flag','Lent with terms']]}; } setFlag('family_debtor'); return {text:`You lend the money — but something tells you you'll be chasing ${r.name} for it for years.`,tags:[['flag','Risky loan']]}; }},
+      {label:'Refuse', tip:'Protect yourself', apply:()=>{ rel(r.id,-rng(6,14),-rng(3,8),`You turned them down in a crisis.`); addStress(rng(2,6)); return {text:`You say no. ${r.name} is hurt and cold with you — but your bank account is intact.`,tags:[['bad','Said no to family']]}; }},
+    ]};}},
+/* LIFE — witness a stranger in need */
+{ id:'st_kindness', once:false, weight:11, when:S=>S.age>=10&&(S.age-(S._lastSt12||-99)>=4),
+  build:S=>{ S._lastSt12=S.age; const scene=pick(['an elderly man drops his groceries all over the pavement','a lost tourist is clearly struggling with directions','someone faints on a crowded train','a kid is crying, separated from their parent','a cyclist takes a nasty spill in front of you']); return {yr:`Age ${S.age}`, title:'🤝 A Stranger in Need',
+    text:`You're out and about when <b>${scene}</b>. What do you do?`,
+    choices:[
+      {label:'Step in and help', tip:'Be the good one', apply:()=>{ karma(4); chg('happy',rng(2,6)); driftPers('warmth',2); if(rng(0,100)<12){ gainFame(rng(1,3)); return {text:`You jump in without a second thought. Someone films it and you briefly go viral as a local hero.`,tags:[['good','Caught being kind']]}; } return {text:`You stop and help. A small thing to you — a big thing to them. You walk away lighter.`,tags:[['good','Did a good deed']]}; }},
+      {label:'Pretend you didn\'t see', tip:'Not your problem', apply:()=>{ karma(-2); driftPers('warmth',-1); return {text:`You keep your eyes on your phone and walk past. Someone else will handle it. Probably.`,tags:[['flag','Looked away']]}; }},
+      {label:'Film it instead of helping', tip:'Content first', apply:()=>{ karma(-3); if(S.sm&&S.sm.active){ const p=S.sm.platforms[S.sm.active]; if(p){ p.followers=Math.round(p.followers+rng(20,300)); p.sentiment=clamp((p.sentiment||0)-rng(3,8),-100,100); } } return {text:`You whip out your phone and film the whole thing for clout. The comments are... not kind.`,tags:[['bad','Ratio\'d for filming']]}; }},
+    ]};}},
+/* MIDLIFE — a reckoning (once) */
+{ id:'st_midlife', once:true, weight:16, when:S=>S.age>=42&&S.age<=54,
+  build:S=>({yr:`Age ${S.age}`, title:'🌅 A Midlife Reckoning',
+    text:`You wake up one morning and feel the weight of the years. A quiet voice asks: is this the life you meant to live? What do you do with the feeling?`,
+    choices:[
+      {label:'Double down on your career', tip:'Leave a mark', apply:()=>{ driftPers('ambition',3); if(S.job)S.jobPerf=clamp((S.jobPerf||50)+rng(8,16)); chg('happy',rng(-2,4)); addStress(rng(3,8)); return {text:`You throw yourself into your work with fresh fire. There's still a legacy to build.`,tags:[['flag','Chose ambition']]}; }},
+      {label:'Reconnect with the people you love', tip:'What matters', apply:()=>{ chg('happy',rng(6,12)); addMood(rng(5,10)); karma(2); Object.values(S.people).filter(p=>p.alive&&p.fam).slice(0,4).forEach(p=>rel(p.id,+rng(3,7),+rng(2,5),'You made time for them in midlife.')); return {text:`You put down the ambition and pick up the phone. You spend the year mending bonds and being present. It's the richest year in a long time.`,tags:[['good','Chose connection']]}; }},
+      {label:'Finally chase the dream you shelved', tip:'Now or never', apply:()=>{ driftPers('boldness',3); chg('happy',rng(4,9)); const cost=Math.min(Math.max(0,S.money),rng(1000,15000)); if(cost>0)money(-cost); setFlag('chased_the_dream'); return {text:`You dust off the dream you buried at 25 — the book, the band, the trip, the business. You bet <b>${cur()}${cost.toLocaleString()}</b> on yourself. It feels terrifying and completely right.`,tags:[['good','Chased the dream']]}; }},
+    ]}) },
+
 /* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
 { id:'award_nom', once:false, weight:14,
   when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
