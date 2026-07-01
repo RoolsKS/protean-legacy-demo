@@ -4011,6 +4011,7 @@ function ageUp(){
   const _logStart=S.log.length;        // safety net: guarantee every year leaves a feed entry (no skipped ages)
   S.partiesThisYear=0;                 // a fresh allowance of big gatherings each year
   S.energy=100;                        // ⏳ SCHEDULE: a fresh pool of free time/energy each year — effort activities draw it down so you can't do everything at once
+  S._actsUsed=[];                      // ⏳ ONCE-PER-YEAR: reset the "done this year" list so flagged activities free up again
   // WORLD-CLOCK (P3+): in Living-Timeline mode the world advances over time — the era can change mid-life (pure fn of dynastyYears → replay-safe)
   if(S.worldMode==='living'){ S.dynastyYears=(S.dynastyYears||0)+1; const _jump=syncWorldEra();
     if(_jump){ const b=ERA_DEFS[_jump.to];
@@ -4866,6 +4867,9 @@ function occupationHours(){ let h=0; if(['primary','high','college','cc'].includ
   if(proSport) h+=30; return Math.min(92,h); }
 function energyLeft(){ if(S.energy==null)S.energy=100; return clamp(S.energy); }
 function spendEnergy(cost,label){ if(S.energy==null)S.energy=100; if(S.energy<cost){ toast(`😮‍💨 You're spread thin this year${label?' — no time for '+label:''}. Advance a year first.`); return false; } S.energy-=cost; return true; }
+/* ⏳ ONCE-PER-YEAR: BitLife-style — a flagged activity can be done at most once per year; a repeat is a no-op until you Age Up. */
+function actDone(id){ return (S._actsUsed||[]).includes(id); }
+function onceYear(id,label){ if(!S._actsUsed)S._actsUsed=[]; if(S._actsUsed.includes(id)){ toast(`⏳ You already ${label||'did that'} this year — Age Up first.`); return false; } S._actsUsed.push(id); return true; }
 function activeSpecialCareer(){ if(typeof socActive==='function'&&socActive()) return {emoji:'⚽',name:'Footballer',sub:(typeof socClub==='function'&&socClub())?socClub().name:'',ov:socOverall(S.soccer.player)};
   if(typeof bbActive==='function'&&bbActive()) return {emoji:'🏀',name:'Basketball',sub:bbTeam()?bbTeam().name:'',ov:bbOverall(S.bball.player)};
   if(typeof nflActive==='function'&&nflActive()) return {emoji:'🏈',name:'NFL',sub:nflTeam()?nflTeam().name:'',ov:nflOverall(S.nfl.player)};
@@ -6940,34 +6944,52 @@ function socDoTrain(attr){   // modalpick-reached → no logAct
   const ov=socOverall(p);
   pushLog(`🏋️ I drilled my <b>${attr}</b> this year${gain>0?` (+${gain}).`:` — but it barely moved.`} OVR ${ov}.`,[gain>0?['good',`+${gain} ${attr}`]:['flag','Plateau']]);
   resultModal('Training', gain>0?'Sharper 🏋️':'A Grind 🏋️', '🏋️', [gain>0?`Your <b>${attr}</b> rose to <b>${p.attributes[attr]}</b> (OVR ${ov}).`:`Your <b>${attr}</b> wouldn’t budge — age and your ceiling are catching up.`], ()=>socHub()); }
+/* ⭐ Activities as data so FAVOURITES can float to the top (pure UI/settings — replay-neutral). */
+function activityEntries(){
+  const E=[]; const add=(cond,id,icon,title,sub,onclick)=>{ if(cond!==false) E.push({id,icon,title,sub,onclick}); };
+  // 🌟 Pro-sport careers now live under Career › Special Careers (kept replay-safe; cards moved, not removed).
+  add(true,'events','🎟️','Go Out','Events, nightlife, find love', "setTab('events')");
+  add(true,'trip','✈️','Take a Trip','Hotels worldwide, rent a car, ball out', "takeTrip()");
+  add(true,'mindbody','🧘','Mind & Body','Gym, diet, meditation, therapy', "mindBody()");
+  add(S.age>=5,'salon','💅','Salon & Spa','Barber, nails, massage, tanning & more', "salonSpa()");
+  add(S.age>=18,'nightclub','🪩','Nightclub','Hit the clubs — dance, mingle, let loose', "clubbing()");
+  if(S.age>=5){ const hb=Object.keys(S.hobbies||{}).filter(k=>typeof hobbyDef==='function'&&hobbyDef(k)); const top=hb.sort((a,b)=>S.hobbies[b].level-S.hobbies[a].level)[0];
+    add(true,'hobbies','🎨','Hobbies & Passions', top?`${hobbyDef(top).icon} ${hobbyDef(top).name} · ${hobbyTier(S.hobbies[top].level)}${hb.length>1?` +${hb.length-1} more`:''}`:'Find a passion — talent, calm & income', "hobbiesMenu()"); }
+  add(true,'doctor','🩺','See a Doctor','Check-ups, illnesses & quitting habits', "seeDoctor()");
+  add(S.age>=18,'adopt','🏠','Adopt a Child','Grow your family through adoption', "adoptionMenu()");
+  add(S.age>=18,'fertility','🍼','Fertility Clinic','IVF or a surrogate — start a family (18+)', "fertilityMenu()");
+  if(S.age>=18){ const ns=S.staff?Object.keys(S.staff).length:0; add(true,'staff','🧑‍✈️','Household Staff', ns?`${ns} on payroll · driver, chef, guard & more`:'Hire a driver, chef, butler, bodyguard…', "staffMenu()"); }
+  if(S.age>=18){ const sc=Object.values(S.people).filter(p=>p.alive&&p.sugar).length; add(true,'sugar','🍯','Sugar Dating', sc?`${sc} arrangement${sc>1?'s':''} · get spoiled or spoil someone`:'Get spoiled — or spoil someone (18+)', "sugarMenu()"); }
+  add(true,'emigrate','🌍','Emigrate', S.age<18?'Ask your parents to move (good luck)':'Move to a new country or city', "emigrate()");
+  add(true,'licenses','🚗','Licenses', `${licenseSummary()}`, "setTab('licenses')");
+  add(true,'passport','🛂','Passport', passportValid()?`✅ Valid until age ${S.passportExpires}`:(S.passport?'⚠️ Expired — renew it':(S.passportApp&&S.passportApp.stage==='processing'?(S.age>=S.passportApp.readyAge?'📨 Ready — come collect it!':'⏳ Application processing…'):'Apply: photo → office → wait → collect')), "applyPassport()");
+  add(S.age>=18,'politics','🏛️','Politics', S.office&&S.office.inOffice?`${S.office.title} · ${S.office.approval}% approval`:'Run for office & climb the ladder', "politics()");
+  { const era=currentEra(), sh=worldShockAt(); add(true,'times','🌍','The Times', `${era.icon} ${era.name}${sh?` · ${sh.shock.icon} ${sh.shock.name}`:''}`, "worldView()"); }
+  if(S.age>=18){ const ph=econPhase(); add(true,'invest','📈','Investments', `${ph.icon} ${ph.name}${investValue()>0?` · holdings ${fcm(investValue())}`:''} · ride the market`, "investMenu()"); }
+  add(S.age>=18,'casino','🎰','Casino', 'Slots, blackjack, roulette, horses — bet at your own risk', "casino()");
+  add(S.age>=18,'lottery','🎟️','Lottery', `Rolling jackpot ${fcm(S.lottoJackpot||3000000)}${(S.lottoTickets||[]).length?` · ${S.lottoTickets.length} ticket(s) in`:''}`, "lottery()");
+  add(S.age>=13,'blackmarket','🕶️','Black Market', 'Fake ID, booze, guns — get busted at your own risk', "blackMarket()");
+  if(S.age>=10){ const u=S.underworld||{}; add(true,'underworld','🔫','The Underworld', u.rank>=0?`${u.crew} · ${uwRankName()}${u.heat>=33?` · 🔥 heat ${u.heat}`:''}`:(u.rep>0?`Street rep ${u.rep} · climb to Boss`:'Crime, crews & the climb to kingpin'), "underworldMenu()"); }
+  add(true,'will','📜','Will & Testament','Name the heir to your fortune', "willHeir()");
+  add(S.age>=18 && !has('owns_home'),'housing','🏠','Housing', `Currently ${({renting:'renting',hotel:'in a hotel',parents:'with parents',friends:'with a friend',homeless:'🌳 homeless'})[S.housing]||'renting'}`, "housingChoice()");
+  add(S.age>=18 && !has('owns_home') && (S.housing==='renting'||!S.housing),'landlord','🚪','Talk to Landlord','Rent, extensions, arrangements', "talkLandlord()");
+  return E;
+}
+function actCard(e,fav){
+  const star=`<span onclick="event.stopPropagation();toggleFav('${e.id}')" style="font-size:17px;padding:2px 9px;line-height:1;color:${fav?'#f5c518':'#54606f'};align-self:center" title="${fav?'Unpin':'Pin to top'}">${fav?'⭐':'☆'}</span>`;
+  return `<div class="platrow" onclick="${e.onclick}">
+    <div class="picon" style="background:linear-gradient(135deg,#2a3340,#1b222d)">${e.icon}</div>
+    <div class="pinfo"><div class="pn">${e.title}</div><div class="pf">${e.sub}</div></div>${star}<span class="parrow">›</span></div>`;
+}
+function toggleFav(id){ if(!S)return; S.favActs=S.favActs||[]; const i=S.favActs.indexOf(id); if(i>=0)S.favActs.splice(i,1); else S.favActs.push(id); try{saveGame();}catch(e){} renderActivities(); }
 function renderActivities(){ const v=document.getElementById('activitiesView'); if(!v||!S)return;
   let h=`${feedX('Activities')}`;
-  // 🌟 Pro-sport careers now live under Career › Special Careers (kept replay-safe; cards moved, not removed).
-  h+=hubCard('🎟️','Go Out','Events, nightlife, find love', "setTab('events')");
-  h+=hubCard('✈️','Take a Trip','Hotels worldwide, rent a car, ball out', "takeTrip()");
-  h+=hubCard('🧘','Mind & Body','Gym, diet, meditation, therapy', "mindBody()");
-  if(S.age>=5) h+=hubCard('💅','Salon & Spa','Barber, nails, massage, tanning & more', "salonSpa()");
-  if(S.age>=18) h+=hubCard('🪩','Nightclub','Hit the clubs — dance, mingle, let loose', "clubbing()");
-  if(S.age>=5){ const hb=Object.keys(S.hobbies||{}).filter(k=>typeof hobbyDef==='function'&&hobbyDef(k)); const top=hb.sort((a,b)=>S.hobbies[b].level-S.hobbies[a].level)[0];
-    h+=hubCard('🎨','Hobbies & Passions', top?`${hobbyDef(top).icon} ${hobbyDef(top).name} · ${hobbyTier(S.hobbies[top].level)}${hb.length>1?` +${hb.length-1} more`:''}`:'Find a passion — talent, calm & income', "hobbiesMenu()"); }
-  h+=hubCard('🩺','See a Doctor','Check-ups, illnesses & quitting habits', "seeDoctor()");
-  if(S.age>=18) h+=hubCard('🏠','Adopt a Child','Grow your family through adoption', "adoptionMenu()");
-  if(S.age>=18) h+=hubCard('🍼','Fertility Clinic','IVF or a surrogate — start a family (18+)', "fertilityMenu()");
-  if(S.age>=18){ const ns=S.staff?Object.keys(S.staff).length:0; h+=hubCard('🧑‍✈️','Household Staff', ns?`${ns} on payroll · driver, chef, guard & more`:'Hire a driver, chef, butler, bodyguard…', "staffMenu()"); }
-  if(S.age>=18){ const sc=Object.values(S.people).filter(p=>p.alive&&p.sugar).length; h+=hubCard('🍯','Sugar Dating', sc?`${sc} arrangement${sc>1?'s':''} · get spoiled or spoil someone`:'Get spoiled — or spoil someone (18+)', "sugarMenu()"); }
-  h+=hubCard('🌍','Emigrate', S.age<18?'Ask your parents to move (good luck)':'Move to a new country or city', "emigrate()");
-  h+=hubCard('🚗','Licenses', `${licenseSummary()}`, "setTab('licenses')");
-  h+=hubCard('🛂','Passport', passportValid()?`✅ Valid until age ${S.passportExpires}`:(S.passport?'⚠️ Expired — renew it':(S.passportApp&&S.passportApp.stage==='processing'?(S.age>=S.passportApp.readyAge?'📨 Ready — come collect it!':'⏳ Application processing…'):'Apply: photo → office → wait → collect')), "applyPassport()");
-  if(S.age>=18) h+=hubCard('🏛️','Politics', S.office&&S.office.inOffice?`${S.office.title} · ${S.office.approval}% approval`:'Run for office & climb the ladder', "politics()");
-  { const era=currentEra(), sh=worldShockAt(); h+=hubCard('🌍','The Times', `${era.icon} ${era.name}${sh?` · ${sh.shock.icon} ${sh.shock.name}`:''}`, "worldView()"); }
-  if(S.age>=18){ const ph=econPhase(); h+=hubCard('📈','Investments', `${ph.icon} ${ph.name}${investValue()>0?` · holdings ${fcm(investValue())}`:''} · ride the market`, "investMenu()"); }
-  if(S.age>=18) h+=hubCard('🎰','Casino', 'Slots, blackjack, roulette, horses — bet at your own risk', "casino()");
-  if(S.age>=18) h+=hubCard('🎟️','Lottery', `Rolling jackpot ${fcm(S.lottoJackpot||3000000)}${(S.lottoTickets||[]).length?` · ${S.lottoTickets.length} ticket(s) in`:''}`, "lottery()");
-  if(S.age>=13) h+=hubCard('🕶️','Black Market', 'Fake ID, booze, guns — get busted at your own risk', "blackMarket()");
-  if(S.age>=10){ const u=S.underworld||{}; h+=hubCard('🔫','The Underworld', u.rank>=0?`${u.crew} · ${uwRankName()}${u.heat>=33?` · 🔥 heat ${u.heat}`:''}`:(u.rep>0?`Street rep ${u.rep} · climb to Boss`:'Crime, crews & the climb to kingpin'), "underworldMenu()"); }
-  h+=hubCard('📜','Will & Testament','Name the heir to your fortune', "willHeir()");
-  if(S.age>=18 && !has('owns_home')) h+=hubCard('🏠','Housing', `Currently ${({renting:'renting',hotel:'in a hotel',parents:'with parents',friends:'with a friend',homeless:'🌳 homeless'})[S.housing]||'renting'}`, "housingChoice()");
-  if(S.age>=18 && !has('owns_home') && (S.housing==='renting'||!S.housing)) h+=hubCard('🚪','Talk to Landlord','Rent, extensions, arrangements', "talkLandlord()");
+  const all=activityEntries();
+  const fav=(S.favActs||[]).map(id=>all.find(e=>e.id===id)).filter(Boolean);
+  const favSet=new Set(fav.map(e=>e.id));
+  const rest=all.filter(e=>!favSet.has(e.id));
+  if(fav.length){ h+=`<div class="genlabel">⭐ Favourites</div>`+fav.map(e=>actCard(e,true)).join('')+`<div class="genlabel">All Activities</div>`; }
+  h+=rest.map(e=>actCard(e,false)).join('');
   v.innerHTML=h;
 }
 function timeTravel(){
@@ -8032,17 +8054,20 @@ function treatSTDs(){ closeModal();
 
 /* ---- Mind & Body — gym, diet, meditation, therapy ---- */
 function mindBody(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  logAct('call',{fn:'mindBody'});   // ⚠️ replay: the opener MUST be logged so its modalpick (gym/diet/meditate) can reattach on replay (mbDo consumes RNG)
   openModal({banner:'Mind & Body', title:'🧘 Mind & Body', icon:'🧘', closable:true,
     text:`<div style="text-align:left">Work on yourself — a fit body ages slower and dies later.<div class="relbars" style="margin-top:7px">${barRow('💪 Fitness',S.fitness||50,100)}${barRow('❤️ Health',S.stats.health,100)}</div></div>`,
     choices:[
-      {label:'🏋️ Hit the gym', fn:()=>mbDo('gym')},
-      {label:'🥗 Eat clean (diet)', alt:true, fn:()=>mbDo('diet')},
-      {label:'🧘 Meditate', alt:true, fn:()=>mbDo('meditate')},
+      {label:actDone('mb_gym')?'🏋️ Hit the gym ✓ done this year':'🏋️ Hit the gym', fn:actDone('mb_gym')?()=>toast('⏳ Once a year — Age Up first.'):()=>mbDo('gym')},
+      {label:actDone('mb_diet')?'🥗 Eat clean ✓ done this year':'🥗 Eat clean (diet)', alt:true, fn:actDone('mb_diet')?()=>toast('⏳ Once a year — Age Up first.'):()=>mbDo('diet')},
+      {label:actDone('mb_meditate')?'🧘 Meditate ✓ done this year':'🧘 Meditate', alt:true, fn:actDone('mb_meditate')?()=>toast('⏳ Once a year — Age Up first.'):()=>mbDo('meditate')},
       {label:'🛋️ See a therapist', alt:true, fn:()=>{ closeModal(); startTherapy(); }},
       {label:'🧠 Inner Self', alt:true, fn:()=>{ closeModal(); mindView(); }},
     ]});
 }
 function mbDo(kind){ closeModal();
+  const _oid='mb_'+kind, _olab={gym:'hit the gym',diet:'ate clean',meditate:'meditated',therapy:'had a session'}[kind]||'did that';
+  if(!onceYear(_oid,_olab)){ setTab('activities'); return; }
   if(!spendEnergy(25,'that')) { setTab('activities'); return; }
   if(kind==='gym'){ const cost=rng(0,600); if(S.money>0)money(-Math.min(cost,S.money)); S.fitness=clamp((S.fitness||50)+rng(5,12)); chg('looks',rng(1,3)); chg('health',rng(1,3));
     const story=pick(['You hit the weights hard — heavy squats, deadlifts and a brutal leg day every week.','Dawn runs, boxing three nights a week, and you finally stopped skipping cardio.','You practically lived at the gym: circuit training, spin class, and a new bench PR.','A year of CrossFit chewed you up and spat you back out — stronger.','Long swims and a couch-to-5K that quietly became a 10K.','You found a training partner who wouldn\'t let you quit, and it showed.','Powerlifting became an obsession; the plates kept going up.']);
@@ -8062,11 +8087,12 @@ function mbDo(kind){ closeModal();
 const CLUB_PRE=['Aristotle','Allure','Nirvana','Velvet','Neon','Echo','Mirage','Pulse','Halo','Onyx','Skyline','Gatsby','Prism','Lush','Vertigo','Opulence','Sapphire','Voodoo','Empire','Cirrus'];
 const CLUB_SUF=['Lounge','Disco','Club','Room','Nightclub','Social','After Dark','Rooftop'];
 function clubbing(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;} if(S.age<18){ toast('🚫 Nightclubs are 18+ — try Nightlife in Events for the under-age scene.'); return; }
+  if(actDone('nightclub')){ toast('⏳ You already went clubbing this year — Age Up first.'); return; }
   logAct('call',{fn:'clubbing'});
   const venues=[], used={}; while(venues.length<3){ const n=pick(CLUB_PRE)+' '+pick(CLUB_SUF); if(!used[n]){used[n]=1;venues.push(n);} }
   openModal({banner:'Nightlife', title:'🪩 Clubbing', icon:'🪩', closable:true, text:`Which local nightclub are you hitting tonight?`,
     choices: venues.map(v=>({label:v, alt:true, fn:()=>doClub(v)})).concat([{label:'‹ Not tonight', fn:()=>{closeModal();setTab('activities');}}]) }); }
-function doClub(venue){ if(!spendEnergy(25,'a night out')){ closeModal(); return; }
+function doClub(venue){ if(!onceYear('nightclub','went clubbing')){ closeModal(); setTab('activities'); return; } if(!spendEnergy(25,'a night out')){ closeModal(); return; }
   const cover=Math.round(rng(20,220)*priceMult()); if(S.money>0) money(-Math.min(cover,S.money));
   const roll=rng(0,100); let title,icon,line,tags;
   if(roll<40){ chg('happy',rng(5,10)); gainFame(rng(0,2)); addStress(-rng(2,6)); title='Best Night Out 🪩'; icon='🪩'; line=`You danced till close at <b>${venue}</b> — an unforgettable night with the crowd.`; tags=[['good','Great night out']]; }
@@ -10194,7 +10220,7 @@ function bizAction(kind){ const b=S.business; if(!b)return; logAct('call',{fn:'b
     openModal({banner:'Business', title:`Sell ${b.name}?`, icon:'💸', closable:true, text:`Sell <b>${b.name}</b> for its valuation of <b>${cur()}${price.toLocaleString()}</b>? You'll go back to being an ordinary worker.`,
       choices:[{label:`💸 Sell for ${cur()}${price.toLocaleString()}`, alt:true, fn:()=>{ money(price); pushLog(`I sold <b>${b.name}</b> for ${cur()}${price.toLocaleString()}. 💸`,[['good',`Sold business +${cur()}${price.toLocaleString()}`]]); S.business=null; if(S.job){ S.job.owner=false; S.job=null; } closeModal(); resultModal('Business','Sold 💸','💸',[`You cashed out of <b>${b.name}</b> for <b>${cur()}${price.toLocaleString()}</b>.`,`You're a free agent again.`],()=>setTab('career')); }},{label:'Keep it', fn:()=>setTab('business')}]}); }
 }
-function workHarder(){ if(!S.job)return; logAct('call',{fn:'workHarder'}); if(!spendEnergy(25,'extra hours')){ setTab('job'); return; } S.jobPerf=clamp((S.jobPerf||50)+rng(5,12)); chg('happy',-2); chg('smarts',1);
+function workHarder(){ if(!S.job)return; if(actDone('work')){ toast('⏳ You already put in extra hours this year — Age Up first.'); return; } logAct('call',{fn:'workHarder'}); if(!onceYear('work','worked extra')||!spendEnergy(25,'extra hours')){ setTab('job'); return; } S.jobPerf=clamp((S.jobPerf||50)+rng(5,12)); chg('happy',-2); chg('smarts',1);
   const story=pick(['You stayed late, took the projects nobody wanted, and made yourself indispensable.','First in, last out — you out-hustled the whole office this year.','You nailed the big presentation and quietly became the team\'s go-to.','Extra shifts, weekend emails, and results the boss couldn\'t ignore.','You mentored the new hires and shipped the project ahead of schedule.','You fixed the thing everyone else had given up on — and people noticed.']);
   pushLog(`💼 ${story}`,[['good',`Performance ${S.jobPerf}`]]);
   resultModal('Job','Hard at Work','💼',[story+' <span style="color:var(--dim);font-size:12px">(better promotion odds)</span>',statBar('Performance',S.jobPerf)],()=>setTab('job')); }
@@ -10565,7 +10591,8 @@ function enrollUni(majorKey){ closeModal(); const cost=rng(5000,40000); if(S.mon
   pushLog(`I declared a major in <b>${majorName(majorKey)}</b>. 🎓`,[['flag',majorName(majorKey)]]); }
 function studyHarder(){
   if(!['primary','high','college'].includes(S.eduLevel)){ toast('You’re not in school.'); return; }
-  logAct('call',{fn:'studyHarder'}); if(!spendEnergy(20,'extra study')){ setTab('school'); return; }
+  if(actDone('study')){ toast('⏳ You already buckled down this year — Age Up first.'); return; }
+  logAct('call',{fn:'studyHarder'}); if(!onceYear('study','studied hard')||!spendEnergy(20,'extra study')){ setTab('school'); return; }
   S.grades=clamp(S.grades+rng(4,9)); chg('smarts',rng(1,3)); chg('happy',-rng(1,3));
   const story=pick(['You lived in the library, color-coded your notes, and actually did the reading.','Late-night flashcards, study groups, and a highlighter that ran dry.','You turned your phone off and ground through every practice problem.','You found a rhythm — mornings for the hard subjects, evenings for review.','You asked the questions everyone else was afraid to, and it paid off.','You re-did every past paper until the answers came in your sleep.']);
   pushLog(`📚 ${story}`,[['good',`Grades ${S.grades}`]]);
@@ -10695,8 +10722,8 @@ function clubDetail(k){ const a=SCHOOL_ACTS.find(x=>x.k===k); if(!a||!(S.clubs||
     ${socStatLine('Weekly hours', clubHours(a))}
     <div class="relbars" style="margin-top:8px">${pbar('Performance',d.perf)}</div></div>`;
   openModal({banner:'Activity', title:`${a.icon} ${a.name}`, icon:a.icon, closable:true, text:body,
-    choices:[{label:'🏋️ Practice harder', alt:true, fn:()=>clubPractice(k)},{label:'🚪 Quit', alt:true, fn:()=>clubQuit(k)},{label:'‹ Back', fn:()=>{closeModal();setTab('school');}}] }); }
-function clubPractice(k){ const a=SCHOOL_ACTS.find(x=>x.k===k); if(!a){return;} if(!spendEnergy(15,'extra practice')){ setTab('school'); return; }
+    choices:[{label:actDone('practice_'+k)?'🏋️ Practiced ✓ done this year':'🏋️ Practice harder', alt:true, fn:actDone('practice_'+k)?()=>toast('⏳ Once a year per team — Age Up first.'):()=>clubPractice(k)},{label:'🚪 Quit', alt:true, fn:()=>clubQuit(k)},{label:'‹ Back', fn:()=>{closeModal();setTab('school');}}] }); }
+function clubPractice(k){ const a=SCHOOL_ACTS.find(x=>x.k===k); if(!a){return;} if(!onceYear('practice_'+k,'practiced')||!spendEnergy(15,'extra practice')){ setTab('school'); return; }
   const d=clubData(k); const g=clamp(Math.round(rng(1,4) + (a.sport?(S.fitness||50):(S.stats&&S.stats.smarts||50))/100*2),1,6); d.perf=clamp(d.perf+g,0,100);
   if(a.sport) S.fitness=clamp((S.fitness||50)+rng(1,3)); S.popularity=clamp((S.popularity||50)+rng(0,2)); chg('happy',rng(0,2));
   let extra=''; if(!d.captain && d.perf>=82){ d.captain=true; setFlag('school_captain'); S.popularity=clamp((S.popularity||50)+rng(4,8)); gainFame(rng(0,2)); extra=' 🎖️ You were named team captain!'; }
@@ -10708,8 +10735,8 @@ function clubQuit(k){ const a=SCHOOL_ACTS.find(x=>x.k===k); S.clubs=(S.clubs||[]
 function clubsYear(){ if(!S||!S.alive) return; if(!['primary','high','college','cc'].includes(S.eduLevel)) return; S.clubData=S.clubData||{};
   (S.clubs||[]).forEach(k=>{ const d=clubData(k); d.years=(d.years||0)+1; d.perf=clamp(d.perf+rng(0,2),0,100); }); }
 /* ---- 🎉 HOUSE PARTY — throw a bash for popularity (and risk). Deterministic. ---- */
-function houseParty(){ if(!S||isLocked())return; if(S.age<12||S.age>28){ toast('This isn’t really your house-party era.'); return; } logAct('call',{fn:'houseParty'});
-  if(!spendEnergy(25,'a party')){ setTab('school'); return; }
+function houseParty(){ if(!S||isLocked())return; if(S.age<12||S.age>28){ toast('This isn’t really your house-party era.'); return; } if(actDone('houseparty')){ toast('⏳ You already threw a party this year — Age Up first.'); return; } logAct('call',{fn:'houseParty'});
+  if(!onceYear('houseparty','threw a party')||!spendEnergy(25,'a party')){ setTab('school'); return; }
   const cost=Math.round(rng(50,600)*priceMult()); if(S.money>0) money(-Math.min(cost,S.money));
   const roll=rng(0,100); let title,icon,line,tags;
   if(roll<50){ S.popularity=clamp((S.popularity||50)+rng(6,14)); chg('happy',rng(5,10)); gainFame(rng(0,2)); if(rng(0,100)<50)addSchoolFriend('house party'); title='Legendary Party 🎉'; icon='🎉'; line=`Your house party was the talk of the school — your popularity <b>soared</b>.`; tags=[['good','Legendary party']]; }
@@ -10736,8 +10763,9 @@ function skipSchool(){ if(!S||isLocked())return;
 /* ---- 💃 SCHOOL DANCE — a themed dance you can hit each school year (energy-gated). ---- */
 const DANCE_THEMES=['Neon Nights','Masquerade','Under the Sea','Hollywood Glam','Winter Wonderland','TikTok Trends','Retro 80s','Enchanted Forest','Roaring 20s','Galaxy Gala','Spring Fling','Midnight Masquerade'];
 function schoolDance(){ if(!S||isLocked())return; if(!['primary','high','college'].includes(S.eduLevel)){ toast('You need to be in school for that.'); return; }
+  if(actDone('schooldance')){ toast('⏳ There\'s only one school dance a year — Age Up first.'); return; }
   logAct('call',{fn:'schoolDance'});
-  if(!spendEnergy(20,'the school dance')){ setTab('school'); return; }
+  if(!onceYear('schooldance','went to the dance')||!spendEnergy(20,'the school dance')){ setTab('school'); return; }
   const theme=pick(DANCE_THEMES); const roll=rng(0,100); let title,icon,line,tags;
   if(roll<45){ S.popularity=clamp((S.popularity||50)+rng(3,8)); chg('happy',rng(4,8)); if(rng(0,100)<40)addSchoolFriend('the school dance'); title='A Night to Remember 💃'; icon='💃'; line=`You went to the <b>${theme}</b>-themed school dance and had a blast — you danced all night.`; tags=[['good','School dance']]; }
   else if(roll<70){ S.popularity=clamp((S.popularity||50)+rng(1,4)); chg('happy',rng(2,5)); title=`${theme} Dance 🕺`; icon='🕺'; line=`You hit the <b>${theme}</b> dance — a fun, low-key night out.`; tags=[['flag','School dance']]; }
