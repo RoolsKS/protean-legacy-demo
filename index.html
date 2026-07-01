@@ -5904,6 +5904,35 @@ function legalDebtYear(){   // yearly (in ageUp): auto-pay if able; past the dea
     S.legalDebt=null;
   }
 }
+/* 🏆 TROPHY ROOM — one celebratory view aggregating every accolade across all systems. Pure view (no RNG/state change → no logAct). */
+function trophyRoom(){ if(!S){toast('Start a life first.');return;}
+  const r=lifeRecord(); const earned=RIBBONS.filter(rb=>{ try{return rb.q(r)>=1;}catch(e){return false;} });
+  const packs=[['⚽',S.soccer],['🏀',S.bball],['🏈',S.nfl],['🎾',S.tennis],['🏐',S.volley],['🏒',S.hockey]];
+  const trophies=[], awards=[];
+  for(const [emo,pk] of packs){ if(!pk)continue;
+    (pk.trophies||[]).forEach(t=>trophies.push(emo+' '+(t.competitionName||t.name||'Trophy')));
+    (pk.owned&&pk.owned.trophies||[]).forEach(t=>trophies.push(emo+' '+(t.competitionName||t.name||'Trophy')+' (owner)'));
+    (pk.awards||[]).forEach(a=>awards.push(emo+' '+(a.name||'Award'))); }
+  (S.awards||[]).forEach(a=>awards.push('🎬 '+(a.name||a.cat||'Award')));
+  const hobbies=S.hobbies||{};
+  const masters=Object.keys(hobbies).filter(k=>hobbyDef(k)&&hobbies[k].level>=100).map(k=>hobbyDef(k).icon+' '+hobbyDef(k).name);
+  const compWins=Object.values(hobbies).reduce((a,h)=>a+(h.compWins||0),0);
+  const goals=Object.keys(S.goalsAchieved||{}).length, careersM=Object.keys(S.careers||{}).length;
+  const countBy=arr=>{ const m={}; arr.forEach(x=>m[x]=(m[x]||0)+1); return Object.entries(m).map(([n,c])=>c>1?`${n} ×${c}`:n); };
+  const chip=(t,col)=>`<span class="tag ${col||'echo'}" style="display:inline-block;margin:2px 3px 2px 0">${t}</span>`;
+  const sec=(label,items,col)=>items.length?`<div class="genlabel">${label} <span>${items.length}</span></div><div style="margin-bottom:6px">${items.map(x=>chip(x,col)).join('')}</div>`:'';
+  const total=earned.length+trophies.length+awards.length+masters.length+compWins+goals+careersM;
+  let body=`<div style="text-align:left">
+    <div style="text-align:center;margin-bottom:8px"><div style="font-size:26px;font-weight:900;color:var(--gold,#f5c451)">${total}</div><div style="font-size:10px;color:var(--dim);letter-spacing:.5px">CAREER ACCOLADES</div></div>`;
+  body+=sec('🎗️ Ribbons Earned', earned.map(rb=>`${rb.icon} ${rb.name}`), 'echo');
+  body+=sec('🏆 Silverware', countBy(trophies), 'good');
+  body+=sec('🏅 Awards', countBy(awards), 'good');
+  if(masters.length||compWins) body+=`<div class="genlabel">🎨 Passions <span>${masters.length+(compWins?1:0)}</span></div><div style="margin-bottom:6px">${masters.map(x=>chip('🏆 '+x+' (Master)','good')).join('')}${compWins?chip(`🏆 ${compWins} competition win${compWins>1?'s':''}`,'good'):''}</div>`;
+  if(goals||careersM) body+=`<div class="genlabel">🎯 Milestones</div><div>${goals?chip(`🎯 ${goals} life goal${goals>1?'s':''} fulfilled`):''}${careersM?chip(`💼 ${careersM} career${careersM>1?'s':''} mastered`):''}</div>`;
+  if(total===0) body+=`<p style="color:var(--dim);font-size:12px;text-align:center;padding:16px 8px">The shelves are bare — for now. Go make your mark. 🌟</p>`;
+  body+=`</div>`;
+  openModal({banner:'Trophy Room', title:'🏆 Trophy Room', icon:'🏆', closable:true, text:body, choices:[{label:'Close', fn:()=>{ closeModal(); setTab('activities'); }}]});
+}
 // ⚖️ let the player proactively clear a court-ordered breach debt before the deadline (else legalDebtYear jails them)
 function legalDebtMenu(){ if(!S){toast('Start a life first.');return;} const d=S.legalDebt; if(!d){ toast('No outstanding court debt.'); setTab('activities'); return; }
   logAct('call',{fn:'legalDebtMenu'});
@@ -7851,6 +7880,7 @@ function activityEntries(){
   { const era=currentEra(), sh=worldShockAt(); add(true,'times','🌍','The Times', `${era.icon} ${era.name}${sh?` · ${sh.shock.icon} ${sh.shock.name}`:''}`, "worldView()"); }
   if(S.age>=18){ const ph=econPhase(); add(true,'invest','📈','Investments', `${ph.icon} ${ph.name}${investValue()>0?` · holdings ${fcm(investValue())}`:''} · ride the market`, "investMenu()"); }
   add(S.age>=18 && !S.business && !(S.job&&S.job.owner),'startup','🚀','Found a Startup','Launch your own company from scratch — bet on yourself', "foundStartup()");
+  add(true,'trophyroom','🏆','Trophy Room','Every ribbon, trophy, award & win you\'ve earned', "trophyRoom()");
   add(S.age>=18,'casino','🎰','Casino', 'Slots, blackjack, roulette, horses — bet at your own risk', "casino()");
   add(S.age>=18,'lottery','🎟️','Lottery', `Rolling jackpot ${fcm(S.lottoJackpot||3000000)}${(S.lottoTickets||[]).length?` · ${S.lottoTickets.length} ticket(s) in`:''}`, "lottery()");
   add(S.age>=13,'blackmarket','🕶️','Black Market', 'Fake ID, booze, guns — get busted at your own risk', "blackMarket()");
