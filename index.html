@@ -5903,16 +5903,22 @@ function financesSummary(){ if(!S){toast('Start a life first.');return;}
   logAct('call',{fn:'financesSummary'});
   const inc=grossIncome(), out=monthlyOutflow()*12, assetsV=assetsValue(), liab=totalDebt(), nw=netWorth();
   const row=(k,v,c)=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line)"><span style="color:var(--dim)">${k}</span><b style="color:${c||'var(--text)'}">${v}</b></div>`;
+  // 🧮 Net-worth composition — where the wealth actually sits
+  const invV=investValue(), bizV=S.business?S.business.value:0, courtDebt=S.legalDebt?S.legalDebt.amount:0, debtAll=liab+courtDebt;
+  const iv=S.investments||{};
+  const comp=[['💵 Cash',S.money||0],['🏦 Savings',S.savings||0],['📈 Investments',invV],['🏢 Business',bizV],['🏠 Possessions',assetsV]].filter(c=>c[1]!==0);
+  const grossPos=comp.reduce((a,c)=>a+Math.max(0,c[1]),0)||1;
+  const compRow=(k,v)=>{ const pct=v>0?Math.round(v/grossPos*100):0; return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span>${k}${v>0?` <span style="color:var(--dim);font-size:10.5px">${pct}%</span>`:''}</span><b style="color:${v<0?'var(--bad)':'var(--text)'}">${(v<0?'-':'')}${cur()}${Math.abs(v).toLocaleString()}</b></div>`; };
+  const invSub = invV>0 ? `<div style="color:var(--dim);font-size:11px;padding:1px 0 4px 4px">↳ 📊 ${fcm(iv.stocks||0)} · 🏦 ${fcm(iv.bonds||0)} · 🎲 ${fcm(iv.spec||0)}</div>` : '';
   const body=`<div style="text-align:left;font-size:13.5px">
-    ${row('Bank Balance', (S.money<0?'-':'')+cur()+Math.abs(S.money).toLocaleString(), S.money<0?'var(--bad)':'var(--good)')}
-    ${row('Savings', cur()+(S.savings||0).toLocaleString())}
     ${row('Annual Income', cur()+inc.toLocaleString(), 'var(--good)')}
     ${row('Annual Outflow', cur()+out.toLocaleString(), out>0?'var(--bad)':'var(--text)')}
-    ${row('Assets (possessions)', fcm(assetsV))}
-    ${row('Liabilities (debt)', cur()+liab.toLocaleString(), liab>0?'var(--bad)':'var(--text)')}
-    ${S.legalDebt?row('⚖️ Court Debt', cur()+S.legalDebt.amount.toLocaleString()+' · due age '+S.legalDebt.dueAge, 'var(--bad)'):''}
     ${row('Credit Score', creditBand())}
-    ${row('Net Worth', fcm(nw), nw<0?'var(--bad)':'var(--good)')}
+    <div class="genlabel" style="margin:8px 0 2px">🧮 Net Worth Breakdown</div>
+    ${comp.map(c=>c[0]==='📈 Investments'?compRow(c[0],c[1])+invSub:compRow(c[0],c[1])).join('')}
+    ${debtAll>0?compRow('💳 Debt',-liab):''}
+    ${courtDebt>0?compRow('⚖️ Court Debt'+(S.legalDebt?` <span style="color:var(--dim);font-size:10px">due age ${S.legalDebt.dueAge}</span>`:''),-courtDebt):''}
+    <div style="display:flex;justify-content:space-between;padding:7px 0 2px;border-top:2px solid var(--line);margin-top:2px"><b>Net Worth</b><b style="color:${nw<0?'var(--bad)':'var(--gold,#f5c451)'};font-size:15px">${fcm(nw)}</b></div>
   </div>`;
   openModal({banner:'Wealth', title:'💵 Finances', icon:'💵', closable:true, text:body, choices:[{label:'Close', fn:closeModal}]});
 }
