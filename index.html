@@ -3505,6 +3505,19 @@ const EVENTS = [
       {label:'Skip it — too cool for this', apply:()=>awardResolve(cat,cer,'skip')},
     ]};}},
 
+/* --- ROMANCE: juggling multiple partners → jealousy & discovery (recurring) --- */
+{ id:'juggle_jealousy', once:false, weight:18,
+  when:S=>Object.values(S.people).filter(p=>p.alive&&p.romantic).length>=2 && S.age>=15 && (S.age-(S._lastJealous||-99)>=2),
+  build:S=>{ S._lastJealous=S.age; const parts=Object.values(S.people).filter(p=>p.alive&&p.romantic);
+    const suspic=parts.slice().sort((a,b)=>ensureSpark(a)-ensureSpark(b))[0]; const other=parts.find(p=>p.id!==suspic.id)||parts[1];
+    return {yr:`Age ${S.age}`, title:'💔 Someone Found Out',
+    text:`<b>${suspic.name}</b> just found out you've also been seeing <b>${other.name}</b>. They're hurt — and they want answers.`,
+    choices:[
+      {label:`Come clean — choose ${suspic.name}`, apply:()=>jealousyResolve(suspic.id,other.id,'choose')},
+      {label:'Own it — you want them both', tip:'Bold · they may walk', apply:()=>jealousyResolve(suspic.id,other.id,'both')},
+      {label:'Deny everything', tip:'Gamble on the lie', apply:()=>jealousyResolve(suspic.id,other.id,'deny')},
+    ]};}},
+
 /* --- FAMILY: aunt/uncle visit (recurring) --- */
 { id:'aunt_visit', once:false, weight:25,
   when:S=>S.age>=5 && S.age<=14 && livingKin(p=>/Aunt|Uncle/.test(p.rel)).length>0,
@@ -3813,6 +3826,7 @@ function ageUp(){
   if(S.nfl && S.nfl.owned) nflOwnerSeason();                         // 🏈 run the owned NFL franchise's season (deterministic, feed-only)
   childSupportYear();                                                 // 👨‍👧 post-divorce custody: pay/receive child support each year (deterministic)
   kidsCareYear();                                                     // 👶🎓 nanny + private-school tuition for your minor kids (deterministic)
+  partnersYear();                                                     // 💘 juggling multiple partners costs money, spark & peace (deterministic)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -7152,6 +7166,44 @@ function doAdopt(childAge, fee){
   } }
 /* ---- MARRIAGE DEPTH — a "spark" that lives, fades, and can be rekindled ---- */
 function ensureSpark(p){ if(p.spark==null) p.spark=clamp(50+Math.round(((p.affinity||50)-50)/2)); return p.spark; }
+/* ---- MULTIPLE PARTNERS — juggling more than one lover has a real yearly cost (money,
+   spark, stress) and invites jealousy/discovery. Deterministic. ---- */
+function partnersYear(){ if(!S||!S.alive) return;
+  const partners=Object.values(S.people).filter(p=>p.alive&&p.romantic);
+  if(partners.length<2) return;                     // one partner (or a spouse) is normal — no toll
+  const extra=partners.length-1;
+  const cost=Math.round(extra*rng(3000,10000)*priceMult());   // each extra lover expects dates & gifts
+  if(cost>0) money(-cost);
+  addStress(clamp(extra*rng(2,5),0,30)); chg('happy',-Math.min(6,extra*2));
+  partners.forEach(p=>{ ensureSpark(p); p.spark=clamp(p.spark-rng(0,3)); });   // divided attention cools every romance a little
+  pushLog(`💘 Keeping <b>${partners.length}</b> partners at once cost me <b>${cur()}${cost.toLocaleString()}</b> this year — and a lot of energy.`,[['flag',`${partners.length} partners · -${cur()}${cost.toLocaleString()}`]]);
+}
+function jealousyResolve(suspicId, otherId, mode){ const s=S.people[suspicId], o=S.people[otherId]; if(!s) return {text:`They got over it.`,tags:[['flag','Blew over']]};
+  const famous=(S.fame||0)>=45||has('influencer');
+  if(mode==='choose'){                              // end the other, recommit to the suspicious one
+    if(o){ o.romantic=false; o.rel='Ex'; o.affinity=clamp(o.affinity-25); if(S.spouse===otherId) S.spouse=null; }
+    rel(suspicId,+rng(3,8),+rng(1,4),'You chose them and ended the other.'); if(s.spark!=null)s.spark=clamp(s.spark+rng(2,6));
+    return {text:`You end things with ${o?o.name:'the other'} and recommit to ${s.name}. They stay — wary, but yours.`,tags:[['flag',`Chose ${s.name}`]]};
+  }
+  if(mode==='both'){                                // refuse to choose — ask for an open arrangement
+    const keep = rng(0,100) < clamp(30+(S.karma||0)*0.1+(npcDial(s,'warmth')-40)*0.3, 8, 70);
+    if(keep){ rel(suspicId,-rng(4,10),-rng(3,7),'They reluctantly accept an open arrangement.'); setFlag('polyamorous');
+      return {text:`Astonishingly, ${s.name} agrees to keep it open — for now. You're playing with fire. 🔥`,tags:[['flag','Open relationship']]}; }
+    s.romantic=false; s.rel='Ex'; s.affinity=clamp(s.affinity-35); if(S.spouse===suspicId) S.spouse=null; keyMoment(s,'betrayal',-50,'You refused to choose; they walked.');
+    return {text:`${s.name} won't share you. They walk — and they're done.`,tags:[['bad',`Lost ${s.name}`]]};
+  }
+  // deny everything — gamble on the lie
+  const believed = rng(0,100) < clamp(46 - (S.karma<0?15:0) + (((S.stats&&S.stats.smarts)||50)-50)*0.2, 10, 82);
+  if(believed){ rel(suspicId,-rng(2,6),-rng(4,10),'You lied your way out — for now.'); setFlag('two_timing');
+    return {text:`You deny it all. ${s.name} wants to believe you… so they do, for now. The lie sits heavy. 🤫`,tags:[['flag','Denied it']]}; }
+  // caught in the lie
+  const wasSpouse=(S.spouse===suspicId);
+  s.romantic=false; s.rel = wasSpouse?(s.gender==='f'?'Ex-Wife':'Ex-Husband'):'Ex'; s.affinity=clamp(s.affinity-40); karma(-3);
+  keyMoment(s,'betrayal',-65,'Caught lying about seeing someone else.'); if(rng(0,100)<30) spawnFeud(s.name,'You lied and got caught two-timing.',40,suspicId);
+  if(wasSpouse){ S.spouse=null; setFlag('cheater_caught'); setFlag('divorced'); }
+  if(famous){ ledgerAdd('scandal',28,{pub:true,note:`Caught two-timing — it made the gossip pages.`}); S.fame=clamp((S.fame||0)-rng(3,8)); if(S.sm&&S.sm.joined&&S.sm.platforms){ for(const p of Object.values(S.sm.platforms)){ if(p.joined) p.followers=Math.round((p.followers||0)*0.94); } } }
+  return {text:`The lie collapses — ${s.name} has proof and dumps you on the spot.${wasSpouse?' Your marriage is over.':''}${famous?' The tabloids feast. 📰':''}`,tags:[['bad',`Caught — lost ${s.name}`]]};
+}
 function sparkBand(v){ return v>=75?{l:'Passionate',c:'var(--good)'}:v>=50?{l:'Comfortable',c:'var(--good)'}:v>=30?{l:'Strained',c:'var(--warn)'}:{l:'On the rocks',c:'var(--bad)'}; }
 function marriageYear(){ const sp=S.spouse&&S.people[S.spouse]; if(!sp||!sp.alive)return; ensureSpark(sp);
   let d=-rng(1,4); if(sp._datedThisYear) d+=rng(4,8); if(S.mind&&S.mind.stress>70) d-=2; if(sp.spark>=80) d-=1;   // passion is hard to sustain; neglect erodes it
