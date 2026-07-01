@@ -5819,6 +5819,19 @@ function legalDebtYear(){   // yearly (in ageUp): auto-pay if able; past the dea
     S.legalDebt=null;
   }
 }
+// ⚖️ let the player proactively clear a court-ordered breach debt before the deadline (else legalDebtYear jails them)
+function legalDebtMenu(){ if(!S){toast('Start a life first.');return;} const d=S.legalDebt; if(!d){ toast('No outstanding court debt.'); setTab('activities'); return; }
+  logAct('call',{fn:'legalDebtMenu'});
+  openModal({banner:'Court Debt', title:'⚖️ Court-Ordered Debt', icon:'⚖️', closable:true,
+    text:`You owe <b>${d.clubName}</b> <b>${fcm(d.amount)}</b> from breaching your contract, due by age <b>${d.dueAge}</b>. Miss the deadline and you'll be <b>jailed for contempt</b>. Settle it?`,
+    choices:[
+      {label:`💵 Pay ${fcm(d.amount)} now`, alt:true, fn:()=>payLegalDebt()},
+      {label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }},
+    ]});
+}
+function payLegalDebt(){ const d=S.legalDebt; if(!d)return; closeModal(); const short=collectFine(d.amount);
+  if(short<=0){ S.legalDebt=null; pushLog(`⚖️ I paid off my court debt to ${d.clubName} in full.`,[['good','Cleared the debt']]); resultModal('Court Debt','Debt Cleared ✅','✅',[`You settle it in full and walk away clean. No more looking over your shoulder.`],()=>setTab('activities')); }
+  else { d.amount=short; pushLog(`⚖️ I paid down my court debt but still owe ${fcm(short)}.`,[['flag','Partial payment']]); resultModal('Court Debt','Partial Payment ⚖️','⚖️',[`You put everything you could toward it, but still owe <b>${fcm(short)}</b> by age <b>${d.dueAge}</b>. Keep chipping away.`],()=>setTab('activities')); } }
 function financesSummary(){ if(!S){toast('Start a life first.');return;}
   logAct('call',{fn:'financesSummary'});
   const inc=grossIncome(), out=monthlyOutflow()*12, assetsV=assetsValue(), liab=totalDebt(), nw=netWorth();
@@ -5830,6 +5843,7 @@ function financesSummary(){ if(!S){toast('Start a life first.');return;}
     ${row('Annual Outflow', cur()+out.toLocaleString(), out>0?'var(--bad)':'var(--text)')}
     ${row('Assets (possessions)', fcm(assetsV))}
     ${row('Liabilities (debt)', cur()+liab.toLocaleString(), liab>0?'var(--bad)':'var(--text)')}
+    ${S.legalDebt?row('⚖️ Court Debt', cur()+S.legalDebt.amount.toLocaleString()+' · due age '+S.legalDebt.dueAge, 'var(--bad)'):''}
     ${row('Credit Score', creditBand())}
     ${row('Net Worth', fcm(nw), nw<0?'var(--bad)':'var(--good)')}
   </div>`;
@@ -7725,6 +7739,7 @@ function socDoTrain(attr){   // modalpick-reached → no logAct
 /* ⭐ Activities as data so FAVOURITES can float to the top (pure UI/settings — replay-neutral). */
 function activityEntries(){
   const E=[]; const add=(cond,id,icon,title,sub,onclick)=>{ if(cond!==false) E.push({id,icon,title,sub,onclick}); };
+  add(!!S.legalDebt,'courtdebt','⚖️','Court Debt', S.legalDebt?`Owe ${fcm(S.legalDebt.amount)} to ${S.legalDebt.clubName} · due age ${S.legalDebt.dueAge}`:'', "legalDebtMenu()");
   // 🌟 Pro-sport careers now live under Career › Special Careers (kept replay-safe; cards moved, not removed).
   add(true,'events','🎟️','Go Out','Events, nightlife, find love', "setTab('events')");
   add(true,'trip','✈️','Take a Trip','Hotels worldwide, rent a car, ball out', "takeTrip()");
