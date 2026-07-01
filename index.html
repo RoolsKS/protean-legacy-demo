@@ -4175,6 +4175,7 @@ function ageUp(){
     }
   }
   if(S.age>=16) bankYear();   // savings interest, loan interest & payments, seizure on default
+  legalDebtYear();            // ⚖️ court-ordered breach debt: auto-pay, or seize/jail past the deadline
   lotteryYear();              // the annual lottery draw + rolling jackpot
   officeYear();               // in-office approval drift, term limits, impeachment
   feudYear();                 // blood feuds cool slowly over time (true ones only simmer, never die)
@@ -4630,7 +4631,7 @@ function continueAsHeir(id){
   if(S.soccer && S.soccer.owned){ S._inheritedClub=S.soccer.world.clubs[S.soccer.owned.clubId]?S.soccer.world.clubs[S.soccer.owned.clubId].name:'the family club'; S.soccer={ world:S.soccer.world, owned:S.soccer.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'', seasonsPlayed:0 }; }
   else S.soccer=null;
   S.schoolSport=null;   // ⚽ heir starts their own school-sports journey (inherits the athletic GENES → school prodigy)
-  S.greek=null; S.seasonHistory=[]; S._actsUsed=[];   // heir starts fresh: no inherited frat, no prior athlete's season log
+  S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null;   // heir starts fresh: no inherited frat, season log, or lawsuit
   // 🏀 heir starts a fresh PLAYING career (inherits the athletic genes) but INHERITS the family FRANCHISE (arena, banners, finances compound across generations)
   if(S.bball && S.bball.owned){ const _ft=S.bball.world&&S.bball.world.teams[S.bball.owned.teamId]; S._inheritedFranchise=_ft?_ft.name:'the family franchise'; S.bball={ world:S.bball.world, owned:S.bball.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'' }; }
   else S.bball=null;
@@ -4643,7 +4644,7 @@ function continueAsHeir(id){
   if(heir.eduInvest){ const bonus=clamp(Math.round(heir.eduInvest*2.5),0,22); S.stats.smarts=clamp(S.stats.smarts+bonus); setFlag('privately_educated'); }   // 🎓 a privately-schooled heir starts life sharper (dynasty payoff)
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
   S.money=inheritance; S.peakMoney=Math.max(S.peakMoney||0,inheritance);
-  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
+  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
   S.rentOwed=0; S.rentMult=1; S.autopayRent=true; S.karma=0; S.landlord=null;
   S.scheduled=[]; S.fired={}; S.flags={}; S.passport=false; S.signature='';
   S.ledger=_inheritedFacts;   // THE LEDGER carries: the bloodline's deeds (scandals, honors) follow the heir at reduced weight
@@ -5235,6 +5236,67 @@ function seizeAssets(need){
     addStress(rng(12,22)); addMood(-rng(5,11)); addSelfWorth(-6); }
   return recovered;
 }
+/* ===== ⚖️ CONTRACT-BREACH LAWSUIT — walk out on a pro sports contract early and the club SUES you.
+        Settle in court (a FINE, not jail): pay cash → seize assets → and if you still won't/can't pay
+        by the deadline, you're jailed for contempt. Shared by soccer / basketball / NFL / tennis-volley-hockey. ===== */
+function breachRetire(sport){ if(sport==='soccer')socDoRetire(false); else if(sport==='bball')bbDoRetire(false); else if(sport==='nfl')nflDoRetire(false); else if(['tennis','volley','hockey'].includes(sport))sp2Retire(sport,false); }
+function retireOrBreach(sport, prof, clubName){ closeModal(); const yrs=(prof&&prof.contract)?(prof.contract.yearsRemaining||0):0;
+  if(yrs>0 && prof && !prof.retired){ contractBreachSuit(sport, clubName, prof.contract.wagePerYear, yrs); }
+  else { breachRetire(sport); setTab('life'); } }
+function contractBreachSuit(sport, clubName, wage, years){   // opener already logged; this runs inside a modalpick chain
+  const damages=Math.max(1, Math.round((wage||10000)*years*(0.4 + rng(0,50)/100)));
+  S._breach={sport, clubName, damages};
+  openModal({banner:'Lawsuit', title:'⚖️ Breach of Contract', icon:'⚖️', closable:false,
+    text:`You want to walk away from <b>${clubName}</b> with <b>${years} year${years>1?'s':''}</b> left on your contract. They can <b>sue you for breach</b> — their lawyers are seeking <b>${fcm(damages)}</b> in damages. How do you play it?`,
+    choices:[
+      {label:'⚖️ Hire a lawyer to fight it', tip:'A fee now, but it cuts the damages', fn:()=>breachLawyer()},
+      {label:'🤝 Settle out of court', tip:'Pay up and move on', alt:true, fn:()=>breachSettle()},
+      {label:'✋ Refuse to pay', tip:'Risky — seizure, then jail', alt:true, fn:()=>breachRefuse()},
+      {label:'↩︎ Never mind — keep playing', fn:()=>{ S._breach=null; closeModal(); setTab('life'); }},
+    ]});
+}
+function breachLawyer(){ const b=S._breach; if(!b)return; const fee=Math.max(2000, Math.round(b.damages*rng(8,16)/100));
+  if((S.money||0)<fee){ toast(`You can't cover a lawyer's ${fcm(fee)} retainer.`); return; }
+  money(-fee); const cut=rng(25,55)/100; b.damages=Math.max(1,Math.round(b.damages*(1-cut))); b.lawyered=true;
+  pushLog(`⚖️ I lawyered up to fight ${b.clubName}'s breach suit (retainer ${fcm(fee)}).`,[['flag','Hired a lawyer']]);
+  resultModal('Lawsuit','Your Lawyer Argues 💼','💼',[`Your attorney (retainer <b>${fcm(fee)}</b>) argued the damages down to <b>${fcm(b.damages)}</b>.`,`Now settle the claim.`],()=>breachSettleMenu()); }
+function breachSettleMenu(){ const b=S._breach; if(!b)return;
+  openModal({banner:'Lawsuit', title:'⚖️ Settle the Claim', icon:'⚖️', closable:false,
+    text:`The court sets damages at <b>${fcm(b.damages)}</b>. Pay now (from cash, savings, then assets), or refuse and risk it.`,
+    choices:[ {label:`🤝 Pay ${fcm(b.damages)}`, fn:()=>breachSettle()}, {label:'✋ Refuse to pay', alt:true, fn:()=>breachRefuse()} ]});
+}
+function collectFine(amount){   // take cash → savings → seize assets; return the shortfall
+  let rem=amount; const cash=Math.max(0,S.money||0), useCash=Math.min(cash,rem); if(useCash>0){ money(-useCash); rem-=useCash; }
+  if(rem>0 && (S.savings||0)>0){ const s=Math.min(S.savings,rem); S.savings-=s; rem-=s; }
+  if(rem>0){ rem-=seizeAssets(rem); }
+  return Math.max(0,Math.round(rem));
+}
+function breachSettle(){ const b=S._breach; if(!b)return; closeModal();
+  const short=collectFine(b.damages);
+  if(short<=0){ pushLog(`⚖️ I settled ${b.clubName}'s breach suit for ${fcm(b.damages)}.`,[['bad',`Paid ${fcm(b.damages)}`]]);
+    resultModal('Lawsuit','Settled ⚖️','⚖️',[`You paid <b>${fcm(b.damages)}</b> to settle the breach and walked away clean.`],()=>finishBreach()); }
+  else { S.legalDebt={amount:short, dueAge:S.age+2, clubName:b.clubName}; setFlag('breach_debtor');
+    pushLog(`⚖️ I settled with ${b.clubName} but couldn't cover it all — a court debt of ${fcm(short)} remains.`,[['bad',`Owes ${fcm(short)}`]]);
+    resultModal('Lawsuit','Court-Ordered Debt ⚖️','⚖️',[`You paid what you could, but still owe <b>${fcm(short)}</b>.`,`Clear it by age <b>${S.age+2}</b> — or you'll be jailed for contempt.`],()=>finishBreach()); } }
+function breachRefuse(){ const b=S._breach; if(!b)return; closeModal();
+  const got=seizeAssets(b.damages); const short=Math.max(0,b.damages-got);
+  if(short<=0){ pushLog(`⚖️ I refused ${b.clubName} — the court seized ${fcm(got)} in assets to cover the judgment.`,[['bad','Assets seized']]);
+    resultModal('Lawsuit','Assets Seized ⚖️','⚖️',[`You wouldn't pay, so the court seized <b>${fcm(got)}</b> in assets to satisfy the judgment.`],()=>finishBreach()); }
+  else { S.legalDebt={amount:short, dueAge:S.age+2, clubName:b.clubName}; setFlag('breach_debtor');
+    pushLog(`⚖️ I refused to pay ${b.clubName}. The court seized ${fcm(got)} and I still owe ${fcm(short)}.`,[['bad',`Owes ${fcm(short)}`]]);
+    resultModal('Lawsuit','Judgment Against You ⚖️','⚖️',[`The court seized <b>${fcm(got)}</b> but you still owe <b>${fcm(short)}</b>.`,`Pay it by age <b>${S.age+2}</b> or you'll be jailed for contempt.`],()=>finishBreach()); } }
+function finishBreach(){ const b=S._breach; S._breach=null; if(b){ breachRetire(b.sport); } setTab('life'); }
+function legalDebtYear(){   // yearly (in ageUp): auto-pay if able; past the deadline & still owing → seize, then jail for contempt
+  const d=S.legalDebt; if(!d) return;
+  if((S.money||0)>=d.amount){ money(-d.amount); pushLog(`⚖️ I paid off my ${fcm(d.amount)} court-ordered debt to ${d.clubName}.`,[['good','Legal debt cleared']]); S.legalDebt=null; return; }
+  if(S.age>=d.dueAge){
+    const got=seizeAssets(d.amount); d.amount=Math.max(0,d.amount-got);
+    if(d.amount<=0){ pushLog(`⚖️ The court seized ${fcm(got)} — my breach debt to ${d.clubName} is finally settled.`,[['bad','Assets seized']]); S.legalDebt=null; return; }
+    const u=uw(); const sentence=rng(1,3); u.jailUntil=S.age+sentence; setFlag('jailed_contempt'); if(typeof addTrauma==='function') addTrauma('prison',rng(10,20),'time inside over an unpaid court debt'); chg('happy',-rng(6,12));
+    pushLog(`🚔 I couldn't pay the ${fcm(d.amount)} I owed ${d.clubName} — held in ${prisonWord()} for contempt (${sentence} year${sentence>1?'s':''}). The sentence wipes the debt.`,[['bad',`Jailed: ${sentence}yr`]]);
+    S.legalDebt=null;
+  }
+}
 function financesSummary(){ if(!S){toast('Start a life first.');return;}
   logAct('call',{fn:'financesSummary'});
   const inc=grossIncome(), out=monthlyOutflow()*12, assetsV=assetsValue(), liab=totalDebt(), nw=netWorth();
@@ -5768,6 +5830,7 @@ function bbYouthHub(){ const b=bb(); if(!b||!b.youth){ bbYouthStartPrompt(); ret
   if(y._draftReady) ch.push({label:'📣 Declare for the Draft', alt:true, fn:bbEnterDraft});
   if(inSchool && !y.onTeam) ch.push({label:`🏀 Try out for the team`, alt:true, fn:bbTryout});
   if(y.lastTable) ch.push({label:'🏫 League Table', alt:true, fn:()=>showLeagueTable(y, bbYouthLevel(), bbYouthHub)});
+  if(y.nilOfferVal>0) ch.push({label:`💰 NIL Deal (${fcm(y.nilOfferVal)})`, alt:true, fn:()=>nilMenu('bball')});
   if(inSchool) ch.push({label:'🏋️ Train', alt:true, fn:bbTrain});
   ch.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
   openModal({banner:'Basketball', title:'🏀 My Game', icon:'🏀', closable:true, text:body, choices:ch});
@@ -5804,7 +5867,7 @@ function bbYouthSeason(){ const b=bb(); if(!b||!b.youth||!b.youth.onTeam||!['pri
   let lines=[];
   if(league.champions){ y.wasChamp=true; bbKeyMoment('wonTitle',`Won the ${SS_LEVEL_NAME[lvl]} league.`); gainFame(rng(1,3)); lines.push(`🏆 <b>${SS_LEVEL_NAME[lvl]} league champions</b> (${league.W}-${league.L})!`); }
   else lines.push(`🏫 ${_ord(league.pos)} of ${league.size} in the league (${league.W}-${league.L}).`);
-  if((lvl==='highSchool'||lvl==='college') && y.rep>=45){ let earn=Math.round((lvl==='college'?1:0.3)*(y.rep-42)*rng(20,90)*priceMult()); if(league.champions) earn+=Math.round((lvl==='college'?rng(2000,8000):rng(300,1500))*priceMult()); if(y.wasCaptain) earn+=Math.round(rng(120,700)*priceMult()); if(earn>0){ money(earn); y.earningsTotal=(y.earningsTotal||0)+earn; lines.push(`💰 Earned ${cur()}${earn.toLocaleString()} from ${lvl==='college'?'NIL deals & appearances':'local sponsorships'}.`); } }
+  { const _nil=nilOffer(y, lvl); y.nilOfferVal=_nil; if(_nil>0) lines.push(`💰 A <b>NIL deal</b> worth ${fcm(_nil)} is on the table — sign or negotiate it in the 🏀 hub.`); }
   if(!y.wasCaptain && starter && y.athleticism>=BB_YTH_THRESH[lvl]+12 && y.rep>=55 && (lvl==='highSchool'||lvl==='college')){ y.status='captain'; y.wasCaptain=true; setFlag('school_captain'); y.draftStock=clamp(y.draftStock+10,0,100); bbKeyMoment('becameCaptain','Named team captain.'); gainFame(rng(2,4)); lines.push(`🎖️ Named <b>team captain</b>!`); }
   if(lvl==='highSchool' && !y.scholarship && y.rep>=62 && ppg>=14){ y.scholarship=true; setFlag('athletic_scholarship'); S.schoolTuition=0; bbKeyMoment('scholarship','Earned an athletic scholarship.'); lines.push(`🎓 <b>Athletic scholarship</b> — college covered!`); }
   // draft eligibility: elite HS senior or any college player with stock
@@ -5901,7 +5964,8 @@ function bbAward(name){ const b=bb(); (b.awards=b.awards||[]).push({name,age:S.a
 function bbCabinet(){ const b=bb(); const tr=(b.trophies||[]).slice().reverse(), aw=(b.awards||[]).slice().reverse();
   let body=`<div style="text-align:left"><div class="genlabel">🏆 Rings <span>${tr.length}</span></div>${tr.length?tr.map(t=>`<div style="font-size:13px;padding:2px 0">🏆 ${t.name} <span style="color:var(--dim);font-size:11px">· age ${t.age}</span></div>`).join(''):'<p style="color:var(--dim)">No rings yet.</p>'}<div class="genlabel" style="margin-top:8px">🏅 Awards <span>${aw.length}</span></div>${aw.length?aw.map(a=>`<div style="font-size:13px;padding:2px 0">🏅 ${a.name} <span style="color:var(--dim);font-size:11px">· age ${a.age}</span></div>`).join(''):'<p style="color:var(--dim)">No awards yet.</p>'}</div>`;
   openModal({banner:'Basketball', title:'🏆 Cabinet', icon:'🏆', closable:true, text:body, choices:[{label:'‹ Back', fn:bbHub},{label:'Close', fn:closeModal}]}); }
-function bbRetirePrompt(){ openModal({banner:'Basketball', title:'🚪 Retire?', icon:'🚪', closable:true, text:`Hang up the sneakers? You can't un-retire.`, choices:[{label:'Retire', alt:true, fn:()=>bbDoRetire(false)},{label:'Keep hooping', fn:bbHub}] }); }
+function bbRetirePrompt(){ const p=bb()&&bb().player, yrs=(p&&p.contract)?(p.contract.yearsRemaining||0):0;
+  openModal({banner:'Basketball', title:'🚪 Retire?', icon:'🚪', closable:true, text:`Hang up the sneakers? You can't un-retire.${yrs>0?` <span style="color:var(--warn)">⚠️ You have ${yrs} year${yrs>1?'s':''} left on your contract — the franchise can sue you for breach.</span>`:''}`, choices:[{label:'Retire', alt:true, fn:()=>retireOrBreach('bball', bb().player, (bbTeam()&&bbTeam().name)||'your franchise')},{label:'Keep hooping', fn:bbHub}] }); }
 function bbAutoRetire(){ bbDoRetire(true); }
 function bbDoRetire(forced){ const b=bb(),p=b&&b.player; if(!p||p.retired)return; p.retired=true; p.onAllStar=false; setFlag('bball_retired'); bbKeyMoment('retirement','Retired from basketball.'); gainFame(rng(1,3));
   pushLog(`🏀 I retired from basketball${forced?' — the body gave out':''}. <b>${p.careerStats.seasons}</b> seasons, <b>${(b.trophies||[]).length}</b> rings, <b>${(b.awards||[]).length}</b> awards. 🎖️`,[['echo','Retired from basketball']]); }
@@ -6086,6 +6150,7 @@ function nflYouthHub(){ const b=nf(); if(!b||!b.youth){ nflYouthStartPrompt(); r
   if(y._draftReady) ch.push({label:'📣 Declare for the Draft', alt:true, fn:nflEnterDraft});
   if(inSchool && !y.onTeam) ch.push({label:`🏈 Try out for the team`, alt:true, fn:nflTryout});
   if(y.lastTable) ch.push({label:'🏫 League Table', alt:true, fn:()=>showLeagueTable(y, nflYouthLevel(), nflYouthHub)});
+  if(y.nilOfferVal>0) ch.push({label:`💰 NIL Deal (${fcm(y.nilOfferVal)})`, alt:true, fn:()=>nilMenu('nfl')});
   if(inSchool) ch.push({label:'🏋️ Train', alt:true, fn:nflTrain});
   ch.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
   openModal({banner:'Football', title:'🏈 My Game', icon:'🏈', closable:true, text:body, choices:ch});
@@ -6121,7 +6186,7 @@ function nflYouthSeason(){ const b=nf(); if(!b||!b.youth||!b.youth.onTeam||!['pr
   let lines=[];
   if(league.champions){ y.wasChamp=true; nflKeyMoment('wonTitle',`Won the ${SS_LEVEL_NAME[lvl]} league.`); gainFame(rng(1,3)); lines.push(`🏆 <b>${SS_LEVEL_NAME[lvl]} league champions</b> (${league.W}-${league.L})!`); }
   else lines.push(`🏫 ${_ord(league.pos)} of ${league.size} in the league (${league.W}-${league.L}).`);
-  if((lvl==='highSchool'||lvl==='college') && y.rep>=45){ let earn=Math.round((lvl==='college'?1:0.3)*(y.rep-42)*rng(20,90)*priceMult()); if(league.champions) earn+=Math.round((lvl==='college'?rng(2000,8000):rng(300,1500))*priceMult()); if(y.wasCaptain) earn+=Math.round(rng(120,700)*priceMult()); if(earn>0){ money(earn); y.earningsTotal=(y.earningsTotal||0)+earn; lines.push(`💰 Earned ${cur()}${earn.toLocaleString()} from ${lvl==='college'?'NIL deals & appearances':'local sponsorships'}.`); } }
+  { const _nil=nilOffer(y, lvl); y.nilOfferVal=_nil; if(_nil>0) lines.push(`💰 A <b>NIL deal</b> worth ${fcm(_nil)} is on the table — sign or negotiate it in the 🏈 hub.`); }
   if(!y.wasCaptain && starter && y.athleticism>=NF_YTH_THRESH[lvl]+12 && y.rep>=55 && (lvl==='highSchool'||lvl==='college')){ y.status='captain'; y.wasCaptain=true; setFlag('school_captain'); y.draftStock=clamp(y.draftStock+10,0,100); nflKeyMoment('becameCaptain','Named team captain.'); gainFame(rng(2,4)); lines.push(`🎖️ Named <b>team captain</b>!`); }
   if(lvl==='highSchool' && !y.scholarship && y.rep>=60 && y.draftStock>=24){ y.scholarship=true; setFlag('athletic_scholarship'); S.schoolTuition=0; nflKeyMoment('scholarship','Earned a football scholarship.'); lines.push(`🎓 <b>Football scholarship</b> — college covered!`); }
   // draft eligibility: COLLEGE ONLY (NFL requires it) with enough stock
@@ -6216,7 +6281,8 @@ function nflAward(name){ const b=nf(); (b.awards=b.awards||[]).push({name,age:S.
 function nflCabinet(){ const b=nf(); const tr=(b.trophies||[]).slice().reverse(), aw=(b.awards||[]).slice().reverse();
   let body=`<div style="text-align:left"><div class="genlabel">🏆 Rings <span>${tr.length}</span></div>${tr.length?tr.map(t=>`<div style="font-size:13px;padding:2px 0">🏆 ${t.name} <span style="color:var(--dim);font-size:11px">· age ${t.age}</span></div>`).join(''):'<p style="color:var(--dim)">No rings yet.</p>'}<div class="genlabel" style="margin-top:8px">🏅 Awards <span>${aw.length}</span></div>${aw.length?aw.map(a=>`<div style="font-size:13px;padding:2px 0">🏅 ${a.name} <span style="color:var(--dim);font-size:11px">· age ${a.age}</span></div>`).join(''):'<p style="color:var(--dim)">No awards yet.</p>'}</div>`;
   openModal({banner:'Football', title:'🏆 Cabinet', icon:'🏆', closable:true, text:body, choices:[{label:'‹ Back', fn:nflHub},{label:'Close', fn:closeModal}]}); }
-function nflRetirePrompt(){ openModal({banner:'Football', title:'🚪 Retire?', icon:'🚪', closable:true, text:`Hang up the cleats? You can't un-retire.`, choices:[{label:'Retire', alt:true, fn:()=>nflDoRetire(false)},{label:'Keep playing', fn:nflHub}] }); }
+function nflRetirePrompt(){ const p=nf()&&nf().player, yrs=(p&&p.contract)?(p.contract.yearsRemaining||0):0;
+  openModal({banner:'Football', title:'🚪 Retire?', icon:'🚪', closable:true, text:`Hang up the cleats? You can't un-retire.${yrs>0?` <span style="color:var(--warn)">⚠️ You have ${yrs} year${yrs>1?'s':''} left on your contract — the franchise can sue you for breach.</span>`:''}`, choices:[{label:'Retire', alt:true, fn:()=>retireOrBreach('nfl', nf().player, (nflTeam()&&nflTeam().name)||'your franchise')},{label:'Keep playing', fn:nflHub}] }); }
 function nflAutoRetire(){ nflDoRetire(true); }
 function nflDoRetire(forced){ const b=nf(),p=b&&b.player; if(!p||p.retired)return; p.retired=true; p.onProBowl=false; setFlag('nfl_retired'); nflKeyMoment('retirement','Retired from football.'); gainFame(rng(1,3));
   pushLog(`🏈 I retired from football${forced?' — the body gave out':''}. <b>${p.careerStats.seasons}</b> seasons, <b>${(b.trophies||[]).length}</b> rings, <b>${(b.awards||[]).length}</b> awards. 🎖️`,[['echo','Retired from football']]); }
@@ -6432,7 +6498,8 @@ function sp2Award(k,name){ const s=S[k]; (s.awards=s.awards||[]).push({name,age:
 function sp2Cabinet(k){ const def=SP2_DEFS[k], s=S[k], tr=(s.trophies||[]).slice().reverse(), aw=(s.awards||[]).slice().reverse();
   let body=`<div style="text-align:left"><div class="genlabel">🏆 Titles <span>${tr.length}</span></div>${tr.length?tr.map(t=>`<div style="font-size:13px;padding:2px 0">🏆 ${t.name} <span style="color:var(--dim);font-size:11px">· age ${t.age}</span></div>`).join(''):'<p style="color:var(--dim)">No titles yet.</p>'}<div class="genlabel" style="margin-top:8px">🏅 Awards <span>${aw.length}</span></div>${aw.length?aw.map(a=>`<div style="font-size:13px;padding:2px 0">🏅 ${a.name} <span style="color:var(--dim);font-size:11px">· age ${a.age}</span></div>`).join(''):'<p style="color:var(--dim)">No awards yet.</p>'}</div>`;
   openModal({banner:def.name, title:'🏆 Cabinet', icon:'🏆', closable:true, text:body, choices:[{label:'‹ Back', fn:()=>sp2Hub(k)},{label:'Close', fn:closeModal}]}); }
-function sp2RetirePrompt(k){ const def=SP2_DEFS[k]; openModal({banner:def.name, title:'🚪 Retire?', icon:'🚪', closable:true, text:`Hang it up? You can't un-retire.`, choices:[{label:'Retire', alt:true, fn:()=>sp2Retire(k,false)},{label:'Keep going', fn:()=>sp2Hub(k)}] }); }
+function sp2RetirePrompt(k){ const def=SP2_DEFS[k], p=S[k]&&S[k].player, yrs=(p&&p.contract)?(p.contract.yearsRemaining||0):0;
+  openModal({banner:def.name, title:'🚪 Retire?', icon:'🚪', closable:true, text:`Hang it up? You can't un-retire.${yrs>0?` <span style="color:var(--warn)">⚠️ ${yrs} year${yrs>1?'s':''} left on your contract — walking away means a breach suit.</span>`:''}`, choices:[{label:'Retire', alt:true, fn:()=>retireOrBreach(k, S[k].player, def.indiv?def.name:(sp2Team(def,S[k].player)||def.name))},{label:'Keep going', fn:()=>sp2Hub(k)}] }); }
 function sp2Retire(k,forced){ const def=SP2_DEFS[k], s=S[k], p=s&&s.player; if(!p||p.retired)return; p.retired=true; setFlag(k+'_retired'); gainFame(rng(1,3));
   pushLog(`${def.emoji} I retired from ${def.name.toLowerCase()}${forced?' — the body gave out':''}. <b>${p.careerStats.seasons}</b> seasons, <b>${(s.trophies||[]).length}</b> titles, <b>${(s.awards||[]).length}</b> awards. 🎖️`,[['echo',`Retired from ${def.name}`]]); }
 function sp2CardSub(k){ const def=SP2_DEFS[k], s=S[k]; if(s&&s.player){ const p=s.player; if(p.retired) return `Retired · ${(s.trophies||[]).length} titles`; return `${def.indiv?('World #'+p.rank):sp2Team(def,p)} · OVR ${sp2Overall(p)}`; } return def.go; }
@@ -6519,6 +6586,40 @@ function showLeagueTable(s, lvlKey, back){ if(!s||!s.lastTable){ toast('Play a s
     choices:[{label:'‹ Back', fn:back||closeModal}] });
 }
 function ssLeagueTable(){ showLeagueTable(ssp(), schoolSportLevel(), ssHub); }
+/* ---- 💰 NIL DEALS — student-athlete pay from ATHLETICISM + ACCOMPLISHMENTS + SCHOOL STATUS. Negotiable, and you can walk away. ---- */
+function nilProf(sport){ return sport==='soccer'?ssp():sport==='bball'?(bb()&&bb().youth):sport==='nfl'?(nf()&&nf().youth):null; }
+function nilLvl(sport){ return sport==='soccer'?schoolSportLevel():sport==='bball'?bbYouthLevel():sport==='nfl'?nflYouthLevel():'highSchool'; }
+function nilBack(sport){ closeModal(); if(sport==='soccer')ssHub(); else if(sport==='bball')bbYouthHub(); else if(sport==='nfl')nflYouthHub(); else setTab('life'); }
+function nilOffer(prof, lvl){   // deterministic $ offer, only at HS/college (NIL is HS+)
+  if(!prof || (lvl!=='highSchool' && lvl!=='college')) return 0;
+  const ath=prof.athleticism||50;
+  const rep=(prof.rep!=null?prof.rep:prof.schoolReputation)||0;
+  const accomplished=(prof.wasChamp?20:0)+(prof.wasCaptain?14:0)+((prof.scholarship||prof.scholarshipOffered)?10:0)+((prof.draftStock||prof.scoutInterest||0)*0.25)+(prof.lastPos?Math.max(0,7-prof.lastPos)*2:0);
+  const status=(S.schoolPrestige||30);
+  const raw=(lvl==='college'?1:0.32)*(ath*0.7 + rep*0.7 + accomplished + status*0.5);
+  if(raw<22) return 0;   // no real NIL market below a threshold
+  return Math.max(0, Math.round(raw * rng(60,150) * priceMult()));
+}
+function nilMenu(sport){ const prof=nilProf(sport); if(!prof||!(prof.nilOfferVal>0)){ toast('No NIL offer on the table right now.'); nilBack(sport); return; }
+  openModal({banner:'NIL Deal', title:'💰 NIL Offer', icon:'💰', closable:true,
+    text:`A booster collective is offering a NIL deal worth <b>${fcm(prof.nilOfferVal)}</b> — set by your <b>athleticism</b>, what you've <b>won</b>, and your <b>school's status</b>. What's the move?`,
+    choices:[
+      {label:`✅ Sign for ${fcm(prof.nilOfferVal)}`, alt:true, fn:()=>nilAccept(sport)},
+      {label:'💬 Negotiate for more', tip:'Push hard — they might walk', alt:true, fn:()=>nilNegotiate(sport)},
+      {label:'🚶 Decline / leave the collective', alt:true, fn:()=>nilDecline(sport)},
+      {label:'‹ Back', fn:()=>nilBack(sport)},
+    ]});
+}
+function nilAccept(sport){ const prof=nilProf(sport); if(!prof||!(prof.nilOfferVal>0))return; closeModal();
+  const amt=prof.nilOfferVal; money(amt); prof.earningsTotal=(prof.earningsTotal||0)+amt; prof.nilOfferVal=0;
+  pushLog(`💰 I signed a NIL deal worth ${fcm(amt)}.`,[['good',`+${fcm(amt)} NIL`]]);
+  resultModal('NIL Deal','Deal Signed 💰','💰',[`You signed your NIL deal for <b>${fcm(amt)}</b>. Career NIL earnings: <b>${fcm(prof.earningsTotal)}</b>.`],()=>nilBack(sport)); }
+function nilNegotiate(sport){ const prof=nilProf(sport); if(!prof||!(prof.nilOfferVal>0))return; if(!onceYear('nil_nego_'+sport,'negotiated a deal')){ nilBack(sport); return; } closeModal();
+  const skill=((prof.rep!=null?prof.rep:prof.schoolReputation)||0)*0.4 + (S.fame||0)*0.3 + S.stats.smarts*0.2 + rng(-20,20);
+  if(skill>45){ prof.nilOfferVal=Math.round(prof.nilOfferVal*rng(120,165)/100); pushLog(`💬 I negotiated my NIL deal UP to ${fcm(prof.nilOfferVal)}.`,[['good','Negotiated up']]); resultModal('NIL Deal','They Blinked 💰','💰',[`Your agent pushed hard and the collective bumped it to <b>${fcm(prof.nilOfferVal)}</b>.`],()=>nilMenu(sport)); }
+  else if(skill>15){ prof.nilOfferVal=Math.round(prof.nilOfferVal*rng(80,95)/100); pushLog(`💬 My NIL negotiation stalled — the offer slipped to ${fcm(prof.nilOfferVal)}.`,[['flag','Negotiation stalled']]); resultModal('NIL Deal','They Held Firm 😬','😬',[`They didn't love the hardball — it's <b>${fcm(prof.nilOfferVal)}</b> now. Take it or leave it.`],()=>nilMenu(sport)); }
+  else { prof.nilOfferVal=0; if(prof.rep!=null)prof.rep=clamp(prof.rep-rng(1,4),0,100); else prof.schoolReputation=clamp((prof.schoolReputation||0)-rng(1,4),0,100); pushLog(`💬 I overplayed my hand — the collective walked and pulled the NIL offer.`,[['bad','Booster walked']]); resultModal('NIL Deal','They Walked 🚶','🚶',[`You pushed too hard and the boosters pulled the offer entirely. Ouch.`],()=>nilBack(sport)); } }
+function nilDecline(sport){ const prof=nilProf(sport); if(!prof)return; closeModal(); prof.nilOfferVal=0; pushLog(`🚶 I walked away from the booster collective — no NIL deal this year.`,[['flag','Left the collective']]); resultModal('NIL Deal','You Walked Away 🚶','🚶',[`You turned down the NIL money and kept your independence. Your call.`],()=>nilBack(sport)); }
 function schoolSportEligible(){ return soccerEraOK() && S.age>=7 && S.age<=23 && ['primary','high','college','cc'].includes(S.eduLevel) && !(S.soccer&&(S.soccer.player||S.soccer.owned)); }
 function ssp(){ return S.schoolSport; }
 function ssOnTeam(){ const s=ssp(); return !!(s && s.onTeam); }
@@ -6563,6 +6664,7 @@ function ssHub(){ const s=ssp(); if(!s){ ssJoinPrompt(); return; } const lvl=sch
   if(s._scoutOffer){ choices.push({label:'📣 Sign Pro (a scout wants you!)', alt:true, fn:ssGoPro}); }
   if(inSchool && !s.onTeam) choices.push({label:`⚽ Try out for the ${SS_LEVEL_NAME[lvl]} team`, alt:true, fn:ssTryout});
   if(s.lastTable) choices.push({label:'🏫 League Table', alt:true, fn:ssLeagueTable});
+  if(s.nilOfferVal>0) choices.push({label:`💰 NIL Deal (${fcm(s.nilOfferVal)})`, alt:true, fn:()=>nilMenu('soccer')});
   if(inSchool) choices.push({label:'🏋️ Train', alt:true, fn:ssTrain});
   if(!inSchool && !s._scoutOffer) choices.push({label:'🎓 School days are over', fn:()=>{ closeModal(); setTab('activities'); }, tip:'The school route has closed'});
   choices.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
@@ -6618,15 +6720,10 @@ function ssSeasonEnd(){ const s=ssp(); if(!s||!s.onTeam || !['primary','high','c
   if(lvl==='highSchool'||lvl==='college') s.scoutInterest=clamp(s.scoutInterest+Math.max(0,Math.round(perf/3))+(s.wasCaptain?4:0)+(lvl==='college'?5:0),0,100);
   ssGrow(s); if(S.age<=18) s.athleticism=clamp(s.athleticism+rng(0,2),0,95);
   let lines=[];
-  if(wonTitle){ ssKeyMoment('wonTitle',`Won the ${SS_LEVEL_NAME[lvl]} league title.`); gainFame(rng(1,3)); lines.push(`🏆 <b>${SS_LEVEL_NAME[lvl]} league champions</b> (${league.W}-${league.D}-${league.L})!`); }
+  if(wonTitle){ s.wasChamp=true; ssKeyMoment('wonTitle',`Won the ${SS_LEVEL_NAME[lvl]} league title.`); gainFame(rng(1,3)); lines.push(`🏆 <b>${SS_LEVEL_NAME[lvl]} league champions</b> (${league.W}-${league.D}-${league.L})!`); }
   else lines.push(`🏫 ${_ord(league.pos)} of ${league.size} in the league (${league.W}W-${league.D}D-${league.L}L).`);
-  // 💰 school athletes can earn (NIL deals, local sponsorships, prize money) — biggest at college, tied to reputation & results
-  if((lvl==='highSchool'||lvl==='college') && s.schoolReputation>=45){
-    let earn=Math.round((lvl==='college'?1:0.3)*(s.schoolReputation-42)*rng(20,90)*priceMult());
-    if(wonTitle) earn+=Math.round((lvl==='college'?rng(2000,8000):rng(300,1500))*priceMult());
-    if(s.wasCaptain) earn+=Math.round(rng(120,700)*priceMult());
-    if(earn>0){ money(earn); s.earningsTotal=(s.earningsTotal||0)+earn; lines.push(`💰 Earned ${cur()}${earn.toLocaleString()} from ${lvl==='college'?'NIL deals & appearances':'local sponsorships'}.`); }
-  }
+  // 💰 NIL: a deal OFFER goes on the table (athleticism + accomplishments + school status) — negotiate/accept/leave it in the hub
+  const _nil=nilOffer(s, lvl); s.nilOfferVal=_nil; if(_nil>0) lines.push(`💰 A <b>NIL deal</b> worth ${fcm(_nil)} is on the table — sign or negotiate it in the ⚽ hub.`);
   if(!s.wasCaptain && starter && s.athleticism>=SS_THRESHOLD[lvl]+12 && s.schoolReputation>=55 && (lvl==='highSchool'||lvl==='college')){ s.squadStatus='captain'; s.wasCaptain=true; setFlag('school_captain'); s.scoutInterest=clamp(s.scoutInterest+12,0,100); ssKeyMoment('becameCaptain',`Named ${SS_LEVEL_NAME[lvl]} captain.`); gainFame(rng(2,4)); lines.push(`🎖️ Named <b>team captain</b>!`); }
   if(lvl==='highSchool' && !s.scholarshipOffered && s.schoolReputation>=62 && (goals+assists)>=6){ s.scholarshipOffered=true; setFlag('athletic_scholarship'); S.schoolTuition=0; ssKeyMoment('scholarship',`Earned an athletic scholarship.`); lines.push(`🎓 Earned an <b>athletic scholarship</b> — college tuition covered!`); }
   if(!s._scoutOffer && s.scoutInterest >= (lvl==='college'?68:78)){ s._scoutOffer={tier: s.scoutInterest>=88?0:(s.scoutInterest>=78?1:2), age:S.age}; ssKeyMoment('scoutOffer',`A pro scout came calling.`); lines.push(`📣 A <b>pro scout wants to sign you</b> — go pro from the Football hub!`); }
@@ -6872,7 +6969,7 @@ function socSeasonEnd(){
 function socRetirePrompt(){ const sc=soc(),p=sc&&sc.player; if(!p){socHub();return;}
   openModal({banner:'Football', title:'🚪 Hang Up Your Boots?', icon:'🚪', closable:true,
     text:`You’re ${S.age} — ${p.careerStats.seasons} seasons, ${p.careerStats.goals} goals, ${(sc.trophies||[]).length} trophies, ${(sc.awards||[]).length} awards. Retire from playing? <span style="color:var(--dim)">Club ownership/management opens in Phase 2.</span>`,
-    choices:[{label:'🚪 Retire now', alt:true, fn:()=>{ socDoRetire(false); closeModal(); setTab('life'); }},{label:'Play on', fn:socHub}] });
+    choices:[{label:'🚪 Retire now', alt:true, fn:()=>retireOrBreach('soccer', sc.player, (socClub()&&socClub().name)||'your club')},{label:'Play on', fn:socHub}] });
 }
 function socDoRetire(forced){ const sc=soc(),p=sc&&sc.player; if(!p||p.retired)return; p.retired=true; p.onNationalTeam=false;
   socKeyMoment('retirement', `Retired: ${p.careerStats.seasons} seasons, ${p.careerStats.goals} goals, ${(sc.trophies||[]).length} trophies.`);
