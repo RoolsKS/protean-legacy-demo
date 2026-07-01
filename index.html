@@ -3566,6 +3566,38 @@ const EVENTS = [
           return {text: ok?`${sp.name} takes your side without hesitation — you feel like a team against the world.`:`${sp.name} gets defensive about their own parent. It turns into a spat.`, tags:[[ok?'good':'bad', ok?'United front':'Friction']]};}},
     ]};}},
 
+/* --- 💒 FAMILY: a widowed/single parent remarries — you gain a stepfamily (interactive, once per parent) --- */
+{ id:'parent_remarries', once:false, weight:20,
+  when:S=>S.age>=4 && S.age<=45 && ['mom','dad'].some(k=>{ const p=P(k); if(!p||!p.alive||p.remarried) return false; const other=k==='mom'?P('dad'):P('mom'); return !(other&&other.alive); }) && (S.age-(S._lastStepEv||-99)>=1),
+  build:S=>{ S._lastStepEv=S.age;
+    const par=['mom','dad'].map(P).find(p=>{ if(!p||!p.alive||p.remarried) return false; const other=p.id==='mom'?P('dad'):P('mom'); return !(other&&other.alive); });
+    par.remarried=true; setFlag('has_stepparent');
+    const g = par.gender==='f'?'m':'f'; const surname=pick(LAST);
+    const relTitle = g==='f'?'Stepmother':'Stepfather';
+    const sid='step_'+par.id;
+    S.people[sid]=person(sid, nm(g)+' '+surname, relTitle, rng(40,60), rng(35,55), {gender:g,gen:-1,fam:true,age:clamp((par.age||S.age+28)+rng(-6,6),30,80)});
+    S.people[sid].step=true; S.people[sid].stepParent=true; S.people[sid].job=pick(JOBS);
+    const nSibs=rng(0,2), sibs=[];
+    for(let i=0;i<nSibs;i++){ const sg=rng(0,1)?'m':'f'; const stid='stepsib_'+par.id+'_'+i;
+      S.people[stid]=person(stid, nm(sg)+' '+surname, sg==='f'?'Stepsister':'Stepbrother', rng(35,58), rng(30,50), {gender:sg,gen:0,fam:true,age:clamp(S.age+rng(-5,6),1,40)});
+      S.people[stid].step=true; S.people[stid].stepSibling=true; sibs.push(S.people[stid]); }
+    S._stepIds={par:par.id, step:sid, sibs:sibs.map(s=>s.id)};
+    const sp=S.people[sid];
+    const sibLine = nSibs? ` They come with ${nSibs===1?'a ':''}${sibs.map(s=>`<b>${s.name}</b> (${s.rel.toLowerCase()}, ${s.age})`).join(' and ')}.` : '';
+    return {yr:`Age ${S.age}`, title:'💒 A New Family',
+    text:`Your ${par.rel.toLowerCase()}, <b>${par.name}</b>, is getting remarried to <b>${sp.name}</b>.${sibLine} How do you take the news?`,
+    choices:[
+      {label:'Give them your blessing', tip:'Welcome them in',
+        apply:()=>{ chg('happy',rng(4,9)); rel(par.id,+rng(4,9),+rng(3,6),`You supported their remarriage.`); sp.affinity=clamp(sp.affinity+rng(10,20)); sp.trust=clamp(sp.trust+rng(6,12)); sibs.forEach(s=>{s.affinity=clamp(s.affinity+rng(6,14));}); karma(3); driftPers('warmth',2);
+          return {text:`You wrap ${par.name} in a hug and welcome ${sp.name} to the family. A fresh start — and maybe ${nSibs?'new siblings':'a new ally'} in your corner.`,tags:[['good','Blessed the union']]}; }},
+      {label:'Be polite, but guarded', tip:'Wait and see',
+        apply:()=>{ rel(par.id,+rng(0,3),0,`You were reserved about the remarriage.`); sp.affinity=clamp(sp.affinity+rng(-2,4)); sibs.forEach(s=>{s.affinity=clamp(s.affinity+rng(-3,3));});
+          return {text:`You keep it civil and shake ${sp.name}'s hand. Trust will have to be earned — you're not there yet.`,tags:[['flag','Cautiously polite']]}; }},
+      {label:'Refuse to accept it', tip:'They\'re not my family',
+        apply:()=>{ chg('happy',-rng(4,9)); addStress(rng(6,14)); rel(par.id,-rng(5,12),-rng(3,8),`You lashed out over the remarriage.`); sp.affinity=clamp(sp.affinity-rng(12,22)); sp.trust=clamp(sp.trust-rng(8,16)); sibs.forEach(s=>{s.affinity=clamp(s.affinity-rng(6,14));}); driftPers('warmth',-2); driftPers('boldness',1);
+          return {text:`“You're not my ${par.gender==='f'?'dad':'mom'}!” The wedding goes ahead anyway — but the house is tense, and ${sp.name} keeps their distance.`,tags:[['bad','Rejected the stepfamily']]}; }},
+    ]};}},
+
 /* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
 { id:'award_nom', once:false, weight:14,
   when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
@@ -4735,13 +4767,14 @@ function render(){
   // family tree — living grouped by generation; the departed collected at the bottom
   const groups=[
     {label:'Grandparents',          test:p=>p.alive&&p.fam&&p.gen===-2},
-    {label:'Parents, Aunts & Uncles',test:p=>p.alive&&p.fam&&p.gen===-1&&!p.inlaw},
-    {label:'Your Generation',       test:p=>p.alive&&p.fam&&p.gen===0},
+    {label:'Parents, Aunts & Uncles',test:p=>p.alive&&p.fam&&p.gen===-1&&!p.inlaw&&!p.step},
+    {label:'Your Generation',       test:p=>p.alive&&p.fam&&p.gen===0&&!p.step},
     {label:'Children & Beyond',     test:p=>p.alive&&p.fam&&p.gen>=1},
     {label:'🏫 Classmates',         test:p=>p.alive&&p.classmate},
     {label:'🍎 Faculty',            test:p=>p.alive&&p.teacher},
     {label:'💼 Coworkers',          test:p=>p.alive&&p.coworker},
     {label:'💘 Partners',           test:p=>p.alive&&p.romantic},
+    {label:'💒 Stepfamily',         test:p=>p.alive&&p.step},
     {label:'💍 In-Laws',            test:p=>p.alive&&p.inlaw},
     {label:'🍯 Sugar Arrangements',  test:p=>p.alive&&p.sugar},
     {label:'Friends & Others',      test:p=>p.alive&&!p.fam&&!p.pet&&!p.classmate&&!p.teacher&&!p.coworker&&!p.romantic},
