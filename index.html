@@ -3922,6 +3922,7 @@ function ageUp(){
   kidsCareYear();                                                     // 👶🎓 nanny + private-school tuition for your minor kids (deterministic)
   partnersYear();                                                     // 💘 juggling multiple partners costs money, spark & peace (deterministic)
   sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
+  staffYear();                                                        // 🧑‍✈️ household staff salaries + their yearly perks (deterministic)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -4113,7 +4114,7 @@ function ageUp(){
   if(!S.job && S.age>=18) refreshJobs(); else if(S.job) S.jobListings=null;   // fresh listings yearly while unemployed — generated in the SIM (deterministic), never during render
   refreshGigs();                   // a fresh batch of side-hustle gigs each year (deterministic; empty pool for the very young consumes no RNG)
   // local crime can catch up with you — scaled by your city's real crime rate
-  if(S.age>=8 && rng(0,1000) < (C.crime||40)*1.1){
+  if(S.age>=8 && rng(0,1000) < (C.crime||40)*1.1*(has('has_security')?0.35:1)){   // a bodyguard sharply cuts crime-victim odds
     const loss = S.money>0 ? Math.round(Math.min(S.money*0.1, rng(50,900))) : 0;
     chg('happy',-rng(2,6)); if(loss>0) money(-loss);
     pushLog(`You were a victim of crime in ${S.city} (crime rate ${C.crime}/100).${loss>0?` Lost ${cur()}${loss.toLocaleString()}.`:''}`,[['bad','Crime victim']]);
@@ -6707,6 +6708,7 @@ function renderActivities(){ const v=document.getElementById('activitiesView'); 
   h+=hubCard('🩺','See a Doctor','Check-ups, illnesses & quitting habits', "seeDoctor()");
   if(S.age>=18) h+=hubCard('🏠','Adopt a Child','Grow your family through adoption', "adoptionMenu()");
   if(S.age>=18) h+=hubCard('🍼','Fertility Clinic','IVF or a surrogate — start a family (18+)', "fertilityMenu()");
+  if(S.age>=18){ const ns=S.staff?Object.keys(S.staff).length:0; h+=hubCard('🧑‍✈️','Household Staff', ns?`${ns} on payroll · driver, chef, guard & more`:'Hire a driver, chef, butler, bodyguard…', "staffMenu()"); }
   if(S.age>=18){ const sc=Object.values(S.people).filter(p=>p.alive&&p.sugar).length; h+=hubCard('🍯','Sugar Dating', sc?`${sc} arrangement${sc>1?'s':''} · get spoiled or spoil someone`:'Get spoiled — or spoil someone (18+)', "sugarMenu()"); }
   h+=hubCard('🌍','Emigrate', S.age<18?'Ask your parents to move (good luck)':'Move to a new country or city', "emigrate()");
   h+=hubCard('🚗','Licenses', `${licenseSummary()}`, "setTab('licenses')");
@@ -7306,6 +7308,47 @@ function surrogateLawsuit(mode){ const sid=S._surroDispute, sur=sid&&S.people[si
     resultModal('Surrogacy','You Won Custody 🧑‍⚖️','🍼',[`The court rules in your favor — the child is legally yours. (Legal fees: ${fcm(fee)}.)`,`Hard-won, but they're home.`],()=>setTab('people'));
   } else { S._surroDispute=null; if(sur) sur.rel='Acquaintance'; chg('happy',-12); addStress(rng(12,22));
     resultModal('Surrogacy','You Lost the Case 💔','💔',[`The court sides with ${sur?sur.name:'the surrogate'} — you lose the case and the <b>${fcm(fee)}</b> in fees.`,`Devastating.`],()=>setTab('people')); } }
+/* ---- HOUSEHOLD STAFF — the rich hire help; each draws a yearly salary and earns its keep
+   (chef→health, butler→ease, driver→comfort, bodyguard→safety, assistant→career). Deterministic. ---- */
+const STAFF_ROLES=[
+  {key:'driver',    name:'Driver',             icon:'🚗',  base:30000, perk:'Chauffeured everywhere — comfort & no drunk-driving'},
+  {key:'chef',      name:'Personal Chef',       icon:'🧑‍🍳', base:45000, perk:'Gourmet, healthy meals — better health'},
+  {key:'butler',    name:'Butler',              icon:'🤵',  base:40000, perk:'Runs the household — ease & status'},
+  {key:'guard',     name:'Bodyguard',           icon:'🛡️',  base:60000, perk:'Personal security — far safer from crime'},
+  {key:'assistant', name:'Personal Assistant',  icon:'🧑‍💼', base:38000, perk:'Manages your life — a boost at work'},
+];
+function staffSalary(base){ return Math.round(base*priceMult()*(0.7+((COUNTRIES[S.country]||{}).col||50)/100)); }
+function staffMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  if(S.age<18){ toast('You must be an adult to run a household staff.'); return; }
+  logAct('call',{fn:'staffMenu'});
+  S.staff=S.staff||{};
+  const ch=STAFF_ROLES.map(r=>{ const sal=staffSalary(r.base); const hired=S.staff[r.key];
+    return hired ? {label:`✕ Dismiss ${r.icon} ${r.name}`, fn:()=>dismissStaff(r.key)}
+                 : {label:`${r.icon} Hire a ${r.name}`, tip:`~${fcm(sal)}/yr · ${r.perk}`, alt:true, fn:()=>hireStaff(r.key)}; });
+  ch.push({label:'‹ Back', fn:()=>{closeModal();setTab('activities');}});
+  const total=Object.keys(S.staff).reduce((a,k)=>a+((S.staff[k]&&S.staff[k].salary)||0),0);
+  openModal({banner:'Household Staff', title:'🧑‍✈️ Household Staff', icon:'🧑‍✈️', closable:true,
+    text:`Hire personal staff to make life easier — each draws a yearly salary.${Object.keys(S.staff).length?` You employ <b>${Object.keys(S.staff).length}</b> (payroll ~${fcm(total)}/yr).`:''}`, choices:ch}); }
+function hireStaff(role){ const r=STAFF_ROLES.find(x=>x.key===role); if(!r)return; const sal=staffSalary(r.base);
+  if(S.money<sal){ resultModal('Staff','Can’t Afford It 🧑‍✈️','🧑‍✈️',[`A ${r.name} runs about <b>${fcm(sal)}/yr</b> — more than you have on hand.`],()=>setTab('activities')); return; }
+  S.staff=S.staff||{}; S.staff[role]={name:nm(rand()<.5?'m':'f')+' '+pick(LAST), salary:sal}; setFlag('has_staff'); if(role==='guard') setFlag('has_security'); chg('happy',3); if(role==='butler'||role==='guard') gainFame(rng(0,2));
+  pushLog(`🧑‍✈️ I hired a ${r.name.toLowerCase()}, <b>${S.staff[role].name}</b> — ${cur()}${sal.toLocaleString()}/yr.`,[['good',`Hired a ${r.name.toLowerCase()}`]]);
+  resultModal('Staff',`${r.icon} ${r.name} Hired`,r.icon,[`<b>${S.staff[role].name}</b> is on the payroll at about <b>${fcm(sal)}/yr</b>.`,r.perk+'.'],()=>setTab('activities')); }
+function dismissStaff(role){ const r=STAFF_ROLES.find(x=>x.key===role); if(!S.staff||!S.staff[role]){ staffMenu(); return; } const nm2=S.staff[role].name; delete S.staff[role];
+  if(role==='guard') setFlag('has_security',false); if(!Object.keys(S.staff).length) setFlag('has_staff',false);
+  pushLog(`🧑‍✈️ I let my ${r?r.name.toLowerCase():'staffer'} (${nm2}) go.`,[['flag','Dismissed staff']]);
+  resultModal('Staff','Let Them Go 👋','👋',[`${nm2} is off the payroll.`],()=>setTab('activities')); }
+function staffYear(){ if(!S||!S.alive) return; const st=S.staff; if(!st||!Object.keys(st).length) return;
+  let total=0; for(const k in st) total+=(st[k]&&st[k].salary)||0;
+  if(S.money<total && S.money<=0){ const n=Object.keys(st).length; S.staff={}; setFlag('has_staff',false); setFlag('has_security',false);
+    pushLog(`🧑‍✈️ I couldn't make payroll — my ${n} staff walked out.`,[['bad','Staff quit — couldn’t pay']]); return; }
+  money(-total);
+  if(st.chef) chg('health',rng(1,3));
+  if(st.butler) chg('happy',rng(1,3));
+  if(st.driver) chg('happy',1);
+  if(st.guard) chg('happy',1);
+  if(st.assistant){ if(S.job) S.jobPerf=clamp((S.jobPerf||50)+rng(1,3)); if(((S.stats&&S.stats.smarts)||0)<95) chg('smarts',rng(0,1)); }
+  pushLog(`🧑‍✈️ Staff salaries cost <b>${cur()}${total.toLocaleString()}</b> this year.`,[['flag',`-${cur()}${total.toLocaleString()} staff`]]); }
 /* ---- MARRIAGE DEPTH — a "spark" that lives, fades, and can be rekindled ---- */
 function ensureSpark(p){ if(p.spark==null) p.spark=clamp(50+Math.round(((p.affinity||50)-50)/2)); return p.spark; }
 /* ---- MULTIPLE PARTNERS — juggling more than one lover has a real yearly cost (money,
