@@ -3827,6 +3827,7 @@ function ageUp(){
   childSupportYear();                                                 // 👨‍👧 post-divorce custody: pay/receive child support each year (deterministic)
   kidsCareYear();                                                     // 👶🎓 nanny + private-school tuition for your minor kids (deterministic)
   partnersYear();                                                     // 💘 juggling multiple partners costs money, spark & peace (deterministic)
+  sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -4567,6 +4568,7 @@ function render(){
     {label:'💼 Coworkers',          test:p=>p.alive&&p.coworker},
     {label:'💘 Partners',           test:p=>p.alive&&p.romantic},
     {label:'💍 In-Laws',            test:p=>p.alive&&p.inlaw},
+    {label:'🍯 Sugar Arrangements',  test:p=>p.alive&&p.sugar},
     {label:'Friends & Others',      test:p=>p.alive&&!p.fam&&!p.pet&&!p.classmate&&!p.teacher&&!p.coworker&&!p.romantic},
     {label:'🐾 Pets',               test:p=>p.alive&&p.pet},
     {label:'⚰️ Late Relationships', test:p=>!p.alive},
@@ -6610,6 +6612,7 @@ function renderActivities(){ const v=document.getElementById('activitiesView'); 
     h+=hubCard('🎨','Hobbies & Passions', top?`${hobbyDef(top).icon} ${hobbyDef(top).name} · ${hobbyTier(S.hobbies[top].level)}${hb.length>1?` +${hb.length-1} more`:''}`:'Find a passion — talent, calm & income', "hobbiesMenu()"); }
   h+=hubCard('🩺','See a Doctor','Check-ups, illnesses & quitting habits', "seeDoctor()");
   if(S.age>=18) h+=hubCard('🏠','Adopt a Child','Grow your family through adoption', "adoptionMenu()");
+  if(S.age>=18){ const sc=Object.values(S.people).filter(p=>p.alive&&p.sugar).length; h+=hubCard('🍯','Sugar Dating', sc?`${sc} arrangement${sc>1?'s':''} · get spoiled or spoil someone`:'Get spoiled — or spoil someone (18+)', "sugarMenu()"); }
   h+=hubCard('🌍','Emigrate', S.age<18?'Ask your parents to move (good luck)':'Move to a new country or city', "emigrate()");
   h+=hubCard('🚗','Licenses', `${licenseSummary()}`, "setTab('licenses')");
   h+=hubCard('🛂','Passport', passportValid()?`✅ Valid until age ${S.passportExpires}`:(S.passport?'⚠️ Expired — renew it':(S.passportApp&&S.passportApp.stage==='processing'?(S.age>=S.passportApp.readyAge?'📨 Ready — come collect it!':'⏳ Application processing…'):'Apply: photo → office → wait → collect')), "applyPassport()");
@@ -7203,6 +7206,62 @@ function jealousyResolve(suspicId, otherId, mode){ const s=S.people[suspicId], o
   if(wasSpouse){ S.spouse=null; setFlag('cheater_caught'); setFlag('divorced'); }
   if(famous){ ledgerAdd('scandal',28,{pub:true,note:`Caught two-timing — it made the gossip pages.`}); S.fame=clamp((S.fame||0)-rng(3,8)); if(S.sm&&S.sm.joined&&S.sm.platforms){ for(const p of Object.values(S.sm.platforms)){ if(p.joined) p.followers=Math.round((p.followers||0)*0.94); } } }
   return {text:`The lie collapses — ${s.name} has proof and dumps you on the spot.${wasSpouse?' Your marriage is over.':''}${famous?' The tabloids feast. 📰':''}`,tags:[['bad',`Caught — lost ${s.name}`]]};
+}
+/* ---- SUGAR DATING (18+, text-only) — transactional arrangements: be spoiled as a sugar
+   baby (money in) or spoil a sugar baby (money out), billed yearly, with discovery risk. ---- */
+function sugarMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  if(S.age<18){ toast('🔞 Sugar dating is 18+.'); return; }
+  logAct('call',{fn:'sugarMenu'});
+  const mine=Object.values(S.people).filter(p=>p.alive&&p.sugar);
+  const ch=[{label:'🍯 Find a Sugar Daddy/Mommy', tip:'Get spoiled — a yearly allowance', alt:true, fn:findSugarDaddy}];
+  if(netWorth()>=250000) ch.push({label:'💰 Take a Sugar Baby', tip:'Pay for companionship', alt:true, fn:takeSugarBaby});
+  mine.forEach(p=>ch.push({label:`💔 End it with ${p.name}`, fn:()=>endSugar(p.id)}));
+  ch.push({label:'‹ Back', fn:()=>{closeModal();setTab('activities');}});
+  openModal({banner:'Sugar Dating', title:'🍯 Sugar Dating', icon:'🍯', closable:true,
+    text:`Arrangements where affection and money go hand in hand — consensual and 18+.${mine.length?` You have <b>${mine.length}</b> arrangement${mine.length>1?'s':''} going.`:''}`, choices:ch}); }
+function findSugarDaddy(){ const chance=clamp(Math.round(38 + (((S.stats&&S.stats.looks)||50)-50)*0.6 + (S.age<=35?12:S.age<=45?4:-8)), 12, 90);
+  if(rng(0,100)<chance){ const g=rand()<.5?'m':'f'; const id='sugar'+(S.sugarSeq=(S.sugarSeq||0)+1);
+    const allowance=Math.round(rng(18000,120000)*priceMult()*(1+(((S.stats&&S.stats.looks)||50)-50)/120));
+    S.people[id]=person(id, nm(g)+' '+pick(LAST), g==='m'?'Sugar Daddy':'Sugar Mommy', rng(45,65), rng(35,55), {gender:g,gen:0,age:rng(45,68)});
+    S.people[id].sugar=g==='m'?'daddy':'mommy'; S.people[id].sugarAllowance=allowance; setFlag('sugar_baby'); chg('happy',5);
+    pushLog(`🍯 I found a ${g==='m'?'sugar daddy':'sugar mommy'}, <b>${S.people[id].name}</b> — about ${cur()}${allowance.toLocaleString()}/yr to keep them company.`,[['good',`Sugar allowance +${cur()}${allowance.toLocaleString()}/yr`]]);
+    resultModal('Sugar Dating','Spoiled 🍯','🍯',[`<b>${S.people[id].name}</b> will spoil you with about <b>${fcm(allowance)}/yr</b> for your time and attention.`,`It pays out yearly — keep them happy, and watch for jealous partners.`],()=>setTab('people'));
+  } else { chg('happy',-2);
+    resultModal('Sugar Dating','No Luck 🍯','😕',[`You put yourself out there, but no benefactor bit this time.`,`Looks, charm and youth all help — try again.`],()=>setTab('activities')); } }
+function takeSugarBaby(){ const upfront=Math.round(rng(15000,60000)*priceMult());
+  if(S.money<upfront){ resultModal('Sugar Dating','Out of Reach 💰','💰',[`Spoiling someone starts around <b>${fcm(upfront)}</b> — more than you have on hand.`],()=>setTab('activities')); return; }
+  spend(upfront); const g=rand()<.5?'m':'f'; const id='sugar'+(S.sugarSeq=(S.sugarSeq||0)+1);
+  const allowance=Math.round(rng(24000,150000)*priceMult());
+  S.people[id]=person(id, nm(g)+' '+pick(LAST), 'Sugar Baby', rng(55,75), rng(30,50), {gender:g,gen:0,age:rng(19,29)});
+  S.people[id].sugar='baby'; S.people[id].sugarAllowance=allowance; setFlag('sugar_daddy'); chg('happy',6); gainFame(rng(0,2));
+  pushLog(`💰 I took on a sugar baby, <b>${S.people[id].name}</b> — about ${cur()}${allowance.toLocaleString()}/yr plus gifts.`,[['flag',`Sugar baby -${cur()}${allowance.toLocaleString()}/yr`]]);
+  resultModal('Sugar Dating','Spoiling Them 💰','💰',[`<b>${S.people[id].name}</b> is your sugar baby now — about <b>${fcm(allowance)}/yr</b> keeps them close.`,`Flattering — but gold-diggers get greedy, and it can get messy.`],()=>setTab('people')); }
+function endSugar(id){ const p=S.people[id]; if(!p)return; const role=p.sugar; delete p.sugar; delete p.sugarAllowance; p.rel='Ex'; p.affinity=clamp(p.affinity-rng(5,15));
+  pushLog(`💔 I ended my sugar arrangement with <b>${p.name}</b>.`,[['flag','Ended a sugar arrangement']]);
+  resultModal('Sugar Dating','Arrangement Ended 👋','👋',[`You and ${p.name} part ways.${role==='baby'?' No more allowance to pay out.':' No more allowance coming in.'}`],()=>setTab('people')); }
+function sugarYear(){ if(!S||!S.alive) return;
+  const arr=Object.values(S.people).filter(p=>p.alive&&p.sugar);
+  if(!arr.length) return;
+  let inc=0, out=0; const ended=[];
+  arr.forEach(p=>{ const amt=p.sugarAllowance||0;
+    if(p.sugar==='baby'){                                  // you pay them
+      if(S.money<amt && S.money<=0){ delete p.sugar; delete p.sugarAllowance; p.rel='Ex'; ended.push(p.name+' — you ran dry'); return; }
+      money(-amt); out+=amt; if(rng(0,100)<18){ p.sugarAllowance=Math.round(amt*(1.1+rand()*0.3)); }   // gold-digger angles for a raise
+    } else {                                               // your benefactor pays you
+      money(amt); inc+=amt; if(rng(0,100)<12){ delete p.sugar; delete p.sugarAllowance; p.rel='Ex'; ended.push(p.name+' — moved on'); return; }
+    }
+    p.affinity=clamp(p.affinity+rng(-2,2));
+  });
+  // discovery — a committed partner/spouse catching wind of it causes friction (and a scandal if you're famous)
+  if((S.spouse||Object.values(S.people).some(p=>p.alive&&p.romantic)) && rng(0,100)<14){
+    setFlag('two_timing'); const sp=S.spouse&&S.people[S.spouse];
+    if(sp){ rel(S.spouse,-rng(8,18),-rng(6,12),'They found out about your sugar arrangement.'); if(rng(0,100)<40) setFlag('cheater_caught'); }
+    if((S.fame||0)>=45){ ledgerAdd('scandal',22,{pub:true,note:'A sugar-arrangement scandal hit the press.'}); S.fame=clamp((S.fame||0)-rng(2,6)); }
+    pushLog(`👀 Word of my sugar arrangement got around — it caused friction.`,[['bad','Sugar arrangement exposed']]);
+  }
+  if(inc>0) pushLog(`🍯 My sugar arrangement${arr.length>1?'s':''} paid me <b>${cur()}${inc.toLocaleString()}</b> this year.`,[['good',`+${cur()}${inc.toLocaleString()} sugar`]]);
+  if(out>0) pushLog(`💰 Spoiling my sugar bab${out&&arr.filter(p=>p.sugar==='baby').length>1?'ies':'y'} cost <b>${cur()}${out.toLocaleString()}</b> this year.`,[['flag',`-${cur()}${out.toLocaleString()} sugar`]]);
+  ended.forEach(n=>pushLog(`💔 My sugar arrangement with ${n} ended.`,[['flag','Sugar arrangement ended']]));
 }
 function sparkBand(v){ return v>=75?{l:'Passionate',c:'var(--good)'}:v>=50?{l:'Comfortable',c:'var(--good)'}:v>=30?{l:'Strained',c:'var(--warn)'}:{l:'On the rocks',c:'var(--bad)'}; }
 function marriageYear(){ const sp=S.spouse&&S.people[S.spouse]; if(!sp||!sp.alive)return; ensureSpark(sp);
