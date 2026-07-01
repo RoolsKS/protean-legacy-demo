@@ -2047,6 +2047,11 @@ function lifeRecord(){
     nflFranchiseOwner:has('nfl_franchise_owner'), nflFranchiseDynastyGens:(S.nfl&&S.nfl.owned&&S.nfl.owned.gensWon)?S.nfl.owned.gensWon.length:0,
     tennisPro:has('tennis_pro'), tennisGoat:has('tennis_goat'), volleyPro:has('volley_pro'), volleyGoat:has('volley_goat'), hockeyPro:has('hockey_pro'), hockeyGoat:has('hockey_goat'),
     famBondLow: famAlive.length>0 && famAlive.every(p=>(p.affinity||0)<25),
+    // 💰 student-athlete NIL, 🕴️ agent endorsements, and virtue/vice flags for the newer systems
+    nilEarnings: (S.schoolSport&&S.schoolSport.earningsTotal||0)+(S.bball&&S.bball.youth&&S.bball.youth.earningsTotal||0)+(S.nfl&&S.nfl.youth&&S.nfl.youth.earningsTotal||0),
+    agentEarnings: S._agentEarnings||0,
+    whistleblower: has('whistleblower'), gotClean: has('got_clean'), greekPresident: has('greek_president'),
+    volunteered: has('volunteer'), breachedContract: has('breached_contract'), endedHazing: has('ended_hazing'),
   };
 }
 const RIBBONS=[
@@ -2112,6 +2117,16 @@ const RIBBONS=[
   {id:'hockey_goat', name:'Hockey Legend', icon:'🐐', rarity:'legendary', priority:9, desc:'Be named NHL MVP.', q:r=>r.hockeyGoat?1:0},
   {id:'nfl_owner', name:'NFL Owner', icon:'🏈', rarity:'rare', priority:6, desc:'Own an NFL franchise.', q:r=>r.nflFranchiseOwner?1:0},
   {id:'nfl_dynasty', name:'Gridiron Dynasty', icon:'👑', rarity:'legendary', priority:10, desc:'Build a family NFL franchise that wins across generations.', q:r=>r.nflFranchiseDynastyGens>=2?1:0},
+  // 🏫 School-athlete NIL & the newer systems
+  {id:'nil_star', name:'NIL Star', icon:'💰', rarity:'rare', priority:6, desc:'Cash in on your name as a student-athlete (earn 50K+ in NIL).', q:r=>_frac(r.nilEarnings,50000)},
+  {id:'rainmaker', name:'Rainmaker', icon:'💼', rarity:'epic', priority:7, desc:'Bank a fortune in endorsement deals through your agent.', q:r=>_frac(r.agentEarnings,750000)},
+  {id:'greek_royalty', name:'Greek Royalty', icon:'🏛️', rarity:'rare', priority:5, desc:'Rise to chapter president of a fraternity or sorority.', q:r=>r.greekPresident?1:0},
+  // Virtue
+  {id:'whistleblower', name:'Whistleblower', icon:'🎺', rarity:'epic', priority:7, desc:'Expose corruption, a fix, or a cheat at real personal risk.', q:r=>r.whistleblower?1:0},
+  {id:'good_samaritan', name:'Good Samaritan', icon:'🤲', rarity:'rare', priority:5, desc:'Give back to your community and keep a clean conscience.', q:r=>Math.min(r.volunteered?1:0,_frac(r.karma,40))},
+  {id:'reformed', name:'Reformed', icon:'🌱', rarity:'epic', priority:6, secret:true, desc:'Beat an addiction and get clean.', q:r=>r.gotClean?1:0},
+  // Vice
+  {id:'contract_breaker', name:'Contract Breaker', icon:'⚖️', rarity:'rare', priority:4, secret:true, desc:'Walk out on a pro contract and face the lawsuit.', q:r=>r.breachedContract?1:0},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
@@ -3774,7 +3789,7 @@ const EVENTS = [
     choices:[
       {label:'Take it and vote their way', tip:'Corrupt — but rich', apply:()=>{ money(sum); karma(-5); setFlag('corrupt_politician'); if(rng(0,100)<25){ S.office.approval=clamp(S.office.approval-rng(12,28),0,100); return {text:`You take the money — but an investigative reporter connects the dots. The scandal tanks your approval.`,tags:[['bad',`Bribe exposed`]]}; } return {text:`The <b>${cur()}${sum.toLocaleString()}</b> quietly lands in your account and your vote follows. Nobody's the wiser — yet.`,tags:[['flag',`Took a bribe +${cur()}${sum.toLocaleString()}`]]}; }},
       {label:'Refuse, on principle', tip:'Clean hands', apply:()=>{ S.office.approval=clamp(S.office.approval+rng(1,4),0,100); karma(4); driftPers('discipline',1); return {text:`You show the lobbyist the door. Your bank account stays the same, but so does your conscience.`,tags:[['good','Turned down the bribe']]}; }},
-      {label:'Expose them publicly', tip:'Make it a headline', apply:()=>{ if(rng(0,100)<70){ S.office.approval=clamp(S.office.approval+rng(6,16),0,100); gainFame(rng(2,5)); karma(5); return {text:`You take the offer straight to the press. The lobbyist is disgraced and you're hailed as an incorruptible reformer.`,tags:[['good','Exposed corruption']]}; } S.office.approval=clamp(S.office.approval-rng(2,8),0,100); return {text:`You go public — but they lawyer up and spin it as a smear. It's messier than you hoped.`,tags:[['flag','It got messy']]}; }},
+      {label:'Expose them publicly', tip:'Make it a headline', apply:()=>{ setFlag('whistleblower'); if(rng(0,100)<70){ S.office.approval=clamp(S.office.approval+rng(6,16),0,100); gainFame(rng(2,5)); karma(5); return {text:`You take the offer straight to the press. The lobbyist is disgraced and you're hailed as an incorruptible reformer.`,tags:[['good','Exposed corruption']]}; } S.office.approval=clamp(S.office.approval-rng(2,8),0,100); return {text:`You go public — but they lawyer up and spin it as a smear. It's messier than you hoped.`,tags:[['flag','It got messy']]}; }},
     ]};}},
 /* POLITICS — a scandal breaks */
 { id:'w2_scandal', once:false, weight:12, when:S=>S.office&&S.office.inOffice&&(S.age-(S._lastW6||-99)>=3),
@@ -3846,7 +3861,7 @@ const EVENTS = [
     choices:[
       {label:'Take the money, throw the game', tip:'Dirty money, huge risk', apply:()=>{ if(rng(0,100)<35){ money(-Math.min(Math.max(0,S.money),rng(50000,300000))); const u=uw(); const sentence=rng(1,3); u.jailUntil=S.age+sentence; setFlag('banned_for_fixing'); if(a.retire)a.retire(); addTrauma('prison',rng(20,35),'the fix that ended your career'); return {text:`Investigators catch the pattern. You're <b>banned for life</b>, stripped of your earnings, and jailed for <b>${sentence} year${sentence>1?'s':''}</b>. The career is over — in disgrace.`,tags:[['bad','Banned & jailed']]}; } money(sum); karma(-6); setFlag('match_fixer'); addStress(rng(6,14)); return {text:`You tank the match and collect <b>${cur()}${sum.toLocaleString()}</b> in dirty money. Nobody proves a thing — but you'll never watch a replay the same way.`,tags:[['flag',`Fixed a match +${cur()}${sum.toLocaleString()}`]]}; }},
       {label:'Refuse and stay clean', tip:'Protect the game', apply:()=>{ karma(4); driftPers('discipline',1); if(a.p)a.p.morale=clamp((a.p.morale||60)+rng(1,5)); return {text:`You tell them to get lost. The game's the one clean thing you've got, and you're not selling it.`,tags:[['good','Refused the fix']]}; }},
-      {label:'Report it to the league', tip:'Blow the whistle', apply:()=>{ karma(6); gainFame(rng(2,6)); if(rng(0,100)<75){ return {text:`You wear a wire and bring the whole syndicate down. The league honors your integrity and the sport is cleaner for it.`,tags:[['good','Brought down a fixing ring']]}; } addStress(rng(6,14)); setFlag('marked_witness'); return {text:`You report it, but the syndicate finds out who talked. The ring scatters — and you look over your shoulder for years.`,tags:[['flag','Whistleblower — and marked']]}; }},
+      {label:'Report it to the league', tip:'Blow the whistle', apply:()=>{ setFlag('whistleblower'); karma(6); gainFame(rng(2,6)); if(rng(0,100)<75){ return {text:`You wear a wire and bring the whole syndicate down. The league honors your integrity and the sport is cleaner for it.`,tags:[['good','Brought down a fixing ring']]}; } addStress(rng(6,14)); setFlag('marked_witness'); return {text:`You report it, but the syndicate finds out who talked. The ring scatters — and you look over your shoulder for years.`,tags:[['flag','Whistleblower — and marked']]}; }},
     ]};}},
 /* SPORT — play through an injury */
 { id:'w2_playthrough', once:false, weight:13, when:S=>proAthleteActive()&&(S.age-(S._lastW14||-99)>=2),
@@ -3875,7 +3890,7 @@ const EVENTS = [
     choices:[
       {label:'Pocket the cash', tip:'Free money, big risk', apply:()=>{ if(rng(0,100)<30){ money(0); if(p.scholarship||p.scholarshipOffered){ p.scholarship=false; p.scholarshipOffered=false; S.schoolTuition=rng(8000,30000); } if(p.rep!=null)p.rep=clamp(p.rep-rng(10,20),0,100); else p.schoolReputation=clamp((p.schoolReputation||0)-rng(10,20),0,100); setFlag('recruiting_violation'); return {text:`Compliance catches wind of it. You're ruled ineligible, your scholarship is yanked, and the program's name is dragged through the mud. Disaster.`,tags:[['bad','Recruiting violation']]}; } money(cash); karma(-2); setFlag('took_booster_cash'); return {text:`You take the <b>${cur()}${cash.toLocaleString()}</b> and keep your mouth shut. Nobody's checking — for now.`,tags:[['flag',`+${cur()}${cash.toLocaleString()} (off the books)`]]}; }},
       {label:'Decline — keep it clean', tip:'Play by the rules', apply:()=>{ karma(3); driftPers('discipline',1); return {text:`You hand it back. Your NIL money is real and legit; you're not risking your eligibility for a shady envelope.`,tags:[['good','Kept it clean']]}; }},
-      {label:'Report the booster', tip:'Blow the whistle', apply:()=>{ karma(4); if(rng(0,100)<70){ if(p.rep!=null)p.rep=clamp(p.rep+rng(2,6),0,100); else p.schoolReputation=clamp((p.schoolReputation||0)+rng(2,6),0,100); return {text:`You report the booster to compliance. The program cleans house and quietly respects your integrity.`,tags:[['good','Reported the booster']]}; } S.popularity=clamp((S.popularity||50)-rng(2,6)); return {text:`You report it, but teammates who liked the extra cash flowing around freeze you out. Doing right isn't always popular.`,tags:[['flag','Snitched on a booster']]}; }},
+      {label:'Report the booster', tip:'Blow the whistle', apply:()=>{ setFlag('whistleblower'); karma(4); if(rng(0,100)<70){ if(p.rep!=null)p.rep=clamp(p.rep+rng(2,6),0,100); else p.schoolReputation=clamp((p.schoolReputation||0)+rng(2,6),0,100); return {text:`You report the booster to compliance. The program cleans house and quietly respects your integrity.`,tags:[['good','Reported the booster']]}; } S.popularity=clamp((S.popularity||50)-rng(2,6)); return {text:`You report it, but teammates who liked the extra cash flowing around freeze you out. Doing right isn't always popular.`,tags:[['flag','Snitched on a booster']]}; }},
     ]};}},
 /* PRO SPORT — a flashy agent wants to sign you */
 { id:'w3_agent', once:false, weight:12, when:S=>proAthleteActive()&&!has('has_sports_agent')&&(S.age-(S._lastW17||-99)>=2),
@@ -5808,7 +5823,7 @@ function breachRefuse(){ const b=S._breach; if(!b)return; closeModal();
   else { S.legalDebt={amount:short, dueAge:S.age+2, clubName:b.clubName}; setFlag('breach_debtor');
     pushLog(`⚖️ I refused to pay ${b.clubName}. The court seized ${fcm(got)} and I still owe ${fcm(short)}.`,[['bad',`Owes ${fcm(short)}`]]);
     resultModal('Lawsuit','Judgment Against You ⚖️','⚖️',[`The court seized <b>${fcm(got)}</b> but you still owe <b>${fcm(short)}</b>.`,`Pay it by age <b>${S.age+2}</b> or you'll be jailed for contempt.`],()=>finishBreach()); } }
-function finishBreach(){ const b=S._breach; S._breach=null; if(b){ breachRetire(b.sport); } setTab('life'); }
+function finishBreach(){ const b=S._breach; S._breach=null; if(b){ setFlag('breached_contract'); breachRetire(b.sport); } setTab('life'); }
 function legalDebtYear(){   // yearly (in ageUp): auto-pay if able; past the deadline & still owing → seize, then jail for contempt
   const d=S.legalDebt; if(!d) return;
   if((S.money||0)>=d.amount){ money(-d.amount); pushLog(`⚖️ I paid off my ${fcm(d.amount)} court-ordered debt to ${d.clubName}.`,[['good','Legal debt cleared']]); S.legalDebt=null; return; }
