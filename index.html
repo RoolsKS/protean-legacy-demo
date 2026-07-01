@@ -6578,6 +6578,7 @@ function renderActivities(){ const v=document.getElementById('activitiesView'); 
   if(S.age>=5){ const hb=Object.keys(S.hobbies||{}).filter(k=>typeof hobbyDef==='function'&&hobbyDef(k)); const top=hb.sort((a,b)=>S.hobbies[b].level-S.hobbies[a].level)[0];
     h+=hubCard('🎨','Hobbies & Passions', top?`${hobbyDef(top).icon} ${hobbyDef(top).name} · ${hobbyTier(S.hobbies[top].level)}${hb.length>1?` +${hb.length-1} more`:''}`:'Find a passion — talent, calm & income', "hobbiesMenu()"); }
   h+=hubCard('🩺','See a Doctor','Check-ups, illnesses & quitting habits', "seeDoctor()");
+  if(S.age>=18) h+=hubCard('🏠','Adopt a Child','Grow your family through adoption', "adoptionMenu()");
   h+=hubCard('🌍','Emigrate', S.age<18?'Ask your parents to move (good luck)':'Move to a new country or city', "emigrate()");
   h+=hubCard('🚗','Licenses', `${licenseSummary()}`, "setTab('licenses')");
   h+=hubCard('🛂','Passport', passportValid()?`✅ Valid until age ${S.passportExpires}`:(S.passport?'⚠️ Expired — renew it':(S.passportApp&&S.passportApp.stage==='processing'?(S.age>=S.passportApp.readyAge?'📨 Ready — come collect it!':'⏳ Application processing…'):'Apply: photo → office → wait → collect')), "applyPassport()");
@@ -6791,7 +6792,7 @@ function openPerson(id){
     ${p.rel}${p.fam?` · Age ${p.age}`:''} · <b style="color:${col}">${relStatus(p)}</b> · ${TRAIT_EMO[tr]||'🙂'} <b style="color:var(--text)">${tr.charAt(0).toUpperCase()+tr.slice(1)}</b>
     ${occ?`<br>💼 ${occ}`:''}${est!=null?`<br>💰 ~${fcm(est)} est. net worth${p.affinity<60?' <span style="font-size:11px">(likely more — get closer)</span>':''}`:''}
     ${p.custody&&(p.age||0)<18?`<br>🧑‍⚖️ Custody: <b style="color:var(--text)">${p.custody==='you'?'lives with you':p.custody==='ex'?'lives with '+(p.coParentName||'your ex'):'joint custody'}</b>`:''}
-    ${p.privateSchool?`<br>🎓 <b style="color:var(--text)">Private school</b>${p.eduInvest?` · ${p.eduInvest}yr`:''}`:''}${p.nanny?`<br>👶 <b style="color:var(--text)">Nanny</b> in the home`:''}
+    ${p.adopted?`<br>💛 <b style="color:var(--text)">Adopted</b> into the family`:''}${p.privateSchool?`<br>🎓 <b style="color:var(--text)">Private school</b>${p.eduInvest?` · ${p.eduInvest}yr`:''}`:''}${p.nanny?`<br>👶 <b style="color:var(--text)">Nanny</b> in the home`:''}
     <br>🧠 Recently: <i>“${last}”</i>${moments}${summ}</div>
     <div class="relbars" style="margin-top:9px">${pbar('Relationship',p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}
       ${p.romantic?barRow('💞 Spark',ensureSpark(p),100,{color:sparkBand(ensureSpark(p)).c}):''}
@@ -7099,6 +7100,39 @@ function ensureInLaws(spouseId){ const sp=S.people[spouseId]; if(!sp||sp._inLaws
   if(rng(0,100)<88) mk('inlaw_m_'+spouseId,'f','Mother-in-Law',rng(22,34));
   if(rng(0,100)<82) mk('inlaw_f_'+spouseId,'m','Father-in-Law',rng(24,38));
 }
+/* ---- ADOPTION — grow your family through an agency. An adopted child joins the tree,
+   is heir-eligible (carries the family name & legacy, their own genes), and works with
+   every kids system (raise, allowance, private school, custody, birthdays). Deterministic. ---- */
+function adoptionMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  if(S.age<18){ toast('You must be 18+ to adopt.'); return; }
+  logAct('call',{fn:'adoptionMenu'});
+  const fee=Math.round(rng(12000,30000)*priceMult());
+  openModal({banner:'Adoption', title:'🏠 Adopt a Child', icon:'🏠', closable:true,
+    text:`Grow your family through adoption. A home-study and agency fees (~${fcm(fee)}) apply, and approval isn't guaranteed — a stable home, clean record and means all help. Who are you hoping to welcome?`,
+    choices:[
+      {label:'👶 Adopt a newborn', tip:`Fees ~${fcm(fee)}`, alt:true, fn:()=>doAdopt(0,fee)},
+      {label:'🧒 Adopt a toddler', tip:`Fees ~${fcm(Math.round(fee*0.8))}`, alt:true, fn:()=>doAdopt(rng(2,4),Math.round(fee*0.8))},
+      {label:'🧑 Adopt an older child', tip:`Fees ~${fcm(Math.round(fee*0.6))} · quicker`, alt:true, fn:()=>doAdopt(rng(7,13),Math.round(fee*0.6))},
+      {label:'‹ Back', fn:()=>{closeModal();setTab('activities');}},
+    ]}); }
+function doAdopt(childAge, fee){
+  if(S.money<fee){ resultModal('Adoption','Out of Reach 🏠','🏠',[`Adoption fees run about <b>${fcm(fee)}</b> — more than you can cover right now.`,`Build some stability and come back.`],()=>setTab('activities')); return; }
+  let approval = clamp(Math.round(64 + (S.karma||0)*0.25 + (has('married')?10:0) + (netWorth()>200000?8:0) + ((S.stats.happy||50)-50)*0.1), 12, 94);
+  if(rng(0,100) < approval){                                   // APPROVED
+    spend(fee);
+    const g=rand()<.5?'m':'f'; const id='kid'+(S.kidSeq=(S.kidSeq||0)+1);
+    const name=(nm(g)+' '+(S.surname||pick(LAST))).trim();
+    S.people[id]=person(id,name, g==='m'?'Son':'Daughter', rng(56,74), rng(44,64), {gender:g,gen:1,age:childAge,fam:true});
+    S.people[id].adopted=true; S.people[id].genome=rollGenome(null,null);   // not biological — their own genes
+    setFlag('has_kids'); setFlag('adopted_a_child'); chg('happy',10); karma(4); addSelfWorth(4);
+    ledgerAdd('milestone',24,{who:id,note:`Adopted ${name} into the family.`});
+    pushLog(`🏠 I adopted <b>${name}</b>${childAge>0?`, age ${childAge}`:', a newborn'} — welcome to the family. 💛`,[['good',`Adopted ${name}`]]);
+    resultModal('Adoption','Welcome Home 💛','🏠',[`You adopted <b>${name}</b>! They're part of your family and your legacy now — an adopted child is every bit your heir.`,`The bond will grow with the time and love you put in.`],()=>setTab('people'));
+  } else {                                                      // DECLINED
+    const partial=Math.round(fee*0.3); spend(partial); chg('happy',-6);
+    pushLog(`🏠 My adoption application was <b>declined</b> this round${partial>0?` (lost ${cur()}${partial.toLocaleString()} in fees)`:''}.`,[['bad','Adoption declined']]);
+    resultModal('Adoption','Not This Time 😔','😔',[`The agency declined your application for now.`,`A steadier home — finances, a clean record, a happier you — improves your odds. Try again.`],()=>setTab('activities'));
+  } }
 /* ---- MARRIAGE DEPTH — a "spark" that lives, fades, and can be rekindled ---- */
 function ensureSpark(p){ if(p.spark==null) p.spark=clamp(50+Math.round(((p.affinity||50)-50)/2)); return p.spark; }
 function sparkBand(v){ return v>=75?{l:'Passionate',c:'var(--good)'}:v>=50?{l:'Comfortable',c:'var(--good)'}:v>=30?{l:'Strained',c:'var(--warn)'}:{l:'On the rocks',c:'var(--bad)'}; }
