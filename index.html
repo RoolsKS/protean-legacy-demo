@@ -3730,6 +3730,134 @@ const EVENTS = [
       {label:'Finally chase the dream you shelved', tip:'Now or never', apply:()=>{ driftPers('boldness',3); chg('happy',rng(4,9)); const cost=Math.min(Math.max(0,S.money),rng(1000,15000)); if(cost>0)money(-cost); setFlag('chased_the_dream'); return {text:`You dust off the dream you buried at 25 — the book, the band, the trip, the business. You bet <b>${cur()}${cost.toLocaleString()}</b> on yourself. It feels terrifying and completely right.`,tags:[['good','Chased the dream']]}; }},
     ]}) },
 
+/* ═══════════ 📖 STORY WAVE 2 — deeper crime / political / parenting / sport ═══════════ */
+/* CRIME — a shoplifting dare */
+{ id:'w2_shoplift', once:false, weight:13, when:S=>S.age>=12&&S.age<=19&&!inJail()&&(S.age-(S._lastW1||-99)>=3),
+  build:S=>{ S._lastW1=S.age; return {yr:`Age ${S.age}`, title:'🛒 The Dare',
+    text:`Your friends dare you to pocket something from the corner shop without paying. The clerk isn't looking. Do you do it?`,
+    choices:[
+      {label:'Swipe it', tip:'Cheap thrill, real risk', apply:()=>{ if(rng(0,100)<32){ const u=uw(); u.heat=clamp(u.heat+rng(4,10),0,100); setFlag('caught_shoplifting'); karma(-3); S.popularity=clamp((S.popularity||50)-rng(1,4)); if(S.age<18){ const mom=P('mom'); if(mom&&mom.alive)rel('mom',-rng(3,8),-rng(2,5),'Caught you stealing.'); } return {text:`A hand clamps on your shoulder — store security. You're caught red-handed and your parents are called. Humiliating.`,tags:[['bad','Caught shoplifting']]}; } chg('happy',rng(1,4)); driftPers('boldness',1); karma(-1); return {text:`You walk out with it, heart pounding. Your friends are impressed. You got away with it — this time.`,tags:[['flag','Petty theft']]}; }},
+      {label:'Refuse — not worth it', tip:'Keep clean', apply:()=>{ karma(2); driftPers('discipline',1); if(rng(0,100)<40)S.popularity=clamp((S.popularity||50)-rng(1,3)); return {text:`You shake your head and put it back. A couple of friends razz you for it, but you keep your record spotless.`,tags:[['good','Stayed clean']]}; }},
+      {label:'Distract while they steal', tip:'Accomplice', apply:()=>{ karma(-2); driftPers('boldness',1); if(rng(0,100)<18){ const u=uw(); u.heat=clamp(u.heat+rng(3,8),0,100); return {text:`Your 'distraction' is too obvious and the clerk clocks the whole crew. You're all marched out.`,tags:[['bad','Busted as lookout']]}; } chg('happy',rng(1,3)); return {text:`You chat up the clerk while your friends do the deed. Nobody suspects the charming one.`,tags:[['flag','Played lookout']]}; }},
+    ]};}},
+/* CRIME — a getaway-driver offer */
+{ id:'w2_getaway', once:false, weight:12, when:S=>S.age>=18&&!inJail()&&(has('has_car')||has('criminal')||(uw().rep||0)>0)&&(S.age-(S._lastW2||-99)>=4),
+  build:S=>{ S._lastW2=S.age; const take=rng(8000,60000); return {yr:`Age ${S.age}`, title:'🚗 One Job',
+    text:`A guy you know needs a wheelman for "one clean job." Your cut would be <b>${cur()}${take.toLocaleString()}</b>. No violence, he swears. Do you drive?`,
+    choices:[
+      {label:'Take the wheel', tip:'Fast money, hard time', apply:()=>{ const u=uw(); if(rng(0,100) < 40 - (u.rep||0)/5){ const sentence=rng(2,6); u.jailUntil=S.age+sentence; u.heat=clamp(u.heat+30,0,100); setFlag('criminal'); addTrauma('prison',rng(20,38),`the years the "one job" cost you`); chg('happy',-rng(8,15)); return {text:`It goes wrong. Silent alarm, a chase, and the law catches up. <b>${sentence} years</b> in ${prisonWord()} for your trouble.`,tags:[['bad',`Prison: ${sentence}yr`]]}; } money(take); u.rep=Math.min(120,(u.rep||0)+rng(4,9)); u.heat=clamp(u.heat+rng(8,18),0,100); setFlag('criminal'); driftPers('boldness',2); return {text:`Clean in, clean out. You pocket <b>${cur()}${take.toLocaleString()}</b> and a little underworld reputation. Nobody saw a thing.`,tags:[['flag',`+${cur()}${take.toLocaleString()}`]]}; }},
+      {label:'Refuse and forget it', tip:'Walk away', apply:()=>{ karma(2); driftPers('discipline',1); return {text:`You tell him to find someone else. Some money isn't worth the cage that comes with it.`,tags:[['good','Turned down the job']]}; }},
+      {label:'Tip off the police', tip:'Snitch — risky', apply:()=>{ karma(3); const u=uw(); if((u.rep||0)>0 && rng(0,100)<35){ u.rep=Math.max(0,(u.rep||0)-rng(5,12)); setFlag('marked_snitch'); return {text:`You tip off the cops and the job is busted — but word gets out you talked. The wrong people now have your name.`,tags:[['bad','Marked as a snitch']]}; } return {text:`You quietly warn the police. The job never happens, and no one ever knows it was you.`,tags:[['good','Did the right thing']]}; }},
+    ]};}},
+/* CRIME — you witness a crime */
+{ id:'w2_witness', once:false, weight:12, when:S=>S.age>=16&&!inJail()&&(S.age-(S._lastW3||-99)>=4),
+  build:S=>{ S._lastW3=S.age; const crime=pick(['a mugging in an alley','a hit-and-run','a store robbery','a brutal fight','someone torching a car']); return {yr:`Age ${S.age}`, title:'👁️ You Saw It',
+    text:`You witness <b>${crime}</b> and you're the only one who got a clear look at the culprit. The police want a statement. What do you do?`,
+    choices:[
+      {label:'Testify honestly', tip:'Do your duty', apply:()=>{ karma(4); driftPers('boldness',1); if(rng(0,100)<15){ addStress(rng(6,14)); setFlag('marked_witness'); return {text:`You give a full statement and the culprit is charged — but they know your face now, and you sleep with one eye open.`,tags:[['flag','Testified — and marked']]}; } return {text:`You tell the truth and your testimony puts a criminal away. Justice, thanks to you.`,tags:[['good','Stood up for justice']]}; }},
+      {label:'Say you saw nothing', tip:'Stay out of it', apply:()=>{ karma(-2); addStress(rng(2,6)); return {text:`"Sorry officer, it all happened so fast." You keep your head down and your name out of it. The guilty walk.`,tags:[['flag','Looked the other way']]}; }},
+      {label:'Take a bribe to forget', tip:'Cash for silence', apply:()=>{ const bribe=rng(1000,15000); money(bribe); karma(-5); addStress(rng(4,12)); setFlag('took_hush_money'); return {text:`A quiet envelope of <b>${cur()}${bribe.toLocaleString()}</b> changes your memory completely. You take the money and the guilt.`,tags:[['bad',`Hush money +${cur()}${bribe.toLocaleString()}`]]}; }},
+    ]};}},
+/* CRIME — bribe the officer */
+{ id:'w2_bribe', once:false, weight:11, when:S=>S.age>=18&&!inJail()&&((uw().heat||0)>=20||has('criminal'))&&(S.age-(S._lastW4||-99)>=3),
+  build:S=>{ S._lastW4=S.age; return {yr:`Age ${S.age}`, title:'🚔 Pulled Over',
+    text:`Flashing lights. An officer approaches — and you're carrying something you shouldn't be. They haven't searched yet. What's the play?`,
+    choices:[
+      {label:'Slip them some cash', tip:'Bribery — a gamble', apply:()=>{ const u=uw(); if(rng(0,100)<45){ const bribe=rng(200,2000); money(-bribe); u.heat=clamp(u.heat-rng(5,15),0,100); return {text:`The bill disappears into a pocket and the officer waves you on. Costly, but you're free.`,tags:[['flag',`Bribed a cop −${cur()}${bribe.toLocaleString()}`]]}; } const sentence=rng(1,3); u.jailUntil=S.age+sentence; setFlag('criminal'); addTrauma('prison',rng(12,24),'trying to bribe the wrong cop'); return {text:`Wrong officer. Attempted bribery on top of everything else — <b>${sentence} years</b> in ${prisonWord()}.`,tags:[['bad',`Prison: ${sentence}yr`]]}; }},
+      {label:'Stay calm and comply', tip:'Play it straight', apply:()=>{ const u=uw(); if(rng(0,100) < 55 - (S.stats.smarts/6)){ const sentence=rng(1,2); u.jailUntil=S.age+sentence; setFlag('criminal'); u.heat=clamp(u.heat-20,0,100); return {text:`They search the car and find it. Nothing you can do now — <b>${sentence} year${sentence>1?'s':''}</b> inside.`,tags:[['bad',`Prison: ${sentence}yr`]]}; } u.heat=clamp(u.heat-rng(3,8),0,100); return {text:`You keep it together, the officer finds nothing incriminating, and you're sent on your way with a warning.`,tags:[['good','Talked your way out']]}; }},
+      {label:'Floor it', tip:'Run — desperate', apply:()=>{ const u=uw(); if(rng(0,100)<80){ const sentence=rng(2,5); u.jailUntil=S.age+sentence; setFlag('criminal'); chg('health',-rng(0,6)); addTrauma('prison',rng(18,32),'the high-speed chase that ended in a cell'); return {text:`A high-speed chase, spike strips, and a very hard stop. Fleeing made it far worse — <b>${sentence} years</b>.`,tags:[['bad',`Prison: ${sentence}yr`]]}; } money(-rng(200,1500)); u.heat=clamp(u.heat+rng(10,25),0,100); return {text:`Somehow you lose them in the backstreets, heart hammering. You ditch the car and vanish — for now.`,tags:[['flag','Outran the law']]}; }},
+    ]};}},
+/* POLITICS — a lobbyist's envelope */
+{ id:'w2_lobby', once:false, weight:14, when:S=>S.office&&S.office.inOffice&&(S.age-(S._lastW5||-99)>=2),
+  build:S=>{ S._lastW5=S.age; const sum=rng(20000,250000); const cause=pick(['a pipeline','a casino license','a defense contract','a zoning change','a tax break']); return {yr:`Age ${S.age}`, title:'💼 The Lobbyist',
+    text:`A slick lobbyist wants your vote on <b>${cause}</b> and slides you a "campaign contribution" of <b>${cur()}${sum.toLocaleString()}</b>. It's a bribe in a nice suit. What do you do?`,
+    choices:[
+      {label:'Take it and vote their way', tip:'Corrupt — but rich', apply:()=>{ money(sum); karma(-5); setFlag('corrupt_politician'); if(rng(0,100)<25){ S.office.approval=clamp(S.office.approval-rng(12,28),0,100); return {text:`You take the money — but an investigative reporter connects the dots. The scandal tanks your approval.`,tags:[['bad',`Bribe exposed`]]}; } return {text:`The <b>${cur()}${sum.toLocaleString()}</b> quietly lands in your account and your vote follows. Nobody's the wiser — yet.`,tags:[['flag',`Took a bribe +${cur()}${sum.toLocaleString()}`]]}; }},
+      {label:'Refuse, on principle', tip:'Clean hands', apply:()=>{ S.office.approval=clamp(S.office.approval+rng(1,4),0,100); karma(4); driftPers('discipline',1); return {text:`You show the lobbyist the door. Your bank account stays the same, but so does your conscience.`,tags:[['good','Turned down the bribe']]}; }},
+      {label:'Expose them publicly', tip:'Make it a headline', apply:()=>{ if(rng(0,100)<70){ S.office.approval=clamp(S.office.approval+rng(6,16),0,100); gainFame(rng(2,5)); karma(5); return {text:`You take the offer straight to the press. The lobbyist is disgraced and you're hailed as an incorruptible reformer.`,tags:[['good','Exposed corruption']]}; } S.office.approval=clamp(S.office.approval-rng(2,8),0,100); return {text:`You go public — but they lawyer up and spin it as a smear. It's messier than you hoped.`,tags:[['flag','It got messy']]}; }},
+    ]};}},
+/* POLITICS — a scandal breaks */
+{ id:'w2_scandal', once:false, weight:12, when:S=>S.office&&S.office.inOffice&&(S.age-(S._lastW6||-99)>=3),
+  build:S=>{ S._lastW6=S.age; const dirt=pick(['an old embarrassing photo','a misused expense account','a leaked private message','a conflict of interest','an affair rumor']); return {yr:`Age ${S.age}`, title:'📰 Scandal Breaks',
+    text:`The press has <b>${dirt}</b> and it's the top story. Your office is in crisis mode. How do you respond?`,
+    choices:[
+      {label:'Deny everything', tip:'Brazen it out', apply:()=>{ if(rng(0,100) < 40+S.stats.smarts/6){ S.office.approval=clamp(S.office.approval-rng(2,7),0,100); return {text:`You flatly deny it and muddy the waters enough that the story fizzles. Barely.`,tags:[['flag','Denied it']]}; } S.office.approval=clamp(S.office.approval-rng(12,26),0,100); setFlag('caught_lying'); return {text:`Your denial collapses when more evidence drops. Now it's a cover-up too. Approval craters.`,tags:[['bad','Cover-up backfired']]}; }},
+      {label:'Own it and apologize', tip:'Contrition', apply:()=>{ S.office.approval=clamp(S.office.approval-rng(4,12),0,100); karma(2); driftPers('warmth',1); if(rng(0,100)<50) S.office.approval=clamp(S.office.approval+rng(3,10),0,100); return {text:`You hold a press conference, take responsibility, and ask for forgiveness. Voters respect the honesty — most of them.`,tags:[['flag','Owned the scandal']]}; }},
+      {label:'Spin it and counterattack', tip:'Change the subject', apply:()=>{ if(rng(0,100)<55){ S.office.approval=clamp(S.office.approval-rng(1,5),0,100); return {text:`Your team floods the zone with a rival's dirt and a shiny new policy. The scandal drowns in noise.`,tags:[['flag','Spun the story']]}; } S.office.approval=clamp(S.office.approval-rng(8,18),0,100); return {text:`The counterattack looks cynical and the press pounces harder. It backfires.`,tags:[['bad','Spin backfired']]}; }},
+    ]};}},
+/* POLITICS — a tough vote of conscience */
+{ id:'w2_vote', once:false, weight:12, when:S=>S.office&&S.office.inOffice&&(S.age-(S._lastW7||-99)>=2),
+  build:S=>{ S._lastW7=S.age; const bill=pick(['a controversial surveillance bill','an unpopular but necessary tax','a sweeping environmental law','a divisive social reform','a costly public-health mandate']); return {yr:`Age ${S.age}`, title:'🗳️ The Hard Vote',
+    text:`<b>${bill.charAt(0).toUpperCase()+bill.slice(1)}</b> comes to the floor. Your conscience and the polls point in opposite directions. How do you vote?`,
+    choices:[
+      {label:'Vote your conscience', tip:'Principle over polls', apply:()=>{ karma(4); driftPers('boldness',2); S.office.approval=clamp(S.office.approval-rng(3,10),0,100); if(rng(0,100)<35){ S.office.approval=clamp(S.office.approval+rng(8,18),0,100); gainFame(rng(1,4)); return {text:`You vote your conscience and take the hit — but history (and, eventually, the voters) prove you right. A profile in courage.`,tags:[['good','Voted on principle']]}; } return {text:`You do what you believe is right, knowing it'll cost you at the ballot box. You can live with that.`,tags:[['flag','Principle over polls']]}; }},
+      {label:'Vote with the polls', tip:'Read the room', apply:()=>{ S.office.approval=clamp(S.office.approval+rng(4,11),0,100); karma(-2); driftPers('ambition',1); return {text:`You go where the votes are. Your approval ticks up — even if you're not sure you did the right thing.`,tags:[['flag','Followed the polls']]}; }},
+      {label:'Abstain and dodge it', tip:'No fingerprints', apply:()=>{ S.office.approval=clamp(S.office.approval-rng(1,5),0,100); driftPers('discipline',-1); return {text:`You conveniently miss the vote. No one can pin it on you — but everyone notices the empty chair.`,tags:[['flag','Ducked the vote']]}; }},
+    ]};}},
+/* PARENTING — a bad report card */
+{ id:'w2_report', once:false, weight:13, when:S=>Object.values(S.people).some(p=>p.alive&&p.fam&&p.gen>=1&&p.age>=6&&p.age<=17)&&(S.age-(S._lastW8||-99)>=2),
+  build:S=>{ S._lastW8=S.age; const kids=Object.values(S.people).filter(p=>p.alive&&p.fam&&p.gen>=1&&p.age>=6&&p.age<=17); const k=kids[rng(0,kids.length-1)]; return {yr:`Age ${S.age}`, title:'📋 A Bad Report Card',
+    text:`Your child <b>${k.name}</b> (${k.age}) brings home a report card full of failing grades. How do you handle it as a parent?`,
+    choices:[
+      {label:'Ground them until it improves', tip:'Strict', apply:()=>{ rel(k.id,-rng(2,7),+rng(0,3),`You cracked down on their grades.`); if(rng(0,100)<50){ k.smart=(k.smart||0)+1; return {text:`You lay down the law — no games until the grades come up. ${k.name} sulks, but the next report card is better.`,tags:[['flag','Strict parenting']]}; } return {text:`You come down hard. ${k.name} resents it and digs in their heels. The grades don't budge.`,tags:[['bad','Backfired']]}; }},
+      {label:'Sit down and encourage them', tip:'Supportive', apply:()=>{ rel(k.id,+rng(4,9),+rng(3,6),`You supported them through a rough patch.`); chg('happy',rng(1,4)); driftPers('warmth',1); return {text:`You ask what's really going on and listen. Turns out ${k.name} was struggling with something else entirely. Feeling supported, they start to turn it around.`,tags:[['good','Understanding parent']]}; }},
+      {label:'Hire a tutor', tip:'Throw money at it', apply:()=>{ const cost=rng(500,4000); if(S.money>0)money(-Math.min(cost,S.money)); rel(k.id,+rng(1,4),+rng(1,3),`You got them help with school.`); return {text:`You bring in a private tutor for <b>${cur()}${cost.toLocaleString()}</b>. Steady progress follows — money well spent.`,tags:[['good','Hired a tutor']]}; }},
+    ]};}},
+/* PARENTING — a teen sneaks out */
+{ id:'w2_sneak', once:false, weight:12, when:S=>Object.values(S.people).some(p=>p.alive&&p.fam&&p.gen>=1&&p.age>=13&&p.age<=17)&&(S.age-(S._lastW9||-99)>=2),
+  build:S=>{ S._lastW9=S.age; const kids=Object.values(S.people).filter(p=>p.alive&&p.fam&&p.gen>=1&&p.age>=13&&p.age<=17); const k=kids[rng(0,kids.length-1)]; return {yr:`Age ${S.age}`, title:'🌙 Snuck Out',
+    text:`It's 2 a.m. and you catch your teenager <b>${k.name}</b> (${k.age}) climbing back through a window after sneaking out to a party. What do you do?`,
+    choices:[
+      {label:'Ground them hard', tip:'Lay down the law', apply:()=>{ rel(k.id,-rng(3,9),+rng(0,3),`You grounded them for sneaking out.`); if(rng(0,100)<45){ setFlag('rebel_kid'); return {text:`You ground ${k.name} for a month. They slam the door and only get sneakier about it.`,tags:[['flag','Rebellious teen']]}; } return {text:`You come down firm. ${k.name} grumbles but gets the message and reins it in.`,tags:[['flag','Grounded them']]}; }},
+      {label:'Talk it out calmly', tip:'Build trust', apply:()=>{ rel(k.id,+rng(4,9),+rng(4,8),`You handled their rebellion with trust.`); driftPers('warmth',1); chg('happy',rng(1,3)); return {text:`Instead of exploding, you sit ${k.name} down and talk — about safety, about trust. They open up. You come out of it closer.`,tags:[['good','Built trust']]}; }},
+      {label:'Let it slide, you were young once', tip:'Cool parent', apply:()=>{ rel(k.id,+rng(2,6),-rng(0,3),`You let their sneaking out slide.`); if(rng(0,100)<40){ setFlag('rebel_kid'); return {text:`You wink and let it go. ${k.name} loves you for it — and takes a mile from your inch.`,tags:[['flag','Too lenient']]}; } return {text:`You remember being their age and let it slide with a knowing look. They respect the trust.`,tags:[['flag','Cool parent']]}; }},
+    ]};}},
+/* PARENTING — your child is being bullied */
+{ id:'w2_bully', once:false, weight:12, when:S=>Object.values(S.people).some(p=>p.alive&&p.fam&&p.gen>=1&&p.age>=7&&p.age<=15)&&(S.age-(S._lastW10||-99)>=3),
+  build:S=>{ S._lastW10=S.age; const kids=Object.values(S.people).filter(p=>p.alive&&p.fam&&p.gen>=1&&p.age>=7&&p.age<=15); const k=kids[rng(0,kids.length-1)]; return {yr:`Age ${S.age}`, title:'😢 My Kid Is Being Bullied',
+    text:`Your child <b>${k.name}</b> (${k.age}) comes home in tears — they're being bullied at school. Every parent instinct fires at once. What do you do?`,
+    choices:[
+      {label:'March down to the school', tip:'Demand action', apply:()=>{ rel(k.id,+rng(3,7),+rng(2,5),`You went to bat for them at school.`); if(rng(0,100)<60){ return {text:`You meet the principal and won't leave until there's a plan. The school steps in and the bullying stops.`,tags:[['good','Protected your kid']]}; } return {text:`The school shrugs and buries it in bureaucracy. ${k.name} feels heard by you, at least.`,tags:[['flag','Fought for them']]}; }},
+      {label:'Teach them to stand up for themselves', tip:'Build resilience', apply:()=>{ rel(k.id,+rng(2,6),+rng(2,4),`You taught them to stand tall.`); driftPers('boldness',1); if(rng(0,100)<55){ return {text:`You coach ${k.name} on confidence and boundaries. One day they stand up to the bully — and it works. They walk taller after that.`,tags:[['good','Raised a fighter']]}; } chg('happy',-rng(1,3)); return {text:`You encourage ${k.name} to stand up for themselves, but it escalates into a scuffle and a call from the school.`,tags:[['flag','It escalated']]}; }},
+      {label:'Tell them to just ignore it', tip:'Hope it passes', apply:()=>{ rel(k.id,-rng(1,5),-rng(1,3),`You brushed off their bullying.`); addStress(rng(2,5)); return {text:`"Just ignore them, it'll stop." It doesn't, and ${k.name} learns not to bring their problems to you.`,tags:[['bad','Dismissed their pain']]}; }},
+    ]};}},
+/* PARENTING — a child shows a talent */
+{ id:'w2_talent', once:false, weight:12, when:S=>Object.values(S.people).some(p=>p.alive&&p.fam&&p.gen>=1&&p.age>=6&&p.age<=14)&&(S.age-(S._lastW11||-99)>=3),
+  build:S=>{ S._lastW11=S.age; const kids=Object.values(S.people).filter(p=>p.alive&&p.fam&&p.gen>=1&&p.age>=6&&p.age<=14); const k=kids[rng(0,kids.length-1)]; const gift=pick(['music','painting','football','chess','coding','gymnastics','acting']); k.gift=gift; return {yr:`Age ${S.age}`, title:'🌟 A Natural Gift',
+    text:`Your child <b>${k.name}</b> (${k.age}) shows a real, rare talent for <b>${gift}</b>. Coaches and teachers are taking notice. How do you nurture it?`,
+    choices:[
+      {label:'Invest in the best coaching', tip:'All-in — costs money', apply:()=>{ const cost=rng(2000,20000); if(S.money>0)money(-Math.min(cost,S.money)); rel(k.id,+rng(2,6),+rng(2,5),`You invested in their ${gift} dream.`); k.talentBacked=true; setFlag('backed_a_prodigy'); return {text:`You pour <b>${cur()}${cost.toLocaleString()}</b> into elite ${gift} coaching for ${k.name}. If they've got it, you're giving them every chance to shine.`,tags:[['good',`Backed their talent`]]}; }},
+      {label:'Support it, keep it fun', tip:'No pressure', apply:()=>{ rel(k.id,+rng(4,8),+rng(3,6),`You let them enjoy their gift.`); chg('happy',rng(2,5)); driftPers('warmth',1); return {text:`You cheer ${k.name} on and keep it joyful — no pressure, just love. They light up every time they practice.`,tags:[['good','Supportive parent']]}; }},
+      {label:'Push them relentlessly', tip:'Make them great', apply:()=>{ driftPers('ambition',2); if(rng(0,100)<45){ rel(k.id,-rng(4,10),-rng(2,6),`You pushed them too hard.`); setFlag('pushy_parent'); return {text:`You drill ${k.name} for hours, chasing greatness. They start to resent the very thing they loved. Burnout looms.`,tags:[['bad','Pushed too hard']]}; } rel(k.id,+rng(0,3),0,`You demanded excellence.`); return {text:`You push ${k.name} hard, and they rise to it — for now. Only time will tell if the fire stays lit.`,tags:[['flag','Demanding parent']]}; }},
+    ]};}},
+/* SPORT — locker-room rift */
+{ id:'w2_locker', once:false, weight:13, when:S=>proAthleteActive()&&(S.age-(S._lastW12||-99)>=2),
+  build:S=>{ S._lastW12=S.age; const a=proAthlete(); const mate=samName(); return {yr:`Age ${S.age}`, title:'🔥 Locker-Room Rift',
+    text:`A star teammate is undermining you in the ${a.label} locker room — subtweets, cold shoulders, freezing you out of plays. It's poisoning the squad. What do you do?`,
+    choices:[
+      {label:'Squash it man-to-man', tip:'Clear the air', apply:()=>{ if(rng(0,100)<58){ a.p.morale=clamp((a.p.morale||60)+rng(4,10)); chg('happy',rng(1,4)); return {text:`You pull them aside and hash it out like adults. The tension breaks and the team's better for it.`,tags:[['good','Cleared the air']]}; } a.p.morale=clamp((a.p.morale||60)-rng(2,6)); return {text:`The talk turns into a shouting match. Now it's worse, and the whole squad felt the chill.`,tags:[['bad','It blew up']]}; }},
+      {label:'Freeze them right back', tip:'Cold war', apply:()=>{ a.p.form=clamp((a.p.form||60)-rng(1,5)); driftPers('warmth',-1); addStress(rng(3,8)); return {text:`You go ice cold in return. The locker room splits into camps and the results dip while the feud festers.`,tags:[['flag','Locker-room cold war']]}; }},
+      {label:'Take it to the coach', tip:'Chain of command', apply:()=>{ if(rng(0,100)<50){ a.p.morale=clamp((a.p.morale||60)+rng(2,6)); return {text:`The coach mediates and lays down the law. Order is restored — though some call you a snitch.`,tags:[['flag','Coach stepped in']]}; } return {text:`The coach tells you both to sort it out like professionals. Nothing really changes.`,tags:[['flag','Coach shrugged']]}; }},
+    ]};}},
+/* SPORT — a match-fixing bribe */
+{ id:'w2_matchfix', once:false, weight:11, when:S=>proAthleteActive()&&!inJail()&&(S.age-(S._lastW13||-99)>=4),
+  build:S=>{ S._lastW13=S.age; const a=proAthlete(); const sum=rng(50000,600000); return {yr:`Age ${S.age}`, title:'🎰 The Fix Is In',
+    text:`A shadowy syndicate offers you <b>${cur()}${sum.toLocaleString()}</b> to throw an upcoming ${a.label} match. Career-ending if it ever comes out. Do you take it?`,
+    choices:[
+      {label:'Take the money, throw the game', tip:'Dirty money, huge risk', apply:()=>{ if(rng(0,100)<35){ money(-Math.min(Math.max(0,S.money),rng(50000,300000))); const u=uw(); const sentence=rng(1,3); u.jailUntil=S.age+sentence; setFlag('banned_for_fixing'); if(a.retire)a.retire(); addTrauma('prison',rng(20,35),'the fix that ended your career'); return {text:`Investigators catch the pattern. You're <b>banned for life</b>, stripped of your earnings, and jailed for <b>${sentence} year${sentence>1?'s':''}</b>. The career is over — in disgrace.`,tags:[['bad','Banned & jailed']]}; } money(sum); karma(-6); setFlag('match_fixer'); addStress(rng(6,14)); return {text:`You tank the match and collect <b>${cur()}${sum.toLocaleString()}</b> in dirty money. Nobody proves a thing — but you'll never watch a replay the same way.`,tags:[['flag',`Fixed a match +${cur()}${sum.toLocaleString()}`]]}; }},
+      {label:'Refuse and stay clean', tip:'Protect the game', apply:()=>{ karma(4); driftPers('discipline',1); if(a.p)a.p.morale=clamp((a.p.morale||60)+rng(1,5)); return {text:`You tell them to get lost. The game's the one clean thing you've got, and you're not selling it.`,tags:[['good','Refused the fix']]}; }},
+      {label:'Report it to the league', tip:'Blow the whistle', apply:()=>{ karma(6); gainFame(rng(2,6)); if(rng(0,100)<75){ return {text:`You wear a wire and bring the whole syndicate down. The league honors your integrity and the sport is cleaner for it.`,tags:[['good','Brought down a fixing ring']]}; } addStress(rng(6,14)); setFlag('marked_witness'); return {text:`You report it, but the syndicate finds out who talked. The ring scatters — and you look over your shoulder for years.`,tags:[['flag','Whistleblower — and marked']]}; }},
+    ]};}},
+/* SPORT — play through an injury */
+{ id:'w2_playthrough', once:false, weight:13, when:S=>proAthleteActive()&&(S.age-(S._lastW14||-99)>=2),
+  build:S=>{ S._lastW14=S.age; const a=proAthlete(); return {yr:`Age ${S.age}`, title:'🤕 Play Through It?',
+    text:`You're carrying a real injury, but there's a huge ${a.label} match this week and the team needs you. The doctors say rest; the fans say suit up. What do you do?`,
+    choices:[
+      {label:'Gut it out and play', tip:'Hero or casualty', apply:()=>{ if(rng(0,100)<45){ a.p.fitness=clamp((a.p.fitness||70)-rng(15,30)); chg('health',-rng(4,12)); a.p.form=clamp((a.p.form||60)-rng(3,8)); return {text:`You push through and re-injure yourself badly. Weeks on the sideline, and the body doesn't forget this one.`,tags:[['bad','Made it worse']]}; } a.p.form=clamp((a.p.form||60)+rng(4,10)); gainFame(rng(1,4)); chg('happy',rng(2,5)); return {text:`You grit through the pain and deliver when it matters. The fans chant your name — a warrior's performance.`,tags:[['good','Played the hero']]}; }},
+      {label:'Sit out and rest', tip:'Smart, unpopular', apply:()=>{ a.p.fitness=clamp((a.p.fitness||70)+rng(8,18)); chg('health',rng(1,4)); if(rng(0,100)<40){ a.p.morale=clamp((a.p.morale||60)-rng(2,6)); return {text:`You rest and heal — but the team loses without you and a few fans grumble that you're soft.`,tags:[['flag','Rested up']]}; } return {text:`You listen to the doctors and sit it out. You come back fresh and fully fit. The long game.`,tags:[['good','Protected your body']]}; }},
+      {label:'Numb it with painkillers', tip:'Dangerous shortcut', apply:()=>{ a.p.form=clamp((a.p.form||60)+rng(2,6)); if(rng(0,100)<35){ setFlag('painkiller_habit'); chg('health',-rng(3,8)); addStress(rng(4,10)); return {text:`The injections get you on the pitch — and hook you. A painkiller habit is a hard, dark road for an athlete.`,tags:[['bad','Painkiller habit']]}; } chg('health',-rng(1,4)); return {text:`You numb it and play. It works this time, but you know you're borrowing against your body.`,tags:[['flag','Numbed the pain']]}; }},
+    ]};}},
+
 /* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
 { id:'award_nom', once:false, weight:14,
   when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
@@ -6681,6 +6809,15 @@ function socPotential(){ const ath=Math.round(geneVal('vitality')*0.6 + (S.stats
 function soc(){ return S.soccer; }
 function socClub(){ const sc=soc(); return sc && sc.world && sc.world.clubs[sc.player.clubId]; }
 function socActive(){ return !!(S.soccer && S.soccer.player && !S.soccer.player.retired); }
+// the player's currently-active PRO sports career (any of the packs), for cross-sport story beats
+function proAthlete(){
+  if(socActive())return {p:S.soccer.player, label:'⚽ football', club:(socClub()&&socClub().name)||'your club', retire:()=>socDoRetire(true)};
+  if(bbActive())return {p:S.bball.player, label:'🏀 basketball', club:(bbTeam()&&bbTeam().name)||'your team', retire:()=>bbDoRetire(true)};
+  if(nflActive())return {p:S.nfl.player, label:'🏈 football', club:(nflTeam()&&nflTeam().name)||'your team', retire:()=>nflDoRetire(true)};
+  for(const k of ['tennis','volley','hockey']) if(sp2Active(k)) return {p:S[k].player, label:SP2_DEFS[k].emoji+' '+SP2_DEFS[k].name.toLowerCase(), club:SP2_DEFS[k].name, retire:()=>sp2Retire(k,true)};
+  return null;
+}
+function proAthleteActive(){ return !!proAthlete(); }
 // ---- Go pro: join an academy (era-gated, choose a position). Logged action. ----
 /* ============================================================
    ⚽ SCHOOL SPORTS → SOCCER PIPELINE — the youth feeder. Builds a
