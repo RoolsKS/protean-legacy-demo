@@ -3954,6 +3954,7 @@ function ageUp(){
   childSupportYear();                                                 // 👨‍👧 post-divorce custody: pay/receive child support each year (deterministic)
   kidsCareYear();                                                     // 👶🎓 nanny + private-school tuition for your minor kids (deterministic)
   partnersYear();                                                     // 💘 juggling multiple partners costs money, spark & peace (deterministic)
+  clubsYear();                                                        // 🎽 school clubs/teams accrue years & performance (deterministic)
   sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
   staffYear();                                                        // 🧑‍✈️ household staff salaries + their yearly perks (deterministic)
 
@@ -10462,7 +10463,7 @@ function doSchoolAct(k){ const a=SCHOOL_ACTS.find(x=>x.k===k); if(!a)return;
   S.clubs=S.clubs||[];
   if(S.clubs.includes(k)){ toast(`You're already in the ${a.name}.`); return; }
   if(!a.team){   // a club — anyone can join
-    S.clubs.push(k); S.popularity=clamp((S.popularity||50)+rng(2,6)); chg('happy',rng(1,4));
+    S.clubs.push(k); S.clubData=S.clubData||{}; S.clubData[k]={perf:rng(45,62),years:0,captain:false}; S.popularity=clamp((S.popularity||50)+rng(2,6)); chg('happy',rng(1,4));
     if(a.smarts) chg('smarts',a.smarts); if(a.looks) chg('looks',a.looks);
     if(rng(0,100)<45) addSchoolFriend(a.name);
     pushLog(`I joined the <b>${a.name}</b>. 🎽`,[['good',`Joined ${a.name}`]]);
@@ -10471,7 +10472,7 @@ function doSchoolAct(k){ const a=SCHOOL_ACTS.find(x=>x.k===k); if(!a)return;
   }
   // a team — you have to try out and make it
   const ath=S.fitness||50, made = rng(0,100) < (20 + ath*0.5 + S.stats.health*0.2 + (S.popularity||50)*0.1);
-  if(made){ S.clubs.push(k); S.popularity=clamp((S.popularity||50)+rng(4,9)); chg('happy',rng(2,5));
+  if(made){ S.clubs.push(k); S.clubData=S.clubData||{}; S.clubData[k]={perf:rng(38,55),years:0,captain:false}; S.popularity=clamp((S.popularity||50)+rng(4,9)); chg('happy',rng(2,5));
     if(a.sport){ S.fitness=clamp((S.fitness||50)+rng(2,5)); chg('health',rng(0,3)); } if(a.looks) chg('looks',a.looks);
     if(rng(0,100)<55) addSchoolFriend(a.name);
     pushLog(`I tried out for the <b>${a.name}</b> — and <b>made the team</b>! 🏅`,[['good',`Made ${a.name}`]]);
@@ -10481,6 +10482,40 @@ function doSchoolAct(k){ const a=SCHOOL_ACTS.find(x=>x.k===k); if(!a)return;
     resultModal('Activities', 'Cut from the Team', '😞', [`You tried out for the <b>${a.name}</b> but didn't make it.`, `Build up your <b>athleticism</b> (Mind & Body / gym) and try again.`], ()=>setTab('school'));
   }
 }
+/* ---- 🎽 CLUB / TEAM MANAGEMENT — per-activity performance, captaincy, practice & quit (BitLife-style). ---- */
+function clubData(k){ S.clubData=S.clubData||{}; if(!S.clubData[k]) S.clubData[k]={perf:50,years:0,captain:false}; return S.clubData[k]; }
+function clubHours(a){ return a.team?(a.sport?10:6):4; }
+function clubDetail(k){ const a=SCHOOL_ACTS.find(x=>x.k===k); if(!a||!(S.clubs||[]).includes(k)){ toast('You’re not in that activity.'); setTab('school'); return; }
+  logAct('call',{fn:'clubDetail',args:[k]}); const d=clubData(k);
+  const body=`<div style="text-align:left"><div class="genlabel" style="margin:2px 0 6px">${a.icon} ${a.name}</div>
+    ${socStatLine('Type', a.team?(a.sport?'Sports team':'Team'):'Club')}
+    ${socStatLine('Status', d.captain?'⭐ Captain':'Member')}
+    ${socStatLine('Years in', d.years)}
+    ${socStatLine('Weekly hours', clubHours(a))}
+    <div class="relbars" style="margin-top:8px">${pbar('Performance',d.perf)}</div></div>`;
+  openModal({banner:'Activity', title:`${a.icon} ${a.name}`, icon:a.icon, closable:true, text:body,
+    choices:[{label:'🏋️ Practice harder', alt:true, fn:()=>clubPractice(k)},{label:'🚪 Quit', alt:true, fn:()=>clubQuit(k)},{label:'‹ Back', fn:()=>{closeModal();setTab('school');}}] }); }
+function clubPractice(k){ const a=SCHOOL_ACTS.find(x=>x.k===k); if(!a){return;} if(!spendEnergy(15,'extra practice')){ setTab('school'); return; }
+  const d=clubData(k); const g=clamp(Math.round(rng(1,4) + (a.sport?(S.fitness||50):(S.stats&&S.stats.smarts||50))/100*2),1,6); d.perf=clamp(d.perf+g,0,100);
+  if(a.sport) S.fitness=clamp((S.fitness||50)+rng(1,3)); S.popularity=clamp((S.popularity||50)+rng(0,2)); chg('happy',rng(0,2));
+  let extra=''; if(!d.captain && d.perf>=82){ d.captain=true; setFlag('school_captain'); S.popularity=clamp((S.popularity||50)+rng(4,8)); gainFame(rng(0,2)); extra=' 🎖️ You were named team captain!'; }
+  pushLog(`${a.icon} Extra practice with the ${a.name.toLowerCase()} — performance ${d.perf}.${extra}`,[['good',`${a.name} +${g}`]]);
+  resultModal('Activity',`${a.icon} Practice`,a.icon,[`Your <b>${a.name}</b> performance is up to ${d.perf}.${extra}`,statBar('Performance',d.perf)],()=>setTab('school')); }
+function clubQuit(k){ const a=SCHOOL_ACTS.find(x=>x.k===k); S.clubs=(S.clubs||[]).filter(x=>x!==k); if(S.clubData) delete S.clubData[k]; S.popularity=clamp((S.popularity||50)-rng(1,4));
+  pushLog(`I quit the ${a?a.name.toLowerCase():'club'}.`,[['flag',`Left ${a?a.name:'a club'}`]]);
+  resultModal('Activity','You Quit 🚪','🚪',[`You left the ${a?a.name.toLowerCase():'club'}.`],()=>setTab('school')); }
+function clubsYear(){ if(!S||!S.alive) return; if(!['primary','high','college','cc'].includes(S.eduLevel)) return; S.clubData=S.clubData||{};
+  (S.clubs||[]).forEach(k=>{ const d=clubData(k); d.years=(d.years||0)+1; d.perf=clamp(d.perf+rng(0,2),0,100); }); }
+/* ---- 🎉 HOUSE PARTY — throw a bash for popularity (and risk). Deterministic. ---- */
+function houseParty(){ if(!S||isLocked())return; if(S.age<12||S.age>28){ toast('This isn’t really your house-party era.'); return; } logAct('call',{fn:'houseParty'});
+  if(!spendEnergy(25,'a party')){ setTab('school'); return; }
+  const cost=Math.round(rng(50,600)*priceMult()); if(S.money>0) money(-Math.min(cost,S.money));
+  const roll=rng(0,100); let title,icon,line,tags;
+  if(roll<50){ S.popularity=clamp((S.popularity||50)+rng(6,14)); chg('happy',rng(5,10)); gainFame(rng(0,2)); if(rng(0,100)<50)addSchoolFriend('house party'); title='Legendary Party 🎉'; icon='🎉'; line=`Your house party was the talk of the school — your popularity <b>soared</b>.`; tags=[['good','Legendary party']]; }
+  else if(roll<75){ S.popularity=clamp((S.popularity||50)+rng(2,6)); chg('happy',rng(3,6)); title='A Good Party 🥳'; icon='🥳'; line=`A solid turnout — a fun night, and a few new faces.`; tags=[['good','House party']]; }
+  else if(roll<90){ chg('happy',-rng(2,5)); S.popularity=clamp((S.popularity||50)-rng(1,4)); title='It Flopped 😬'; icon='😬'; line=`Barely anyone showed up. Painfully awkward.`; tags=[['flag','Party flopped']]; }
+  else { const dmg=Math.round(rng(200,3000)*priceMult()); if(S.money>0)money(-Math.min(dmg,S.money)); chg('happy',-rng(3,8)); if(S.age<18){ const mom=P('mom'),dad=P('dad'); if(mom&&mom.alive)rel('mom',-rng(4,10),-rng(2,6),'You trashed the house with a party.'); if(dad&&dad.alive)rel('dad',-rng(4,10),-rng(2,6),'You trashed the house with a party.'); setFlag('grounded'); } karma(-1); title='Party Disaster 🚨'; icon='🚨'; line=`It got completely out of hand — ${cur()}${dmg.toLocaleString()} in damage${S.age<18?', and your parents are furious':''}.`; tags=[['bad','Party disaster']]; }
+  pushLog(`🎉 ${line.replace(/<[^>]+>/g,m=>m)}`,tags); resultModal('House Party',title,icon,[line,`Cost: ${cur()}${cost.toLocaleString()}.`],()=>setTab('school')); }
 function addSchoolFriend(via){ const g=rand()<.5?'m':'f'; const id='clb'+(S.clubSeq=(S.clubSeq||0)+1);
   S.people[id]={id,name:nm(g)+' '+pick(LAST),rel:'Club Friend',affinity:rng(45,75),trust:rng(35,60),alive:true,memory:[{age:S.age,note:`You met in the ${via}.`}],classmate:true,gender:g,age:S.age+rng(-1,1),fam:false,gen:0}; }
 function skipSchool(){ if(!S||isLocked())return;
@@ -10523,11 +10558,14 @@ function renderSchool(){
   const clubs=(S.clubs||[]);
   let h=hubBack('school')+`<div class="card profile"><div class="handle">🏫 ${S.schoolName}</div>
     <div class="pf" style="margin-top:4px">${S.schoolType} · ${lvl}${S.eduLevel==='college'&&S.major?` · 📘 ${majorName(S.major)}`:''}${S.clique?` · 🫂 ${cliqueName(S.clique)}`:''}</div>
-    <div class="relbars" style="margin-top:10px">${pbar('Grades',S.grades,gc)}${pbar('🎉 Popularity',S.popularity||50)}${pbar('⭐ Prestige',prest)}</div>
-    ${clubs.length?`<div class="pf" style="margin-top:8px">🎽 ${clubs.map(actName).join(' · ')}</div>`:''}</div>`;
+    <div class="relbars" style="margin-top:10px">${pbar('Grades',S.grades,gc)}${pbar('🎉 Popularity',S.popularity||50)}${pbar('⭐ Prestige',prest)}</div></div>`;
+  if(clubs.length){ h+=`<div class="genlabel">Your Activities</div>`;
+    clubs.forEach(k=>{ const a=SCHOOL_ACTS.find(x=>x.k===k)||{name:actName(k),icon:'🎽'}; const d=(S.clubData&&S.clubData[k])||{perf:50};
+      h+=`<div class="card" style="padding:11px 13px;margin-bottom:8px;cursor:pointer" onclick="clubDetail('${k}')"><div><b>${a.icon} ${a.name}</b>${d.captain?' <span style="color:var(--good);font-size:12px">⭐ Captain</span>':''}</div><div class="relbars" style="margin-top:6px">${pbar('Performance',d.perf)}</div></div>`; }); }
   h+=`<div class="genlabel">School</div><div class="composer">
     <button class="pbtn" onclick="schoolActivities()"><span class="pi">🎽</span><span class="pl">Activities</span><span class="pd">Join a club or try out for a sports team.</span></button>
     <button class="pbtn" onclick="cliques()"><span class="pi">🫂</span><span class="pl">Cliques</span><span class="pd">Join a school crowd — fit in, boost popularity.</span></button>
+    <button class="pbtn" onclick="houseParty()"><span class="pi">🎉</span><span class="pl">House Party</span><span class="pd">Throw a bash — popularity up, but it can go sideways.</span></button>
     <button class="pbtn" onclick="studyHarder()"><span class="pi">📚</span><span class="pl">Study Harder</span><span class="pd">Extra effort → grades & smarts.</span></button>
     <button class="pbtn" onclick="skipSchool()"><span class="pi">🫢</span><span class="pl">Skip School</span><span class="pd">Ditch class — fun, but risky for your grades.</span></button>
     <button class="pbtn" onclick="switchSchool()"><span class="pi">🔁</span><span class="pl">Switch School</span><span class="pd">Ask your parents to transfer you — pricier schools, richer friends.</span></button>
