@@ -4550,6 +4550,7 @@ function ageUp(){
   if(S.nfl && S.nfl.youth && S.nfl.youth.onTeam) nflYouthSeason();   // 🏈 high-school/college football season (deterministic)
   if(typeof nflActive==='function' && nflActive()) nflSeasonEnd();   // 🏈 conclude the pro NFL season (deterministic, feed-only)
   if(S.nfl && S.nfl.owned) nflOwnerSeason();                         // 🏈 run the owned NFL franchise's season (deterministic, feed-only)
+  agentYear();                                                        // 🕴️ a signed sports agent lands yearly endorsement deals for an active pro (deterministic)
   childSupportYear();                                                 // 👨‍👧 post-divorce custody: pay/receive child support each year (deterministic)
   kidsCareYear();                                                     // 👶🎓 nanny + private-school tuition for your minor kids (deterministic)
   partnersYear();                                                     // 💘 juggling multiple partners costs money, spark & peace (deterministic)
@@ -7082,6 +7083,15 @@ function proAthlete(){
   return null;
 }
 function proAthleteActive(){ return !!proAthlete(); }
+/* 🕴️ AGENT — a signed agent lands yearly endorsement deals for an ACTIVE pro athlete (scales with fame + overall). Deterministic. */
+function agentYear(){ if(!has('has_sports_agent')) return; const a=proAthlete(); if(!a||!a.p||a.p.retired) return;
+  if(rng(0,100) < 50 + (S.fame||0)/4){
+    const deal=Math.round((3000 + (S.fame||0)*rng(150,700) + a.ov*rng(150,650))*priceMult());
+    money(deal); S._agentEarnings=(S._agentEarnings||0)+deal;
+    const brand=pick(['a sportswear giant','an energy-drink label','a luxury watchmaker','a car brand','a streaming service','a local dealership','a fast-food chain','a fashion house']);
+    pushLog(`🕴️ My agent landed me a ${fcm(deal)} endorsement with ${brand}.`,[['good',`+${fcm(deal)} endorsement`]]);
+  }
+}
 /* 🤝 CONTRACT RENEGOTIATION — the pro-side counterpart to NIL: push for a raise, extend, or a signing bonus.
    Leverage = your overall + form + fame (+ agent). Never forces free agency (leaving is the breach-suit system). */
 function negotiateContract(){ const a=proAthlete(); if(!a||!a.p||!a.p.contract){ toast('No contract to negotiate right now.'); return; }
