@@ -2039,6 +2039,7 @@ function lifeRecord(){
     franchiseOwner:has('franchise_owner'), franchiseDynastyGens:(S.bball&&S.bball.owned&&S.bball.owned.gensWon)?S.bball.owned.gensWon.length:0,
     gridironPro:has('nfl_player'), nflRings:(S.nfl&&S.nfl.trophies)?S.nfl.trophies.length:0, nflMVP:has('nfl_mvp'),
     nflFranchiseOwner:has('nfl_franchise_owner'), nflFranchiseDynastyGens:(S.nfl&&S.nfl.owned&&S.nfl.owned.gensWon)?S.nfl.owned.gensWon.length:0,
+    tennisPro:has('tennis_pro'), tennisGoat:has('tennis_goat'), volleyPro:has('volley_pro'), volleyGoat:has('volley_goat'), hockeyPro:has('hockey_pro'), hockeyGoat:has('hockey_goat'),
     famBondLow: famAlive.length>0 && famAlive.every(p=>(p.affinity||0)<25),
   };
 }
@@ -2097,6 +2098,12 @@ const RIBBONS=[
   {id:'gridiron_pro', name:'Gridiron Pro', icon:'🏈', rarity:'rare', priority:6, desc:'Make it to the NFL.', q:r=>r.gridironPro?1:0},
   {id:'super_champ', name:'Champion', icon:'🏆', rarity:'epic', priority:8, desc:'Win an NFL championship.', q:r=>r.nflRings>=1?1:0},
   {id:'gridiron_goat', name:'Gridiron Legend', icon:'🐐', rarity:'legendary', priority:9, desc:'Be named NFL MVP.', q:r=>r.nflMVP?1:0},
+  {id:'tennis_pro', name:'Tennis Pro', icon:'🎾', rarity:'rare', priority:6, desc:'Turn pro on the tennis tour.', q:r=>r.tennisPro?1:0},
+  {id:'tennis_goat', name:'World No. 1', icon:'🐐', rarity:'legendary', priority:9, desc:'Finish a year ranked World #1 in tennis.', q:r=>r.tennisGoat?1:0},
+  {id:'volley_pro', name:'Volleyball Pro', icon:'🏐', rarity:'rare', priority:6, desc:'Go pro in volleyball.', q:r=>r.volleyPro?1:0},
+  {id:'volley_goat', name:'Volleyball Legend', icon:'🐐', rarity:'legendary', priority:9, desc:'Be named volleyball League MVP.', q:r=>r.volleyGoat?1:0},
+  {id:'hockey_pro', name:'Hockey Pro', icon:'🏒', rarity:'rare', priority:6, desc:'Make it to the NHL.', q:r=>r.hockeyPro?1:0},
+  {id:'hockey_goat', name:'Hockey Legend', icon:'🐐', rarity:'legendary', priority:9, desc:'Be named NHL MVP.', q:r=>r.hockeyGoat?1:0},
   {id:'nfl_owner', name:'NFL Owner', icon:'🏈', rarity:'rare', priority:6, desc:'Own an NFL franchise.', q:r=>r.nflFranchiseOwner?1:0},
   {id:'nfl_dynasty', name:'Gridiron Dynasty', icon:'👑', rarity:'legendary', priority:10, desc:'Build a family NFL franchise that wins across generations.', q:r=>r.nflFranchiseDynastyGens>=2?1:0},
 ];
@@ -2137,7 +2144,7 @@ const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame
   powerful:'power',sovereign:'power',self_made_monarch:'power', notorious:'crime',kingpin:'crime',conqueror:'crime',
   saintly:'virtue',devoted:'virtue',redemption:'virtue', dynasty_legend:'dynasty',polymath_founder:'dynasty',matriarch:'dynasty',
   centenarian:'health', pioneer:'era', deviant:'vice',
-  pro_footballer:'fame', silverware:'fame', football_legend:'fame', club_owner:'wealth', dynasty_club:'dynasty', full_ride:'mind', school_mvp:'fame', baller:'fame', ring_chaser:'fame', hoops_goat:'fame', franchise_owner:'wealth', dynasty_franchise:'dynasty', gridiron_pro:'fame', super_champ:'fame', gridiron_goat:'fame', nfl_owner:'wealth', nfl_dynasty:'dynasty' };
+  pro_footballer:'fame', silverware:'fame', football_legend:'fame', club_owner:'wealth', dynasty_club:'dynasty', full_ride:'mind', school_mvp:'fame', baller:'fame', ring_chaser:'fame', hoops_goat:'fame', franchise_owner:'wealth', dynasty_franchise:'dynasty', gridiron_pro:'fame', super_champ:'fame', gridiron_goat:'fame', nfl_owner:'wealth', nfl_dynasty:'dynasty', tennis_pro:'fame',tennis_goat:'fame',volley_pro:'fame',volley_goat:'fame',hockey_pro:'fame',hockey_goat:'fame' };
   // renaissance_soul is intentionally themeless — a combo of wealth+mind+fame; it advances via all three and the milestone tracker, not one opportunity event.
 function ambTheme(){ return (S&&S.ambition)?(RIBBON_THEME[S.ambition]||null):null; }
 function ambHint(rb){ return ({ wealth:' Keep building your fortune.', fame:' Chase the spotlight.', mind:' Hit the books.', power:' Climb toward high office.', crime:' The underworld is calling.', virtue:' Keep doing good.', dynasty:' Grow the family line.', era:' Live to see the age turn.', health:' Stay healthy and live long.', vice:' Court a little scandal.' }[RIBBON_THEME[rb.id]]||''); }
@@ -3939,6 +3946,7 @@ function ageUp(){
   if(S.bball && S.bball.youth && S.bball.youth.onTeam) bbYouthSeason();   // 🏀 school/college hoops season (deterministic)
   if(typeof bbActive==='function' && bbActive()) bbSeasonEnd();      // 🏀 conclude the pro basketball season (deterministic)
   if(S.bball && S.bball.owned) bbOwnerSeason();                      // 🏀 run the owned franchise's season (deterministic, feed-only)
+  if(typeof sp2Active==='function'){ if(sp2Active('tennis')) sp2Season('tennis'); if(sp2Active('volley')) sp2Season('volley'); if(sp2Active('hockey')) sp2Season('hockey'); }   // 🎾🏐🏒 extra-sport seasons (deterministic)
   if(S.nfl && S.nfl.youth && S.nfl.youth.onTeam) nflYouthSeason();   // 🏈 high-school/college football season (deterministic)
   if(typeof nflActive==='function' && nflActive()) nflSeasonEnd();   // 🏈 conclude the pro NFL season (deterministic, feed-only)
   if(S.nfl && S.nfl.owned) nflOwnerSeason();                         // 🏈 run the owned NFL franchise's season (deterministic, feed-only)
@@ -4548,6 +4556,7 @@ function continueAsHeir(id){
   // 🏈 same for the NFL franchise — family ownership carries across generations
   if(S.nfl && S.nfl.owned){ const _nt=S.nfl.world&&S.nfl.world.teams[S.nfl.owned.teamId]; S._inheritedNflFranchise=_nt?_nt.name:'the family franchise'; S.nfl={ world:S.nfl.world, owned:S.nfl.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'' }; }
   else S.nfl=null;
+  S.tennis=null; S.volley=null; S.hockey=null;   // 🎾🏐🏒 heir starts their own individual-sport journey (athletic genes inherit)
   S.stats={health:rng(78,100), happy:rng(70,95), smarts:rng(40,85), looks:rng(40,90)};
   S.genome = heir.genome || rollGenome(S.genome, null); applyGenomeToStats();   // GENETICS: the heir IS your child — your genes live on
   if(heir.eduInvest){ const bonus=clamp(Math.round(heir.eduInvest*2.5),0,22); S.stats.smarts=clamp(S.stats.smarts+bonus); setFlag('privately_educated'); }   // 🎓 a privately-schooled heir starts life sharper (dynasty payoff)
@@ -4807,6 +4816,10 @@ function renderSpecialCareers(){ const v=document.getElementById('specialcareers
   if(soccerEraOK() && S.age>=8){ any=true; h+=hubCard('⚽','Football (Soccer)', sportCardSub('soccer'), "footballMenu()"); }
   if(bballEraOK() && S.age>=8){ any=true; h+=hubCard('🏀','Basketball', sportCardSub('bball'), "basketballMenu()"); }
   if(nflEraOK() && S.age>=8){ any=true; h+=hubCard('🏈','NFL Football', sportCardSub('nfl'), "nflMenu()"); }
+  if(typeof sp2EraOK==='function' && sp2EraOK() && S.age>=8){ any=true;
+    h+=hubCard('🎾','Tennis', sp2CardSub('tennis'), "tennisMenu()");
+    h+=hubCard('🏐','Volleyball', sp2CardSub('volley'), "volleyMenu()");
+    h+=hubCard('🏒','Ice Hockey', sp2CardSub('hockey'), "hockeyMenu()"); }
   if(!any) h+=`<div class="card" style="padding:16px;text-align:center;color:var(--dim)">No special careers are open yet — pro sports unlock from age 8 in the right era (and the NFL is USA-only).</div>`;
   v.innerHTML=h;
 }
@@ -6179,8 +6192,103 @@ const SPORT_STARS={
   soccer:['Lionel Messi','Cristiano Ronaldo','Neymar','Kylian Mbappé','Erling Haaland','Vinícius Júnior','Kevin De Bruyne','Mohamed Salah','Robert Lewandowski','Luka Modrić','Jude Bellingham','Harry Kane'],
   bball:['LeBron James','Stephen Curry','Kevin Durant','Giannis Antetokounmpo','Nikola Jokić','Luka Dončić','Jayson Tatum','Jalen Brunson','Joel Embiid','Anthony Edwards','Shai Gilgeous-Alexander','Devin Booker'],
   nfl:['Patrick Mahomes','Josh Allen','Lamar Jackson','Tyreek Hill','Travis Kelce','Justin Jefferson',"Ja'Marr Chase",'Micah Parsons','T.J. Watt','Christian McCaffrey','Joe Burrow','Saquon Barkley'],
+  tennis:['Novak Djokovic','Carlos Alcaraz','Jannik Sinner','Rafael Nadal','Roger Federer','Daniil Medvedev','Alexander Zverev','Andy Murray','Stefanos Tsitsipas','Iga Świątek','Coco Gauff','Aryna Sabalenka'],
+  volley:['Wilfredo León','Earvin Ngapeth','Bartosz Kurek','Yuki Ishikawa','Matt Anderson','Ivan Zaytsev','Paola Egonu','Tijana Bošković','Zhu Ting','Micah Christenson'],
+  hockey:['Connor McDavid','Sidney Crosby','Nathan MacKinnon','Auston Matthews','Leon Draisaitl','Nikita Kucherov','Cale Makar','Alexander Ovechkin','David Pastrňák','Quinn Hughes'],
 };
 function sportStar(sport){ const a=SPORT_STARS[sport]||SPORT_STARS.soccer; return a[rng(0,a.length-1)]; }
+/* ============================================================
+   🎾🏐🏒 EXTRA SPORTS — a compact shared pro-career engine (tennis, volleyball,
+   ice hockey). Deterministic (seeded rng → replay-safe). Real-name rivals/flavor
+   via SPORT_STARS (user-accepted IP; NOT store-safe). Config-driven to stay DRY.
+   ============================================================ */
+const SP2_DEFS={
+  tennis:{k:'tennis',name:'Tennis',emoji:'🎾',indiv:true,go:'Turn pro on the tour',attrs:['serve','forehand','backhand','movement','mental'],
+    majors:['the Australian Open','Roland-Garros','Wimbledon','the US Open'], crown:'a Grand Slam', peak:26, retAge:38},
+  volley:{k:'volley',name:'Volleyball',emoji:'🏐',indiv:false,go:'Go pro on the court',attrs:['spike','serve','block','receive','setting'],
+    teams:['Brazil','Italy','Poland','USA','France','Japan','Serbia','Argentina','Slovenia','Netherlands'], crown:'the World Champions Cup', peak:28, retAge:39},
+  hockey:{k:'hockey',name:'Ice Hockey',emoji:'🏒',indiv:false,go:'Chase the NHL',attrs:['shooting','skating','passing','checking','vision'],
+    teams:['Boston Bruins','Toronto Maple Leafs','Montréal Canadiens','New York Rangers','Chicago Blackhawks','Detroit Red Wings','Pittsburgh Penguins','Tampa Bay Lightning','Colorado Avalanche','Edmonton Oilers','Vegas Golden Knights','Florida Panthers','Dallas Stars','Los Angeles Kings','Washington Capitals','Carolina Hurricanes'], crown:'the Cup', peak:28, retAge:40},
+};
+function sp2EraOK(){ return soccerEraOK(); }
+function sp2Overall(p){ let s=0,n=0; for(const kk in p.attributes){ s+=p.attributes[kk]; n++; } return Math.round(s/(n||1)); }
+function sp2Potential(){ return clamp(Math.round(geneVal('vitality')*0.55 + (((S.stats&&S.stats.health)||60))*0.25 + (has('talent_sports')?16:6) + rng(0,12)),55,99); }
+function sp2Active(k){ return !!(S[k] && S[k].player && !S[k].player.retired); }
+function sp2Team(def,p){ return def.indiv?null:def.teams[p.teamId%def.teams.length]; }
+function sp2EnsureRival(k){ const s=S[k]; if(!s||!s.player||s.player.retired) return; if(s.rivalId&&S.people[s.rivalId]) return;
+  const g=rand()<.5?'m':'f'; const id=k+'_rival'; S.people[id]={id,name:sportStar(k),rel:'Rival',affinity:rng(20,40),trust:rng(15,35),alive:true,memory:[],keyMoments:[],summary:'',rival:true,enemy:true,gender:g,age:clamp(S.age+rng(-3,3),16,40),fam:false,gen:9,sport:k}; s.rivalId=id; }
+function sp2Menu(k){ const def=SP2_DEFS[k]; if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;} if(!sp2EraOK()){ toast(`Organized ${def.name.toLowerCase()} doesn’t exist in this era yet.`); return; } logAct('call',{fn:'sp2Menu',args:[k]}); sp2Route(k); }
+function sp2Route(k){ const def=SP2_DEFS[k], s=S[k]; if(s&&s.player){ sp2Hub(k); return; } if(S.age>=8 && S.age<=24){ sp2GoProPrompt(k); return; } resultModal(def.name,`Past the Window ${def.emoji}`,def.emoji,[`Pro ${def.name.toLowerCase()} starts young — you've aged out of the path.`],()=>setTab('specialcareers')); }
+function sp2GoProPrompt(k){ const def=SP2_DEFS[k]; const ath=sp2Potential();
+  openModal({banner:def.name, title:`${def.emoji} Go Pro`, icon:def.emoji, closable:true,
+    text:`Chase a professional ${def.name.toLowerCase()} career. Your athletic ceiling looks like about <b>${ath}</b> — talent, health and your genes decide how far you go.`,
+    choices:[{label:`${def.emoji} ${def.go}`, alt:true, fn:()=>sp2GoPro(k)},{label:'Not now', fn:()=>{closeModal();setTab('specialcareers');}}]}); }
+function sp2GoPro(k){ const def=SP2_DEFS[k]; const pot=sp2Potential(), base=clamp(pot-rng(18,30),35,70);
+  const attributes={}; def.attrs.forEach(a=>attributes[a]=clamp(base+rng(-6,8),20,80));
+  const player={ attributes, potential:clamp(pot,base+8,99), form:65, fitness:90, morale:72, retired:false, isRookie:true,
+    rank: def.indiv? rng(180,320) : null, teamId: def.indiv? null : rng(0,def.teams.length-1),
+    contract:{wagePerYear:Math.round(rng(30000,120000)*priceMult()), yearsRemaining:rng(2,4)}, careerStats:{seasons:0,titles:0,majors:0} };
+  S[k]={ player, trophies:[], awards:[], rivalId:null, keyMoments:[], _lastFlavor:-99, _gamed:0 };
+  sp2EnsureRival(k); setFlag(k+'_pro'); gainFame(rng(2,5)); const ov=sp2Overall(player);
+  pushLog(`${def.emoji} I turned pro in ${def.name.toLowerCase()} — OVR ${ov}${def.indiv?`, world #${player.rank}`:` with ${sp2Team(def,player)}`}.`,[['good',`Pro ${def.name}`]]);
+  resultModal(def.name,`Turned Pro ${def.emoji}`,def.emoji,[`You're a professional ${def.name.toLowerCase()} player now.`,`Overall <b>${ov}</b> · potential <b>${player.potential}</b>.`,def.indiv?`World ranking: <b>#${player.rank}</b>.`:`You play for <b>${sp2Team(def,player)}</b>.`],()=>sp2Hub(k)); }
+function sp2Hub(k){ const def=SP2_DEFS[k], s=S[k]; if(!s||!s.player){ sp2Route(k); return; } const p=s.player, ov=sp2Overall(p);
+  let bars=''; def.attrs.forEach(a=>bars+=pbar(a.charAt(0).toUpperCase()+a.slice(1),p.attributes[a]));
+  const status = def.indiv? `World #${p.rank}` : sp2Team(def,p);
+  let body=`<div style="text-align:left"><div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center">
+    <div><b>${def.emoji} ${def.name}</b><div style="font-size:12px;color:var(--dim)">${status}${p.retired?' · Retired':''}</div></div>
+    <div style="text-align:right"><div style="font-size:26px;font-weight:900;color:var(--gold,#f5c451)">${ov}</div><div style="font-size:9px;color:var(--dim)">OVERALL</div></div></div></div>
+    <div class="relbars" style="margin-bottom:6px">${bars}</div><div class="relbars" style="margin-bottom:8px">${pbar('Form',p.form)}${pbar('Fitness',p.fitness)}${pbar('Morale',p.morale)}</div>
+    <div class="genlabel" style="margin:2px 0 4px">Career <span>${p.careerStats.seasons} season${p.careerStats.seasons===1?'':'s'}</span></div>${socStatLine('Titles · Awards',`🏆 ${(s.trophies||[]).length} · 🏅 ${(s.awards||[]).length}`)}${p.contract?socStatLine('Contract',`${cur()}${p.contract.wagePerYear.toLocaleString()}/yr · ${p.contract.yearsRemaining}yr`):''}</div>`;
+  const ch=[]; if(!p.retired){ ch.push({label:`${def.emoji} Play a Big Match${s._gamed?` (${s._gamed})`:''}`, alt:true, fn:()=>sp2PlayBig(k)}); ch.push({label:'🏋️ Train', alt:true, fn:()=>sp2Train(k)}); }
+  if((s.trophies||[]).length||(s.awards||[]).length) ch.push({label:'🏆 Trophy Cabinet', alt:true, fn:()=>sp2Cabinet(k)});
+  if(!p.retired && S.age>=(def.peak+2)) ch.push({label:'🚪 Retire', alt:true, fn:()=>sp2RetirePrompt(k)});
+  ch.push({label:'‹ Back', fn:()=>{closeModal();setTab('specialcareers');}});
+  openModal({banner:def.name, title:`${def.emoji} My Career`, icon:def.emoji, closable:true, text:body, choices:ch}); }
+function sp2Train(k){ const def=SP2_DEFS[k], p=S[k].player; const a=def.attrs[rng(0,def.attrs.length-1)]; const young=S.age<=27; const g=clamp(Math.round((rng(0,2)+1)*(young?1:0.5)),0,3); const cap=Math.min(99,p.potential); p.attributes[a]=clamp(p.attributes[a]+g,20,cap); p.fitness=clamp(p.fitness+rng(2,6));
+  resultModal('Training','Put in the Work 🏋️','🏋️',[`Your <b>${a}</b> sharpened — overall ${sp2Overall(p)}.`],()=>sp2Hub(k)); }
+function sp2PlayBig(k){ const def=SP2_DEFS[k], s=S[k], p=s.player; if(p.retired){sp2Hub(k);return;} if((s._gamed||0)>=3){ resultModal(def.name,`Save it for the Season ${def.emoji}`,def.emoji,[`You've played your big matches — advance a year to wrap the season.`],()=>sp2Hub(k)); return; }
+  const a0=def.attrs[0], a1=def.attrs[Math.min(2,def.attrs.length-1)], a2=def.attrs[def.attrs.length-1];
+  const opp = def.indiv ? (S.people[s.rivalId]?S.people[s.rivalId].name:'a top seed') : def.teams[rng(0,def.teams.length-1)];
+  openModal({banner:def.name, title:`${def.emoji} The Big Moment`, icon:def.emoji, closable:false, text:`It's the decisive moment against <b>${opp}</b>. What's the play?`,
+    choices:[{label:`Go aggressive`, tip:a0, fn:()=>sp2Resolve(k,a0,opp)},{label:`Play your game`, tip:a1, fn:()=>sp2Resolve(k,a1,opp)},{label:`Stay composed`, tip:a2, fn:()=>sp2Resolve(k,a2,opp)}]}); }
+function sp2Resolve(k,attr,opp){ const def=SP2_DEFS[k], s=S[k], p=s.player; const a=p.attributes[attr]||50; const edge=a-55+(p.form-50)*0.3+rng(-22,22); const win=edge>0; s._gamed=(s._gamed||0)+1;
+  p.form=clamp(p.form+(win?rng(2,6):-rng(1,4))); p.morale=clamp(p.morale+(win?rng(1,4):-rng(1,3))); if(win) gainFame(rng(0,2));
+  pushLog(`${def.emoji} vs ${opp}: ${win?'W ✅':'L ❌'} — a ${win?'clutch':'costly'} ${attr}.`,[[win?'good':'bad',win?'Big win':'Tough loss']]);
+  resultModal(def.name, win?`Clutch! ${def.emoji}`:'So Close', win?def.emoji:'😞',[win?`You came through against ${opp}.`:`${opp} edged you this time.`],()=>sp2Hub(k)); }
+function sp2Season(k){ const def=SP2_DEFS[k], s=S[k]; if(!s||!s.player||s.player.retired||S.age<16) return; const p=s.player; sp2EnsureRival(k); const ov=sp2Overall(p);
+  let lines=[], won=false;
+  if(def.indiv){
+    const target=clamp(Math.round(355 - ov*3.9 + rng(-10,10)),1,430); p.rank=Math.max(1,Math.round(p.rank*0.35 + target*0.65));
+    def.majors.forEach(m=>{ if(rng(0,100) < clamp(ov - p.rank*0.05 - 40, 1, 45)){ sp2Trophy(k,m); p.careerStats.majors++; won=true; gainFame(rng(4,9)); lines.push(`🏆 Won <b>${m}</b>!`); } });
+    if(p.rank<=1){ sp2Award(k,'Year-End World #1'); setFlag(k+'_goat'); gainFame(rng(6,12)); lines.push(`🌟 Finished the year <b>World #1</b>!`); }
+    else lines.push(`Ranked <b>#${p.rank}</b> in the world.`);
+  } else {
+    const wins=clamp(Math.round(22 + (ov-60)*0.85 + rng(-8,8)),8,66), made=wins>=38;
+    if(made){ lines.push(`Made the playoffs (${wins} wins).`); if(rng(0,100) < 22+(ov-60)){ won=true; sp2Trophy(k,def.crown); p.careerStats.titles++; gainFame(rng(6,12)); lines.push(`🏆 <b>Won ${def.crown}!</b>`); } else lines.push(`Fell short in the playoffs.`); }
+    else lines.push(`Missed the playoffs (${wins} wins, ${sp2Team(def,p)}).`);
+    if(ov>=90 && made){ sp2Award(k,'League MVP'); setFlag(k+'_goat'); gainFame(rng(6,12)); lines.push(`🌟 <b>League MVP!</b>`); }
+    else if(ov>=82 && rng(0,1)){ sp2Award(k,'All-Star'); gainFame(rng(1,3)); lines.push(`⭐ All-Star.`); }
+    if(S.age<=33 && ov>=80 && rng(0,100)<18){ const old=sp2Team(def,p); p.teamId=rng(0,def.teams.length-1); lines.push(`Signed with ${sp2Team(def,p)}.`); }
+  }
+  if(p.isRookie){ if(ov>=72){ sp2Award(k,'Rookie of the Year'); gainFame(rng(2,5)); lines.push(`🏅 Rookie of the Year!`); } p.isRookie=false; }
+  money(p.contract?p.contract.wagePerYear:60000); if(p.contract){ p.contract.yearsRemaining=Math.max(0,p.contract.yearsRemaining-1); if(p.contract.yearsRemaining<=0) p.contract={wagePerYear:Math.round((60000+ov*ov*1500)*priceMult()),yearsRemaining:rng(2,4)}; }
+  sp2AgeCurve(k); p.careerStats.seasons++; s._gamed=0;
+  pushLog(`${def.emoji} <b>${def.name} season ${p.careerStats.seasons}</b>: ${lines.join(' ')||'a quiet campaign.'}`, (won||lines.some(l=>/🌟|🏅|⭐/.test(l)))?[['good',`${def.emoji} Season`]]:[['flag',`${def.emoji} Season`]]);
+  if(p.fitness<=12 || S.age>=def.retAge || (ov<58 && S.age>=34)) sp2Retire(k,true); }
+function sp2AgeCurve(k){ const def=SP2_DEFS[k], p=S[k].player, cap=Math.min(99,p.potential);
+  if(S.age<def.peak){ const speed=S.age<=23?1:0.7; def.attrs.slice(0,2).forEach(a=>{ if(p.attributes[a]<cap) p.attributes[a]=clamp(p.attributes[a]+Math.round(rng(1,3)*speed),20,cap); }); for(let i=0;i<3;i++){ const a=def.attrs[rng(0,def.attrs.length-1)]; if(p.attributes[a]<cap) p.attributes[a]=clamp(p.attributes[a]+Math.round(rng(0,2)*speed),20,cap); } }
+  else if(S.age>def.peak+3){ const dec=Math.min(4,Math.round((S.age-(def.peak+3))/2)); for(let i=0;i<dec;i++){ const a=def.attrs[rng(0,def.attrs.length-1)]; p.attributes[a]=clamp(p.attributes[a]-rng(0,2),20,99); } p.fitness=clamp(p.fitness-rng(1,4)); } }
+function sp2Trophy(k,name){ const s=S[k]; (s.trophies=s.trophies||[]).push({name,age:S.age}); }
+function sp2Award(k,name){ const s=S[k]; (s.awards=s.awards||[]).push({name,age:S.age}); }
+function sp2Cabinet(k){ const def=SP2_DEFS[k], s=S[k], tr=(s.trophies||[]).slice().reverse(), aw=(s.awards||[]).slice().reverse();
+  let body=`<div style="text-align:left"><div class="genlabel">🏆 Titles <span>${tr.length}</span></div>${tr.length?tr.map(t=>`<div style="font-size:13px;padding:2px 0">🏆 ${t.name} <span style="color:var(--dim);font-size:11px">· age ${t.age}</span></div>`).join(''):'<p style="color:var(--dim)">No titles yet.</p>'}<div class="genlabel" style="margin-top:8px">🏅 Awards <span>${aw.length}</span></div>${aw.length?aw.map(a=>`<div style="font-size:13px;padding:2px 0">🏅 ${a.name} <span style="color:var(--dim);font-size:11px">· age ${a.age}</span></div>`).join(''):'<p style="color:var(--dim)">No awards yet.</p>'}</div>`;
+  openModal({banner:def.name, title:'🏆 Cabinet', icon:'🏆', closable:true, text:body, choices:[{label:'‹ Back', fn:()=>sp2Hub(k)},{label:'Close', fn:closeModal}]}); }
+function sp2RetirePrompt(k){ const def=SP2_DEFS[k]; openModal({banner:def.name, title:'🚪 Retire?', icon:'🚪', closable:true, text:`Hang it up? You can't un-retire.`, choices:[{label:'Retire', alt:true, fn:()=>sp2Retire(k,false)},{label:'Keep going', fn:()=>sp2Hub(k)}] }); }
+function sp2Retire(k,forced){ const def=SP2_DEFS[k], s=S[k], p=s&&s.player; if(!p||p.retired)return; p.retired=true; setFlag(k+'_retired'); gainFame(rng(1,3));
+  pushLog(`${def.emoji} I retired from ${def.name.toLowerCase()}${forced?' — the body gave out':''}. <b>${p.careerStats.seasons}</b> seasons, <b>${(s.trophies||[]).length}</b> titles, <b>${(s.awards||[]).length}</b> awards. 🎖️`,[['echo',`Retired from ${def.name}`]]); }
+function sp2CardSub(k){ const def=SP2_DEFS[k], s=S[k]; if(s&&s.player){ const p=s.player; if(p.retired) return `Retired · ${(s.trophies||[]).length} titles`; return `${def.indiv?('World #'+p.rank):sp2Team(def,p)} · OVR ${sp2Overall(p)}`; } return def.go; }
+function tennisMenu(){ sp2Menu('tennis'); } function volleyMenu(){ sp2Menu('volley'); } function hockeyMenu(){ sp2Menu('hockey'); }
 const SOC_CLUB_PRE=['Riverside','Kingsbridge','Vale','Ashford','Northgate','Hollowmoor','Stonebury','Whitcombe','Marsh End','Ironside','Castleton','Fairwater','Oldcastle','Brackenhill','Eastvale','Westmere','Thornwick','Greyhaven','Sandford','Lakeside','Cresthill','Dunmoor','Pinehurst','Redford','Calderbrook','Hartwell','Wexley','Moorside'];
 const SOC_CLUB_SUF=['FC','United','Athletic','City','Rovers','Wanderers','Town','Albion','County','Rangers','Dynamo','Borough'];
 const SOC_TIERS=[{name:'Premier Division',pres:90,emoji:'🥇'},{name:'The Championship',pres:62,emoji:'🥈'},{name:'League One',pres:38,emoji:'🥉'}];
