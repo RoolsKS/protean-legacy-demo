@@ -3469,6 +3469,25 @@ const EVENTS = [
           return {text:`${sib.name} gets grounded — and remembers exactly who told.`,tags:[['bad',`${sib.name} resents you`]]};}},
     ]};}},
 
+/* --- MARRIAGE DRAMA: a meddling in-law (recurring) --- */
+{ id:'inlaw_meddle', once:false, weight:22,
+  when:S=>has('married') && S.spouse && S.people[S.spouse] && S.people[S.spouse].alive && Object.values(S.people).some(p=>p.alive&&p.inlaw) && (S.age-(S._lastInlaw||-99)>=3),
+  build:S=>{ S._lastInlaw=S.age; const il=Object.values(S.people).filter(p=>p.alive&&p.inlaw); const m=il[rng(0,il.length-1)]; const sp=S.people[S.spouse];
+    const gripe=pick(['thinks you don’t earn enough','keeps “dropping by” unannounced','picks apart how you keep the house','says '+sp.name+' could have married better','has a lot of opinions on how you raise the kids','never misses a chance to compare you to an ex']);
+    return {yr:`Age ${S.age}`, title:'A Meddling In-Law',
+    text:`Your ${m.rel.toLowerCase()}, <b>${m.name}</b>, ${gripe}. ${sp.name} is caught in the middle.`,
+    choices:[
+      {label:'Stand your ground', tip:'Set a boundary',
+        apply:()=>{ rel(m.id,-rng(4,10),-rng(2,5),'You pushed back on your in-law.'); if(sp.spark!=null)sp.spark=clamp(sp.spark+rng(0,3));
+          return {text:`You set a firm boundary. ${m.name} bristles, but ${sp.name} quietly respects that you won't be pushed around.`,tags:[['flag','Held the line']]};}},
+      {label:'Smooth it over', tip:'Keep the peace',
+        apply:()=>{ rel(m.id,+rng(3,8),+rng(1,4),'You made peace with your in-law.'); chg('happy',-2);
+          return {text:`You bite your tongue and keep the peace. ${m.name} softens — you just swallow the annoyance.`,tags:[['good','Kept the peace']]};}},
+      {label:'Vent to '+sp.name, tip:'Risk their loyalty',
+        apply:()=>{ ensureSpark(sp); const ok=(sp.affinity||50)>=55; rel(S.spouse, ok?+rng(2,5):-rng(2,6), ok?+2:-2, 'You vented about their parent.');
+          return {text: ok?`${sp.name} takes your side without hesitation — you feel like a team against the world.`:`${sp.name} gets defensive about their own parent. It turns into a spat.`, tags:[[ok?'good':'bad', ok?'United front':'Friction']]};}},
+    ]};}},
+
 /* --- FAMILY: aunt/uncle visit (recurring) --- */
 { id:'aunt_visit', once:false, weight:25,
   when:S=>S.age>=5 && S.age<=14 && livingKin(p=>/Aunt|Uncle/.test(p.rel)).length>0,
@@ -3776,6 +3795,7 @@ function ageUp(){
   if(typeof nflActive==='function' && nflActive()) nflSeasonEnd();   // 🏈 conclude the pro NFL season (deterministic, feed-only)
   if(S.nfl && S.nfl.owned) nflOwnerSeason();                         // 🏈 run the owned NFL franchise's season (deterministic, feed-only)
   childSupportYear();                                                 // 👨‍👧 post-divorce custody: pay/receive child support each year (deterministic)
+  kidsCareYear();                                                     // 👶🎓 nanny + private-school tuition for your minor kids (deterministic)
 
   // passive yearly drift — fitness slows the decline, neglect speeds it up
   S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
@@ -4379,6 +4399,7 @@ function continueAsHeir(id){
   else S.nfl=null;
   S.stats={health:rng(78,100), happy:rng(70,95), smarts:rng(40,85), looks:rng(40,90)};
   S.genome = heir.genome || rollGenome(S.genome, null); applyGenomeToStats();   // GENETICS: the heir IS your child — your genes live on
+  if(heir.eduInvest){ const bonus=clamp(Math.round(heir.eduInvest*2.5),0,22); S.stats.smarts=clamp(S.stats.smarts+bonus); setFlag('privately_educated'); }   // 🎓 a privately-schooled heir starts life sharper (dynasty payoff)
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
   S.money=inheritance; S.peakMoney=Math.max(S.peakMoney||0,inheritance);
   S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
@@ -4507,13 +4528,14 @@ function render(){
   // family tree — living grouped by generation; the departed collected at the bottom
   const groups=[
     {label:'Grandparents',          test:p=>p.alive&&p.fam&&p.gen===-2},
-    {label:'Parents, Aunts & Uncles',test:p=>p.alive&&p.fam&&p.gen===-1},
+    {label:'Parents, Aunts & Uncles',test:p=>p.alive&&p.fam&&p.gen===-1&&!p.inlaw},
     {label:'Your Generation',       test:p=>p.alive&&p.fam&&p.gen===0},
     {label:'Children & Beyond',     test:p=>p.alive&&p.fam&&p.gen>=1},
     {label:'🏫 Classmates',         test:p=>p.alive&&p.classmate},
     {label:'🍎 Faculty',            test:p=>p.alive&&p.teacher},
     {label:'💼 Coworkers',          test:p=>p.alive&&p.coworker},
     {label:'💘 Partners',           test:p=>p.alive&&p.romantic},
+    {label:'💍 In-Laws',            test:p=>p.alive&&p.inlaw},
     {label:'Friends & Others',      test:p=>p.alive&&!p.fam&&!p.pet&&!p.classmate&&!p.teacher&&!p.coworker&&!p.romantic},
     {label:'🐾 Pets',               test:p=>p.alive&&p.pet},
     {label:'⚰️ Late Relationships', test:p=>!p.alive},
@@ -6741,6 +6763,10 @@ function openPerson(id){
   if(p.fam && p.gen>=1 && !p.romantic){             // your child — raise them
     if(p.age<18) ch.push({label:'🧒 Raise Them', alt:true, fn:()=>parentingMenu(id)});   // shape who they'll become
     if(p.age<18) ch.push({label:'🎂 Celebrate Birthday', alt:true, fn:()=>personAction(id,'birthday')});
+    if(p.custody!=='ex'){   // you can only arrange care/schooling for a child in your care
+      if(p.age<=5) ch.push({label: p.nanny?'👶 Nanny: on — dismiss':'👶 Hire a Nanny', alt:true, fn:()=> p.nanny?dismissNanny(id):hireNanny(id)});
+      if(p.age>=5 && p.age<18) ch.push({label: p.privateSchool?'🎓 Private School: enrolled':'🎓 Enroll in Private School', alt:true, fn:()=>togglePrivateSchool(id)});
+    }
     ch.push({label:'💵 Give Allowance', alt:true, fn:()=>personAction(id,'allowance')});
     if(p.age<22) ch.push({label:'📚 Help with School', alt:true, fn:()=>personAction(id,'school')});
   }
@@ -6765,6 +6791,7 @@ function openPerson(id){
     ${p.rel}${p.fam?` · Age ${p.age}`:''} · <b style="color:${col}">${relStatus(p)}</b> · ${TRAIT_EMO[tr]||'🙂'} <b style="color:var(--text)">${tr.charAt(0).toUpperCase()+tr.slice(1)}</b>
     ${occ?`<br>💼 ${occ}`:''}${est!=null?`<br>💰 ~${fcm(est)} est. net worth${p.affinity<60?' <span style="font-size:11px">(likely more — get closer)</span>':''}`:''}
     ${p.custody&&(p.age||0)<18?`<br>🧑‍⚖️ Custody: <b style="color:var(--text)">${p.custody==='you'?'lives with you':p.custody==='ex'?'lives with '+(p.coParentName||'your ex'):'joint custody'}</b>`:''}
+    ${p.privateSchool?`<br>🎓 <b style="color:var(--text)">Private school</b>${p.eduInvest?` · ${p.eduInvest}yr`:''}`:''}${p.nanny?`<br>👶 <b style="color:var(--text)">Nanny</b> in the home`:''}
     <br>🧠 Recently: <i>“${last}”</i>${moments}${summ}</div>
     <div class="relbars" style="margin-top:9px">${pbar('Relationship',p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}
       ${p.romantic?barRow('💞 Spark',ensureSpark(p),100,{color:sparkBand(ensureSpark(p)).c}):''}
@@ -6927,6 +6954,7 @@ function proposeMarriage(id){ const p=S.people[id]; if(!p||!p.romantic)return; c
   if(S.age<18){ toast('You must be 18 to marry.'); return; }
   if(p.affinity>=78 && rng(0,100) < 55+(p.affinity-78)){
     p.rel = p.gender==='f'?'Wife':'Husband'; S.spouse=id; setFlag('married'); chg('happy',16); rel(id,+6,+8,'You got married!'); ensureSpark(p); p.spark=clamp(p.spark+12); p.marriedYears=0;
+    ensureInLaws(id);   // 💍 the spouse's parents join the family tree (and its drama)
     keyMoment(p,'milestone',55,`You married each other.`); ledgerAdd('bond',16,{who:id,note:`Married ${p.name}.`});
     pushLog(`💍 I married <b>${p.name}</b>! `,[['good',`Married ${p.name}`]]);
     if(netWorth()>=100000){   // wealth on the line → a prenup decision
@@ -7033,6 +7061,43 @@ function childSupportYear(){ if(!S||!S.alive) return;
   if(paid>0) pushLog(`👨‍👧 Child support — I paid <b>${cur()}${paid.toLocaleString()}</b> this year.`,[['flag',`-${cur()}${paid.toLocaleString()} support`]]);
   if(received>0) pushLog(`👨‍👧 Child support — I received <b>${cur()}${received.toLocaleString()}</b> this year.`,[['good',`+${cur()}${received.toLocaleString()} support`]]);
   ended.forEach(n=>pushLog(`🎓 Child support for <b>${n}</b> has ended — they're grown now.`,[['flag','Support ended']]));
+}
+/* ---- KIDS PILLAR — childcare (nanny) + private schooling, billed yearly, with a
+   dynasty payoff: a privately-educated heir starts life smarter. Deterministic. ---- */
+function kidsCareYear(){ if(!S||!S.alive) return;
+  const kids=Object.values(S.people).filter(k=>k.fam&&k.gen>=1&&k.alive&&k.custody!=='ex');   // you don't fund kids the ex is raising
+  let nanny=0, tuition=0;
+  kids.forEach(k=>{ const age=k.age||0;
+    if(k.nanny){ if(age>5){ k.nanny=false; } else { const c=Math.round(rng(6000,14000)*priceMult()); money(-c); nanny+=c; k.affinity=clamp(k.affinity+rng(0,1)); } }
+    if(k.privateSchool){ if(age>=18){ k.privateSchool=false; }
+      else if(age>=5){ const c=Math.round(rng(12000,30000)*priceMult());
+        if(S.money<c && S.money<=0){ k.privateSchool=false; pushLog(`🎓 I could no longer afford <b>${k.name}</b>'s private school — they moved to public.`,[['bad','Pulled from private school']]); }
+        else { money(-c); tuition+=c; k.eduInvest=(k.eduInvest||0)+1; } } }
+  });
+  if(nanny>0) pushLog(`👶 Childcare — a nanny cost me <b>${cur()}${nanny.toLocaleString()}</b> this year.`,[['flag',`-${cur()}${nanny.toLocaleString()} childcare`]]);
+  if(tuition>0) pushLog(`🎓 Private-school tuition — <b>${cur()}${tuition.toLocaleString()}</b> this year.`,[['flag',`-${cur()}${tuition.toLocaleString()} tuition`]]);
+}
+function hireNanny(id){ const k=S.people[id]; if(!k)return; const c=Math.round(rng(6000,14000)*priceMult());
+  if(S.money<c){ toast(`Can’t afford a nanny (~${fcm(c)}/yr).`); openPerson(id); return; }
+  k.nanny=true; setFlag('hired_nanny'); chg('happy',2); rel(id,+2,+1,'You brought in help to care for them.');
+  pushLog(`👶 I hired a nanny to help raise <b>${k.name}</b>.`,[['good','Hired a nanny']]);
+  resultModal('Childcare','Nanny Hired 👶','👶',[`A nanny now helps care for ${k.name} — expect a yearly cost, and a little breathing room for you.`],()=>setTab('people')); }
+function dismissNanny(id){ const k=S.people[id]; if(!k)return; k.nanny=false;
+  pushLog(`👶 I let ${k.name}'s nanny go.`,[['flag','Dismissed the nanny']]);
+  resultModal('Childcare','Nanny Dismissed','👋',[`You'll care for ${k.name} yourself again.`],()=>setTab('people')); }
+function togglePrivateSchool(id){ const k=S.people[id]; if(!k)return;
+  if(k.privateSchool){ k.privateSchool=false; pushLog(`🎓 I moved ${k.name} back to public school.`,[['flag','Left private school']]); resultModal('School','Back to Public 🎓','🎓',[`${k.name} is back in public school. You'll stop paying tuition.`],()=>setTab('people')); return; }
+  const c=Math.round(rng(12000,30000)*priceMult());
+  if(S.money<c){ toast(`Private school runs ~${fcm(c)}/yr — you can’t cover it yet.`); openPerson(id); return; }
+  k.privateSchool=true; setFlag('kid_private_school');
+  pushLog(`🎓 I enrolled <b>${k.name}</b> in private school.`,[['good','Enrolled in private school']]);
+  resultModal('School','Private School 🎓','🎓',[`${k.name} starts at a top private school (~${fcm(c)}/yr).`,`A privately-educated child grows up sharper — and if they carry on your legacy, they'll start life smarter.`],()=>setTab('people')); }
+/* ---- IN-LAWS — marrying brings your spouse's parents into the family (and its drama) ---- */
+function ensureInLaws(spouseId){ const sp=S.people[spouseId]; if(!sp||sp._inLawsGen) return; sp._inLawsGen=true;
+  const surname=(sp.name||'').split(' ').slice(-1)[0]||pick(LAST);
+  const mk=(id,g,rel,ageAdd)=>{ S.people[id]=person(id, nm(g)+' '+surname, rel, rng(38,66), rng(38,62), {gender:g,gen:-1,fam:true,age:clamp((sp.age||S.age)+ageAdd,44,90)}); S.people[id].inlaw=true; S.people[id].spouseOf=spouseId; };
+  if(rng(0,100)<88) mk('inlaw_m_'+spouseId,'f','Mother-in-Law',rng(22,34));
+  if(rng(0,100)<82) mk('inlaw_f_'+spouseId,'m','Father-in-Law',rng(24,38));
 }
 /* ---- MARRIAGE DEPTH — a "spark" that lives, fades, and can be rekindled ---- */
 function ensureSpark(p){ if(p.spark==null) p.spark=clamp(50+Math.round(((p.affinity||50)-50)/2)); return p.spark; }
