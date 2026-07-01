@@ -9193,6 +9193,63 @@ function scTrackList(){ const sm=S.sm, tr=(sm&&sm.tracks||[]).slice().reverse();
   body+= tr.length? tr.map(t=>`<div style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${t.name}</b> <span style="color:var(--dim);font-size:11px">· ${t.genre} · age ${t.age}</span><br><span style="font-size:12px;color:var(--dim)">${fc(t.plays)} plays · +${fc(t.followers)} followers · reception ${t.reception}${t.feat?` · ft. ${t.feat}`:''}</span></div>`).join('') : `<p style="color:var(--dim)">No tracks yet — drop one!</p>`;
   body+=`</div>`;
   openModal({banner:'SoundCloud', title:'💿 Track List', icon:'💿', closable:true, text:body, choices:[{label:'‹ Back', fn:()=>setTab('social')},{label:'Close', fn:closeModal}]}); }
+/* ---- 🎨 Content pickers: choose WHAT to post (each sub-type shifts reach / sentiment / risk) ---- */
+const POST_KINDS={
+  photo:[
+    {key:'selfie', label:'Selfie',        icon:'🤳', gMul:1.05, sent:1, stat:'looks',  caps:['caught in 4k looking good 📸','felt cute 🤳','me, myself & I']},
+    {key:'food',   label:'Food Photo',    icon:'🍜', gMul:0.95, sent:2,               caps:['brunch hits different 🍳','homemade & proud 🍜','the plating though 👨‍🍳']},
+    {key:'pet',    label:'Pet Pic',       icon:'🐶', gMul:1.15, sent:5, stat:'happy',  caps:['my whole heart 🐶','say hi to the goodest boy 🐾','pet tax']},
+    {key:'travel', label:'Travel Shot',   icon:'✈️', gMul:1.2,  sent:3,               caps:['take me back ✈️','postcard vibes 🌅','wish you were here']},
+    {key:'ootd',   label:'Outfit / OOTD', icon:'👗', gMul:1.1,  sent:1, stat:'looks',  caps:['fit check 👗','new drip, who dis','OOTD 🧥']},
+    {key:'meme',   label:'Meme Repost',   icon:'😂', gMul:1.25, sent:0, risk:1, stat:'smarts', caps:['couldn’t not repost 😂','this is so me 💀','tag someone 😭']},
+  ],
+  reel:[
+    {key:'dance',  label:'Dance Trend',   icon:'💃', gMul:1.25, sent:1, stat:'looks',  caps:['tried the trend 💃','wait for it 👀','one take, let’s go']},
+    {key:'comedy', label:'Comedy Skit',   icon:'🎭', gMul:1.3,  sent:3, stat:'smarts', caps:['POV: it’s me again 🎭','tell me you relate 😂','skit szn']},
+    {key:'dayin',  label:'Day in My Life',icon:'☀️', gMul:1.1,  sent:2, stat:'happy',  caps:['a day in my life ☀️','soft life diaries','romanticize everything ✨']},
+    {key:'prank',  label:'Prank',         icon:'😈', gMul:1.4,  sent:-2, risk:2,       caps:['he had NO idea 😈','wait for his reaction 💀','gone wrong??']},
+    {key:'hack',   label:'Life Hack',     icon:'💡', gMul:1.15, sent:4, stat:'smarts', caps:['you needed this 💡','why did no one tell me','save this one 📌']},
+  ],
+  video:[
+    {key:'gaming', label:'Gaming',        icon:'🎮', gMul:1.2,  sent:2, stat:'happy',  caps:['rage compilation 🎮','ranked grind pt.7','this boss took HOURS']},
+    {key:'howto',  label:'How-To / Tutorial',icon:'🛠️',gMul:1.15,sent:4, stat:'smarts',caps:['start to finish tutorial 🛠️','the only guide you need','step by step 📚']},
+    {key:'unbox',  label:'Unboxing / Haul',icon:'📦',gMul:1.25, sent:1, stat:'looks',  caps:['huge haul 📦','worth it? let’s see','unboxing the hype']},
+    {key:'vlog',   label:'Vlog',          icon:'📹', gMul:1.1,  sent:3, stat:'happy',  caps:['come with me 📹','life lately','weekly vlog is up']},
+    {key:'react',  label:'Reaction',      icon:'😮', gMul:1.2,  sent:0, risk:1,        caps:['I was NOT ready 😮','reacting to your comments','first time watching 👀']},
+    {key:'story',  label:'Storytime',     icon:'🎙️',gMul:1.3,  sent:1, risk:1, stat:'smarts', caps:['storytime you won’t believe 🎙️','so this happened...','grab a snack, it’s a long one']},
+  ],
+  hot:[
+    {key:'silly',  label:'Silly Take',    icon:'🥣', gMul:1.2,  sent:2, risk:0,        caps:['cereal is technically a soup','a hotdog is a taco, source: me','water is wet, thoughts?']},
+    {key:'celeb',  label:'Celeb Drama',   icon:'🍵', gMul:1.5,  sent:-1, risk:2,       caps:['not my business but 🍵','the way this ended them 💀','someone had to say it']},
+    {key:'sports', label:'Sports Take',   icon:'🏀', gMul:1.4,  sent:-1, risk:2,       caps:['he’s washed, I said it 🏀','worst call I’ve ever seen','GOAT debate, settled ⬇️']},
+    {key:'politics',label:'Political Take',icon:'🏛️',gMul:1.6,  sent:-4, risk:4,       caps:['unpopular but here goes 🏛️','wake up people','I’ll take the heat for this']},
+  ],
+  thirst:[
+    {key:'gym',    label:'Gym Pic',       icon:'💪', gMul:1.4,  sent:1, stat:'looks',  caps:['gym era 💪','pump & post','no days off']},
+    {key:'beach',  label:'Beach Shot',    icon:'🏖️',gMul:1.5,  sent:0, stat:'looks',  caps:['salt water & sun 🏖️','beach please','vitamin sea 🌊']},
+    {key:'mirror', label:'Mirror Selfie', icon:'🪞', gMul:1.45, sent:0, stat:'looks',  caps:['felt cute, might delete later 🪞','soft launch szn 👀','mirror said hi']},
+    {key:'soft',   label:'Soft Launch',   icon:'🕯️',gMul:1.55, sent:-1, risk:1, stat:'looks', caps:['🥵 no thoughts','the glow up is real','you’re welcome 💅']},
+  ],
+  stream:[
+    {key:'chat',   label:'Just Chatting', icon:'💬', gMul:1.05, sent:3, stat:'happy',  caps:['just chatting with chat 💬','come hang out','ask me anything']},
+    {key:'speed',  label:'Speedrun',      icon:'⏱️',gMul:1.2,  sent:1, stat:'smarts', caps:['speedrun attempt ⏱️','PB or bust','frame-perfect, let’s go']},
+    {key:'ranked', label:'Ranked Grind',  icon:'🏆', gMul:1.15, sent:0, risk:1, stat:'happy', caps:['ranked grind to the top 🏆','one more game (lie)','climb with me']},
+    {key:'irl',    label:'IRL / Cooking', icon:'🍳', gMul:1.1,  sent:2,               caps:['cooking on stream 🍳','IRL walk & talk','let’s make a mess']},
+  ],
+  wholesome:[
+    {key:'grat',   label:'Gratitude',     icon:'🌻', gMul:0.9,  sent:8, stat:'happy',  caps:['grateful for my people ❤️','count your blessings 🌻','today was a good day']},
+    {key:'family', label:'Family Moment', icon:'👨‍👩‍👧',gMul:0.95,sent:9,             caps:['family is everything 👨‍👩‍👧','my why 💗','these people right here']},
+    {key:'charity',label:'Charity Shout', icon:'🤲', gMul:1.0,  sent:10,              caps:['giving back feels good 🤲','link to donate in bio','be someone’s reason to smile']},
+    {key:'motiv',  label:'Motivation',    icon:'🌱', gMul:0.95, sent:7, stat:'smarts', caps:['you matter 🌱','small wins count too','keep going, it’s worth it']},
+  ],
+};
+function contentPicker(type){
+  const c=POSTS[type], kinds=POST_KINDS[type], dl=PLAT_DEF[S.sm.active];
+  openModal({ banner:'Social', title:`What kind of ${c.label.toLowerCase()}?`, icon:c.icon,
+    text:`Choose what to post on ${dl.name} — different content reaches a different crowd.`,
+    choices:[ ...kinds.map(k=>({label:`${k.icon} ${k.label}`, fn:()=>postDo(type,k.key)})),
+      {label:'← Cancel', fn:()=>setTab('social')} ] });
+}
 function post(type){
   const sm=S.sm, c=POSTS[type];
   if(!sm.handle || !sm.active) return;
@@ -9204,14 +9261,26 @@ function post(type){
   if(type==='merch'){ merchDrop(plat); return; }
   if(c.minAge && S.age<c.minAge){ minorViolation(c); return; }
   if(c.paid && plat.followers<5000){ toast('Need 5K followers to land brand deals.'); return; }
+  if(POST_KINDS[type]){ contentPicker(type); return; }   // choose WHAT to post first
+  postDo(type,null);
+}
+function postDo(type,kindKey){
+  const sm=S.sm, c=POSTS[type];
+  if(!sm.handle || !sm.active) return;
+  const plat=sm.platforms[sm.active];
+  const kind = kindKey ? (POST_KINDS[type]||[]).find(k=>k.key===kindKey) : null;
+  const growth=c.growth*((kind&&kind.gMul)||1);
+  const statKey=(kind&&kind.stat)||c.stat;
+  const riskLv=Math.max(0,(c.risk||0)+((kind&&kind.risk)||0));
+  const dLabel=(kind&&kind.label)||c.label, dIcon=(kind&&kind.icon)||c.icon;
   sm.postsThisYear++;
 
   const fameB=(has('job_creative')?10:0)+(plat.verified?10:0)+((has('talent_acting')||has('talent_music')||has('talent_modeling'))?8:0);
   const fatigue=Math.max(0,sm.postsThisYear-3)*12;        // post too much in one year → engagement tanks
-  const score=S.stats[c.stat]*0.5 + fameB + (plat.sentiment||0)/5 + c.growth*15 + rng(-25,35) - fatigue;
+  const score=S.stats[statKey]*0.5 + fameB + (plat.sentiment||0)/5 + growth*15 + rng(-25,35) - fatigue;
   const market=clamp(1+Math.log10((S.countryPop||1e7)/1e6)/12,0.85,1.3);   // bigger home country = wider reach
-  const base=(25+Math.sqrt(plat.followers)*4)*c.growth*market;   // sqrt → diminishing returns at scale, no runaway
-  let tier,gain,sentD=c.sent||0,pay=0,backfired=false,overposted=false;
+  const base=(25+Math.sqrt(plat.followers)*4)*growth*market;   // sqrt → diminishing returns at scale, no runaway
+  let tier,gain,sentD=(c.sent||0)+((kind&&kind.sent)||0),pay=0,backfired=false,overposted=false;
 
   if(score>66){ tier='VIRAL'; gain=base*rng(15,40)+rng(2000,25000); sentD+=6; if(rng(1,3)===1) schedule(S.age+rng(1,3),'brand_offer'); }   // viral is now genuinely rare (fame makes it attainable)
   else if(score>48){ tier='Hit';   gain=base*rng(5,12); sentD+=3; }
@@ -9225,9 +9294,9 @@ function post(type){
   }
 
   // risky content can get you ratioed — and plants a permanent skeleton
-  if(c.risk && rng(1,10) <= c.risk*2 + ((plat.sentiment||0)<0?2:0)){
+  if(riskLv && rng(1,10) <= riskLv*2 + ((plat.sentiment||0)<0?2:0)){
     backfired=true; tier='Backlash'; sentD-=rng(12,25); gain=Math.abs(gain)*rng(1,2);
-    sm.skeletons.push({age:S.age,type:c.label});
+    sm.skeletons.push({age:S.age,type:dLabel});
   }
   if(c.paid){ pay=Math.round(plat.followers*rng(1,4)/100); money(pay); sentD-=4; }
   if(c.tips){ pay=Math.round(plat.followers*rng(1,3)/100)+rng(10,400); money(pay); }   // Twitch tips
@@ -9260,7 +9329,7 @@ function post(type){
   // ALL CONNECTED: a viral moment spills over to your other platforms
   if(tier==='VIRAL') for(const o of Object.values(sm.platforms)){ if(o!==plat && o.joined) o.followers=Math.round(o.followers*1.02)+rng(50,400); }
 
-  let caption=pick(CAPTIONS[type]); if(type==='sponsored') caption=caption.replace('{brand}',pick(BRANDS));
+  let caption = kind ? pick(kind.caps) : pick(CAPTIONS[type]); if(type==='sponsored') caption=caption.replace('{brand}',pick(BRANDS));
   const likes=Math.max(3,Math.round(plat.followers*rng(3,9)/100));
   const views=Math.round(likes*rng(8,25)+Math.abs(gain));   // views ≈ many multiples of likes (+ new reach)
   plat.totalViews=(plat.totalViews||0)+views;               // lifetime views — counts toward monetization
@@ -9271,7 +9340,7 @@ function post(type){
   }
   const comments=genComments(tier,plat.sentiment||0);
   if(overposted){ comments.unshift({user:pick(USERS),text:pick(OVERPOST_C)}); toast('😩 People say you post too much.'); }
-  sm.feed.unshift({age:S.age,platform:PLAT_DEF[sm.active].name,icon:c.icon,label:c.label,tier,gain:Math.round(gain),likes,dislikes,pay,backfired,caption,celebReact,comments});
+  sm.feed.unshift({age:S.age,platform:PLAT_DEF[sm.active].name,icon:dIcon,label:dLabel,tier,gain:Math.round(gain),likes,dislikes,pay,backfired,caption,celebReact,comments});
   // narrate into the life story, then bounce back to the main feed (anti-spam)
   const dl=PLAT_DEF[sm.active];
   const outcome = tier==='VIRAL'?`It went <b>VIRAL</b> — +${fc(gain)} ${dl.label}! 🚀`
@@ -9279,13 +9348,13 @@ function post(type){
     : tier==='Flop'?`It flopped.`
     : overposted?`People say I post too much. 😩`
     : `${gain>=0?'+':''}${fc(gain)} ${dl.label}.`;
-  pushLog(`I posted a <b>${c.label}</b> on ${dl.name}. ${outcome}${celebReact?` ${celebReact}`:''}`,
+  pushLog(`I posted a <b>${dLabel}</b> on ${dl.name}. ${outcome}${celebReact?` ${celebReact}`:''}`,
     [[tier==='VIRAL'?'good':(backfired||tier==='Flop')?'bad':'flag', tier]]);
-  const lines=[`I posted a ${c.label} on ${dl.name}.`, outcome,
+  const lines=[`I posted a ${dLabel} on ${dl.name}.`, outcome,
     `❤ ${fc(likes)}${dislikes?` · 👎 ${fc(dislikes)}`:''}${pay?` · +${cur()}${pay.toLocaleString()}`:''}`];
   if(ofStarved) lines.push(`😬 Barely any new subs — <b>FanVault grows off your other platforms</b>. Build Instagram/X first, or you're wasting your time.`);
   if(celebReact) lines.push(celebReact);
-  resultModal('Social', dl.name, c.icon, lines, ()=>setTab('social'));
+  resultModal('Social', dl.name, dIcon, lines, ()=>setTab('social'));
 }
 function celebPic(id){
   const c=S.celebs[id]; if(!c||!c.met)return;
