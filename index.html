@@ -6652,6 +6652,7 @@ function renderActivities(){ const v=document.getElementById('activitiesView'); 
     h+=hubCard('🎨','Hobbies & Passions', top?`${hobbyDef(top).icon} ${hobbyDef(top).name} · ${hobbyTier(S.hobbies[top].level)}${hb.length>1?` +${hb.length-1} more`:''}`:'Find a passion — talent, calm & income', "hobbiesMenu()"); }
   h+=hubCard('🩺','See a Doctor','Check-ups, illnesses & quitting habits', "seeDoctor()");
   if(S.age>=18) h+=hubCard('🏠','Adopt a Child','Grow your family through adoption', "adoptionMenu()");
+  if(S.age>=18) h+=hubCard('🍼','Fertility Clinic','IVF or a surrogate — start a family (18+)', "fertilityMenu()");
   if(S.age>=18){ const sc=Object.values(S.people).filter(p=>p.alive&&p.sugar).length; h+=hubCard('🍯','Sugar Dating', sc?`${sc} arrangement${sc>1?'s':''} · get spoiled or spoil someone`:'Get spoiled — or spoil someone (18+)', "sugarMenu()"); }
   h+=hubCard('🌍','Emigrate', S.age<18?'Ask your parents to move (good luck)':'Move to a new country or city', "emigrate()");
   h+=hubCard('🚗','Licenses', `${licenseSummary()}`, "setTab('licenses')");
@@ -7207,6 +7208,50 @@ function doAdopt(childAge, fee){
     pushLog(`🏠 My adoption application was <b>declined</b> this round${partial>0?` (lost ${cur()}${partial.toLocaleString()} in fees)`:''}.`,[['bad','Adoption declined']]);
     resultModal('Adoption','Not This Time 😔','😔',[`The agency declined your application for now.`,`A steadier home — finances, a clean record, a happier you — improves your odds. Try again.`],()=>setTab('activities'));
   } }
+/* ---- FERTILITY & SURROGACY (18+) — IVF to conceive, or hire a surrogate. A surrogate can
+   bond with the baby and refuse to hand them over → you sue for custody. Deterministic. ---- */
+function fertilityMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  if(S.age<18){ toast('Fertility services are 18+.'); return; }
+  logAct('call',{fn:'fertilityMenu'});
+  const ivfFee=Math.round(rng(12000,25000)*priceMult()), surFee=Math.round(rng(80000,180000)*priceMult());
+  openModal({banner:'Fertility Clinic', title:'🍼 Fertility & Surrogacy', icon:'🍼', closable:true,
+    text:`Modern medicine can help you start a family — IVF to conceive, or a surrogate to carry your child. It isn't cheap, and it isn't guaranteed.`,
+    choices:[
+      {label:'🧪 IVF Treatment', tip:`~${fcm(ivfFee)} · a cycle`, alt:true, fn:()=>doIVF(ivfFee)},
+      {label:'🤰 Hire a Surrogate', tip:`~${fcm(surFee)}`, alt:true, fn:()=>doSurrogate(surFee)},
+      {label:'‹ Back', fn:()=>{closeModal();setTab('activities');}},
+    ]}); }
+function _coParentName(){ return (S.spouse&&S.people[S.spouse])?S.people[S.spouse].name:null; }
+function doIVF(fee){ if(S.money<fee){ resultModal('Fertility','Out of Reach 🧪','🧪',[`An IVF cycle runs about <b>${fcm(fee)}</b> — more than you have on hand.`],()=>setTab('activities')); return; }
+  spend(fee);
+  const success=clamp(Math.round(58 - Math.max(0,(S.age-32))*2.5 + (((S.stats&&S.stats.health)||60)-60)*0.3), 8, 82);
+  if(rng(0,100)<success){ babyBorn(_coParentName()); setFlag('ivf_parent'); chg('happy',8);
+    resultModal('Fertility','It Worked! 🍼','🍼',[`The IVF cycle succeeded — a new child joins your family!`],()=>setTab('people'));
+  } else { chg('happy',-5); addStress(rng(6,14));
+    resultModal('Fertility','Not This Cycle 💔','💔',[`The cycle didn't take this time. It's common — and it's hard.`,`Younger and healthier improves the odds. You can try again.`],()=>setTab('activities')); } }
+function doSurrogate(fee){ if(netWorth()<fee || S.money<Math.round(fee*0.5)){ resultModal('Surrogacy','Out of Reach 🤰','🤰',[`Surrogacy runs about <b>${fcm(fee)}</b> — beyond your means right now.`],()=>setTab('activities')); return; }
+  spend(Math.min(S.money,fee));
+  const sid='surro'+(S.surroSeq=(S.surroSeq||0)+1);
+  S.people[sid]=person(sid, nm('f')+' '+pick(LAST), 'Surrogate', rng(45,65), rng(40,60), {gender:'f',gen:0,age:rng(24,38)});
+  if(rng(0,100)<16){ S._surroDispute=sid; setFlag('surrogate_dispute');
+    openModal({banner:'Surrogacy', title:'⚖️ The Surrogate Won’t Let Go', icon:'⚖️', closable:false,
+      text:`Your surrogate, <b>${S.people[sid].name}</b>, has bonded with the baby and refuses to hand them over. You can fight it in court — or walk away.`,
+      choices:[
+        {label:'🧑‍⚖️ Sue for custody', tip:'Lawyer fees · uncertain', fn:()=>surrogateLawsuit('sue')},
+        {label:'💔 Let them keep the baby', fn:()=>surrogateLawsuit('walk')},
+      ]}); return;
+  }
+  delete S.people[sid]; babyBorn(_coParentName()); setFlag('surrogacy_parent'); chg('happy',9);
+  resultModal('Surrogacy','A Baby Is Born 🍼','🍼',[`Your surrogate carried your child to term — and now they're yours.`,`Welcome to the family.`],()=>setTab('people')); }
+function surrogateLawsuit(mode){ const sid=S._surroDispute, sur=sid&&S.people[sid];
+  if(mode==='walk'){ if(sur) sur.rel='Acquaintance'; S._surroDispute=null; chg('happy',-10); addStress(rng(10,20));
+    resultModal('Surrogacy','You Walked Away 💔','💔',[`You couldn't put a child through a court battle. ${sur?sur.name:'The surrogate'} keeps the baby.`,`A wound that won't fully heal.`],()=>setTab('people')); return; }
+  const fee=Math.round(rng(20000,80000)*priceMult()); spend(Math.min(S.money,fee));
+  const winC=clamp(Math.round(52 + (S.karma||0)*0.15 + (((S.stats&&S.stats.smarts)||50)-50)*0.2 + (netWorth()>1000000?10:0)), 18, 85);
+  if(rng(0,100)<winC){ if(sur) delete S.people[sid]; S._surroDispute=null; babyBorn(_coParentName()); setFlag('surrogacy_parent'); setFlag('won_surrogacy_suit'); chg('happy',10); ledgerAdd('triumph',18,{note:'Won your child back from a surrogate.'});
+    resultModal('Surrogacy','You Won Custody 🧑‍⚖️','🍼',[`The court rules in your favor — the child is legally yours. (Legal fees: ${fcm(fee)}.)`,`Hard-won, but they're home.`],()=>setTab('people'));
+  } else { S._surroDispute=null; if(sur) sur.rel='Acquaintance'; chg('happy',-12); addStress(rng(12,22));
+    resultModal('Surrogacy','You Lost the Case 💔','💔',[`The court sides with ${sur?sur.name:'the surrogate'} — you lose the case and the <b>${fcm(fee)}</b> in fees.`,`Devastating.`],()=>setTab('people')); } }
 /* ---- MARRIAGE DEPTH — a "spark" that lives, fades, and can be rekindled ---- */
 function ensureSpark(p){ if(p.spark==null) p.spark=clamp(50+Math.round(((p.affinity||50)-50)/2)); return p.spark; }
 /* ---- MULTIPLE PARTNERS — juggling more than one lover has a real yearly cost (money,
