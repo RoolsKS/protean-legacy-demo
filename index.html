@@ -1999,7 +1999,7 @@ function lifeRecord(){
   const famAlive=ppl.filter(p=>p.fam&&p.alive&&!p.pet);
   return {
     age:S.age, netWorth:nw, nwBase:Math.round(Math.max(nw,S.peakMoney||0)*base),
-    fame:Math.max(S.fame||0,S.peakFame||0), karma:S.karma||0, gen:S.legacyGen||1, awardWinner:has('award_winner'),
+    fame:Math.max(S.fame||0,S.peakFame||0), karma:S.karma||0, gen:S.legacyGen||1, awardWinner:has('award_winner'), marriedRich:has('married_rich'),
     smarts:S.stats.smarts, looks:S.stats.looks, health:S.stats.health, happy:S.stats.happy,
     kids, edu, topOffice, everOffice, uwRank, criminal, married,
     faithful: married && !has('cheater_caught') && !has('divorced'),
@@ -2028,6 +2028,7 @@ const RIBBONS=[
   {id:'famous', name:'Famous', icon:'🌟', rarity:'rare', priority:6, track:'maxFame', desc:'Become a household name.', q:r=>_frac(r.fame,70)},
   {id:'legend', name:'Living Legend', icon:'✨', rarity:'epic', priority:8, track:'maxFame', desc:'Reach the very pinnacle of fame.', q:r=>_frac(r.fame,95)},
   {id:'award_winner', name:'Award Winner', icon:'🏆', rarity:'rare', priority:6, desc:'Win a major industry award.', q:r=>r.awardWinner?1:0},
+  {id:'gold_ring', name:'Married Into Money', icon:'💍', rarity:'rare', priority:6, desc:'Marry a wealthy benefactor.', q:r=>r.marriedRich?1:0},
   // Crime
   {id:'notorious', name:'Notorious', icon:'😈', rarity:'rare', priority:6, desc:'Leave a trail of crime behind you.', q:r=>_frac(r.crimeScore,40)},
   {id:'kingpin', name:'Kingpin', icon:'🩸', rarity:'epic', priority:8, desc:'Rise to the top of the underworld.', q:r=>_frac(r.uwRank+1,5)},
@@ -2110,7 +2111,7 @@ function _eulogy(r, earned, headline){
 function _ord(n){ return n+({1:'st',2:'nd',3:'rd'}[n%10>3||(n%100>=11&&n%100<=13)?0:n%10]||'th'); }
 function _artFor(w){ return /^[aeiou]/i.test(w)?'an':'a'; }
 // Ambition nudge plumbing (Fix 3) — which broad theme an ambition belongs to, so events & feed tips can surface toward it.
-const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame',award_winner:'fame', scholar:'mind',genius:'mind',
+const RIBBON_THEME={ loaded:'wealth',tycoon:'wealth', famous:'fame',legend:'fame',award_winner:'fame',gold_ring:'wealth', scholar:'mind',genius:'mind',
   powerful:'power',sovereign:'power',self_made_monarch:'power', notorious:'crime',kingpin:'crime',conqueror:'crime',
   saintly:'virtue',devoted:'virtue',redemption:'virtue', dynasty_legend:'dynasty',polymath_founder:'dynasty',matriarch:'dynasty',
   centenarian:'health', pioneer:'era', deviant:'vice',
@@ -3516,6 +3517,45 @@ const EVENTS = [
       {label:`Come clean — choose ${suspic.name}`, apply:()=>jealousyResolve(suspic.id,other.id,'choose')},
       {label:'Own it — you want them both', tip:'Bold · they may walk', apply:()=>jealousyResolve(suspic.id,other.id,'both')},
       {label:'Deny everything', tip:'Gamble on the lie', apply:()=>jealousyResolve(suspic.id,other.id,'deny')},
+    ]};}},
+
+/* --- SUGAR: your sugar baby catches feelings and wants it real (you're the benefactor) --- */
+{ id:'sugar_feelings', once:false, weight:14,
+  when:S=>S.age>=18 && Object.values(S.people).some(p=>p.alive&&p.sugar==='baby') && (S.age-(S._lastSugarEv||-99)>=3),
+  build:S=>{ S._lastSugarEv=S.age; const b=pick(Object.values(S.people).filter(p=>p.alive&&p.sugar==='baby'));
+    return {yr:`Age ${S.age}`, title:'🍯 Catching Feelings',
+    text:`Your sugar baby <b>${b.name}</b> says the arrangement isn't enough anymore — they've fallen for you and want something real.`,
+    choices:[
+      {label:'Make it real — date them', apply:()=>{ delete b.sugar; delete b.sugarAllowance; b.romantic=true; b.rel=b.gender==='f'?'Girlfriend':'Boyfriend'; ensureSpark(b); b.spark=clamp((b.spark||55)+rng(6,14)); rel(b.id,+rng(4,10),+rng(3,8),'A sugar arrangement became a real relationship.'); chg('happy',6);
+        return {text:`You end the money side and let it become real. ${b.name} is your partner now — no more allowance, just this.`,tags:[['good',`${b.name} → partner`]]}; }},
+      {label:'Keep it transactional', tip:'They may walk', apply:()=>{ if(rng(0,100)<55){ delete b.sugar; delete b.sugarAllowance; b.rel='Ex'; b.affinity=clamp(b.affinity-rng(10,22)); return {text:`You keep it strictly business. ${b.name} is hurt — they end things and walk.`,tags:[['bad',`Lost ${b.name}`]]}; } b.affinity=clamp(b.affinity-rng(3,8)); return {text:`You gently keep it transactional. ${b.name} stays, but something's cooled.`,tags:[['flag','Kept it business']]}; }},
+      {label:'End the arrangement', apply:()=>{ delete b.sugar; delete b.sugarAllowance; b.rel='Ex'; b.affinity=clamp(b.affinity-rng(5,12)); return {text:`You call it off before it gets complicated. ${b.name} moves on.`,tags:[['flag','Ended it']]}; }},
+    ]};}},
+
+/* --- SUGAR: a possessive benefactor (you're the sugar baby) --- */
+{ id:'sugar_jealous', once:false, weight:12,
+  when:S=>S.age>=18 && Object.values(S.people).some(p=>p.alive&&(p.sugar==='daddy'||p.sugar==='mommy')) && (S.age-(S._lastSugarEv||-99)>=3),
+  build:S=>{ S._lastSugarEv=S.age; const d=pick(Object.values(S.people).filter(p=>p.alive&&(p.sugar==='daddy'||p.sugar==='mommy')));
+    return {yr:`Age ${S.age}`, title:'👀 A Possessive Benefactor',
+    text:`Your ${d.sugar==='daddy'?'sugar daddy':'sugar mommy'} <b>${d.name}</b> is getting possessive — they want you all to themselves and keep checking up on you.`,
+    choices:[
+      {label:'Reassure them', tip:'Protect the allowance', apply:()=>{ rel(d.id,+rng(3,8),+rng(1,4),'You reassured your benefactor.'); if(rng(0,100)<40 && d.sugarAllowance){ d.sugarAllowance=Math.round(d.sugarAllowance*(1.1+rand()*0.2)); return {text:`You lay on the charm. ${d.name} relaxes — and bumps your allowance. 💸`,tags:[['good','Allowance raised']]}; } return {text:`You smooth it over. ${d.name} calms down… for now.`,tags:[['flag','Reassured them']]}; }},
+      {label:'Set a boundary', tip:'They may cut you off', apply:()=>{ if(rng(0,100)<48){ delete d.sugar; delete d.sugarAllowance; d.rel='Ex'; d.affinity=clamp(d.affinity-rng(8,18)); return {text:`You tell ${d.name} to back off. They don't take it well — the arrangement (and the money) is over.`,tags:[['bad','Cut off by your benefactor']]}; } rel(d.id,-rng(2,6),0); addSelfWorth(3); return {text:`You hold your ground. ${d.name} grumbles but respects it — the allowance keeps flowing.`,tags:[['good','Held your ground']]}; }},
+      {label:'Walk away from it', apply:()=>{ delete d.sugar; delete d.sugarAllowance; d.rel='Ex'; d.affinity=clamp(d.affinity-rng(4,10)); chg('happy',2); return {text:`You end it — the money isn't worth the leash. You walk.`,tags:[['flag','Walked away']]}; }},
+    ]};}},
+
+/* --- SUGAR → MARRY RICH: a wealthy benefactor proposes --- */
+{ id:'sugar_marry_rich', once:false, weight:9,
+  when:S=>S.age>=18 && !S.spouse && Object.values(S.people).some(p=>p.alive&&(p.sugar==='daddy'||p.sugar==='mommy')&&(p.affinity||0)>=55) && (S.age-(S._lastSugarMarry||-99)>=4),
+  build:S=>{ S._lastSugarMarry=S.age; const d=pick(Object.values(S.people).filter(p=>p.alive&&(p.sugar==='daddy'||p.sugar==='mommy')&&(p.affinity||0)>=55));
+    return {yr:`Age ${S.age}`, title:'💍 A Ring From the Benefactor',
+    text:`Your ${d.sugar==='daddy'?'sugar daddy':'sugar mommy'} <b>${d.name}</b> — wealthy, older, and smitten — gets down on one knee. Marry into money?`,
+    choices:[
+      {label:'Say yes — marry rich', tip:'Wealth & status', apply:()=>{ delete d.sugar; delete d.sugarAllowance; d.romantic=true; d.rel=d.gender==='f'?'Wife':'Husband'; S.spouse=d.id; setFlag('married'); setFlag('married_rich'); ensureSpark(d); d.spark=clamp((d.spark||50)+rng(4,10)); d.marriedYears=0; d.wealth=Math.max(d.wealth||0, rng(3000000,30000000)); const gift=Math.round(rng(200000,2000000)*priceMult()); money(gift); if(typeof ensureInLaws==='function') ensureInLaws(d.id); keyMoment(d,'milestone',50,`Married your wealthy benefactor.`); chg('happy',12); ledgerAdd('triumph',18,{note:`Married into ${d.name}'s fortune.`});
+        return {text:`You marry ${d.name}. Their fortune is your world now — a ${cur()}${gift.toLocaleString()} 'welcome' and a life of luxury. 💍`,tags:[['good',`Married rich +${fc(gift)}`]]}; }},
+      {label:'Keep it casual', apply:()=>{ rel(d.id,-rng(2,6),-rng(1,3),'You turned down their proposal.'); return {text:`You let ${d.name} down easy and keep the arrangement as-is. They're a little wounded.`,tags:[['flag','Declined the ring']]}; }},
+      {label:'Take the money and run', tip:'Cold · burns them', apply:()=>{ const grab=Math.round(rng(50000,400000)*priceMult()); money(grab); karma(-6); delete d.sugar; delete d.sugarAllowance; d.rel='Ex'; d.affinity=clamp(d.affinity-rng(25,45)); spawnFeud(d.name,'You conned them and vanished.',50,d.id); setFlag('gold_digger');
+        return {text:`You accept 'engagement' gifts worth ${cur()}${grab.toLocaleString()}… then vanish. ${d.name} is humiliated and furious. 🏃`,tags:[['bad',`Conned ${d.name} +${fc(grab)}`]]}; }},
     ]};}},
 
 /* --- FAMILY: aunt/uncle visit (recurring) --- */
