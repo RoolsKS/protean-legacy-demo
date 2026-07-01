@@ -1791,7 +1791,14 @@ function econPhase(wy){ const c=econClimate(wy);
   return       {k:'recovery', name:'Recovery', icon:'🌱', col:'var(--dim)',  note:'The economy is finding its feet again.'}; }
 function priceMult(){ return (S.priceIndex||10000)/10000; }     // cumulative inflation multiplier (1.00 at dynasty start)
 function inflate(n){ return Math.round(n*priceMult()); }        // scale a base price/wage into "today's" money
-function investValue(){ const iv=S.investments||{}; return (iv.stocks||0)+(iv.spec||0); }
+// ensure the portfolio has all buckets + per-asset cost basis (backfills old saves: existing holdings start at break-even)
+function ivInit(){ const iv=S.investments=S.investments||{stocks:0,spec:0,cost:0};
+  if(iv.bonds==null)iv.bonds=0;
+  if(iv.stocksCost==null)iv.stocksCost=iv.stocks||0;
+  if(iv.specCost==null)iv.specCost=iv.spec||0;
+  if(iv.bondsCost==null)iv.bondsCost=iv.bonds||0;
+  return iv; }
+function investValue(){ const iv=S.investments||{}; return (iv.stocks||0)+(iv.spec||0)+(iv.bonds||0); }
 // the yearly turn of the economy — inflation compounds, holdings ride the cycle, recessions bite
 function econYear(){
   S.worldYear=(S.worldYear||0)+1;
@@ -1802,52 +1809,68 @@ function econYear(){
   if(iv){   // returns by asset & cycle — deterministic & shared across players on this seed
     const stockBps=Math.round(c*7 + (econHash(S.worldYear+11)*900-300));      // index: rides the cycle, mild noise
     const specBps =Math.round(c*15 + (econHash(S.worldYear+99)*5200-2400));   // speculative: wild swings, bubbles & crashes
+    const bondBps =Math.round(160 + (c<0?Math.min(240,-c*2.2):Math.round(c*0.4)) + Math.round(econHash(S.worldYear+55)*90));  // bonds: steady, DEFENSIVE — hold up (even rise) when the cycle turns down
     if(iv.stocks>0) iv.stocks=Math.max(0,Math.round(iv.stocks*(10000+stockBps)/10000));
     if(iv.spec>0)   iv.spec  =Math.max(0,Math.round(iv.spec  *(10000+specBps)/10000));
+    if(iv.bonds>0)  iv.bonds =Math.max(0,Math.round(iv.bonds *(10000+bondBps)/10000));
   }
   if(econPhase().k==='recession' && S.job && !S.job.owner && rng(0,100) < 7 + ((S.jobPerf||50)<40?6:0)){   // a downturn can cost you the job
     pushLog(`The recession reached my employer — I was <b>laid off</b>. 📉`,[['bad','Laid off — recession']]); clearCoworkers(); S.job=null; addStress(rng(8,16)); addMood(-rng(3,8)); }
 }
 function investMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;} if(S.age<18){toast('You must be 18 to invest.');return;}
-  logAct('call',{fn:'investMenu'}); const iv=S.investments=S.investments||{stocks:0,spec:0,cost:0};
+  logAct('call',{fn:'investMenu'}); const iv=ivInit();
   const ph=econPhase();
+  const plRow=(icon,name,val,cost,note)=>{ const pl=val-cost, pct=cost>0?Math.round(pl/cost*100):0; const col=pl>=0?'var(--good)':'var(--bad)';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)">
+      <span>${icon} ${name}<div style="color:var(--dim);font-size:10.5px">${note}</div></span>
+      <span style="text-align:right"><b>${cur()}${val.toLocaleString()}</b>${val>0?`<div style="color:${col};font-size:11px">${pl>=0?'+':''}${cur()}${pl.toLocaleString()} (${pl>=0?'+':''}${pct}%)</div>`:''}</span></div>`; };
+  const totVal=investValue(), totCost=(iv.stocksCost||0)+(iv.specCost||0)+(iv.bondsCost||0), totPl=totVal-totCost, totPct=totCost>0?Math.round(totPl/totCost*100):0;
+  const totCol=totPl>=0?'var(--good)':'var(--bad)';
   const txt=`<div style="text-align:left">
     <div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between"><b style="color:${ph.col}">${ph.icon} ${ph.name}</b><span style="font-size:11px;color:var(--dim)">the market</span></div>
       <div style="color:var(--dim);font-size:12px;margin-top:2px">${ph.note} · Cost of living: <b>${Math.round(priceMult()*100)}%</b> of dynasty start.</div></div>
-    📊 Index Fund: <b>${cur()}${(iv.stocks||0).toLocaleString()}</b> &nbsp;·&nbsp; 🎲 Speculative: <b>${cur()}${(iv.spec||0).toLocaleString()}</b><br>
-    💵 Cash on hand: <b>${cur()}${S.money.toLocaleString()}</b></div>`;
-  openModal({banner:'Investments', title:'📈 The Market', icon:'📈', closable:true, text:txt,
+    ${plRow('📊','Index Fund',iv.stocks||0,iv.stocksCost||0,'Steady — rides the whole economy')}
+    ${plRow('🏦','Bonds',iv.bonds||0,iv.bondsCost||0,'Defensive — safe, and holds up in a downturn')}
+    ${plRow('🎲','Speculative',iv.spec||0,iv.specCost||0,'High risk — bubbles & crashes')}
+    ${totVal>0?`<div style="display:flex;justify-content:space-between;padding:6px 0 2px"><b>Portfolio</b><span style="text-align:right"><b>${cur()}${totVal.toLocaleString()}</b> <span style="color:${totCol};font-size:11px">(${totPl>=0?'+':''}${totPct}%)</span></span></div>`:''}
+    <div style="margin-top:4px">💵 Cash on hand: <b>${cur()}${S.money.toLocaleString()}</b></div></div>`;
+  openModal({banner:'Investments', title:'📈 Portfolio', icon:'📈', closable:true, text:txt,
     choices:[
       {label:'📊 Buy Index Fund', tip:'Steady — rides the whole economy', fn:()=>investBuy('stocks')},
+      {label:'🏦 Buy Bonds', tip:'Low risk — a defensive anchor', fn:()=>investBuy('bonds')},
       {label:'🎲 Buy Speculative', alt:true, tip:'High risk — bubbles and crashes', fn:()=>investBuy('spec')},
       {label:'💰 Sell Holdings', alt:true, fn:()=>investSell()},
       {label:'Back', fn:()=>{ closeModal(); setTab('activities'); }},
     ]});
 }
-function investBuy(kind){ const iv=S.investments=S.investments||{stocks:0,spec:0,cost:0};
+const INV_LABEL={stocks:'an index fund', bonds:'bonds', spec:'a speculative play'};
+const INV_TITLE={stocks:'📊 Buy Index Fund', bonds:'🏦 Buy Bonds', spec:'🎲 Buy Speculative'};
+function investBuy(kind){ const iv=ivInit();
   const amts=presetAmts(S.money); if(!amts.length){ resultModal('Investments','No Cash','📈',[`You have nothing to invest right now.`],()=>setTab('life')); return; }
-  openModal({banner:'Investments', title:kind==='stocks'?'📊 Buy Index Fund':'🎲 Buy Speculative', icon:'📈', closable:true,
-    text:`How much to put in? You have <b>${cur()}${S.money.toLocaleString()}</b>.${kind==='spec'?'<br>⚠️ Speculative assets can soar — or wipe out.':''}`,
-    choices:amts.map((a,i)=>({label:`${cur()}${a.toLocaleString()}`, alt:i>0, fn:()=>{ if(spend(a)){ iv[kind]=(iv[kind]||0)+a; iv.cost=(iv.cost||0)+a;   // buy is replayed via the modalpick chain — no extra logAct
-        pushLog(`I invested <b>${cur()}${a.toLocaleString()}</b> in ${kind==='stocks'?'an index fund':'a speculative play'}. 📈`,[['flag',`Invested ${cur()}${a.toLocaleString()}`]]);
-        resultModal('Investments','Position Opened','📈',[`You put <b>${cur()}${a.toLocaleString()}</b> into ${kind==='stocks'?'the index':'a speculative bet'}.`,`Its value will ride the economy each year. Sell when you're ahead.`],()=>investMenu()); } }})).concat([{label:'Back', fn:investMenu}]) });
+  openModal({banner:'Investments', title:INV_TITLE[kind]||'Buy', icon:'📈', closable:true,
+    text:`How much to put in? You have <b>${cur()}${S.money.toLocaleString()}</b>.${kind==='spec'?'<br>⚠️ Speculative assets can soar — or wipe out.':kind==='bonds'?'<br>🏦 Bonds are a defensive anchor — modest, steady, and they hold up when markets fall.':''}`,
+    choices:amts.map((a,i)=>({label:`${cur()}${a.toLocaleString()}`, alt:i>0, fn:()=>{ if(spend(a)){ iv[kind]=(iv[kind]||0)+a; iv[kind+'Cost']=(iv[kind+'Cost']||0)+a; iv.cost=(iv.cost||0)+a;   // buy is replayed via the modalpick chain — no extra logAct
+        pushLog(`I invested <b>${cur()}${a.toLocaleString()}</b> in ${INV_LABEL[kind]}. 📈`,[['flag',`Invested ${cur()}${a.toLocaleString()}`]]);
+        resultModal('Investments','Position Opened','📈',[`You put <b>${cur()}${a.toLocaleString()}</b> into ${INV_LABEL[kind]}.`,`Its value will ride the economy each year. Sell when you're ahead.`],()=>investMenu()); } }})).concat([{label:'Back', fn:investMenu}]) });
 }
-function investSell(){ const iv=S.investments||{}; const total=investValue();
+function investSell(){ const iv=ivInit(); const total=investValue();
   if(total<=0){ resultModal('Investments','Nothing to Sell','📈',[`You hold no investments right now.`],()=>setTab('life')); return; }
+  const ch=[];
+  if((iv.stocks||0)>0) ch.push({label:`Sell all index (${cur()}${(iv.stocks||0).toLocaleString()})`, fn:()=>investCashOut('stocks')});
+  if((iv.bonds||0)>0)  ch.push({label:`Sell all bonds (${cur()}${(iv.bonds||0).toLocaleString()})`, alt:true, fn:()=>investCashOut('bonds')});
+  if((iv.spec||0)>0)   ch.push({label:`Sell all speculative (${cur()}${(iv.spec||0).toLocaleString()})`, alt:true, fn:()=>investCashOut('spec')});
+  ch.push({label:`Sell everything (${cur()}${total.toLocaleString()})`, alt:true, fn:()=>investCashOut('all')});
+  ch.push({label:'Back', fn:investMenu});
   openModal({banner:'Investments', title:'💰 Sell Holdings', icon:'💰', closable:true,
-    text:`📊 Index: <b>${cur()}${(iv.stocks||0).toLocaleString()}</b> · 🎲 Speculative: <b>${cur()}${(iv.spec||0).toLocaleString()}</b>`,
-    choices:[
-      {label:`Sell all index (${cur()}${(iv.stocks||0).toLocaleString()})`, fn:()=>investCashOut('stocks')},
-      {label:`Sell all speculative (${cur()}${(iv.spec||0).toLocaleString()})`, alt:true, fn:()=>investCashOut('spec')},
-      {label:`Sell everything (${cur()}${total.toLocaleString()})`, alt:true, fn:()=>investCashOut('all')},
-      {label:'Back', fn:investMenu},
-    ]});
+    text:`📊 Index: <b>${cur()}${(iv.stocks||0).toLocaleString()}</b> · 🏦 Bonds: <b>${cur()}${(iv.bonds||0).toLocaleString()}</b> · 🎲 Speculative: <b>${cur()}${(iv.spec||0).toLocaleString()}</b>`,
+    choices:ch });
 }
-function investCashOut(kind){ const iv=S.investments||{stocks:0,spec:0}; let got=0;
-  if(kind==='all'){ got=(iv.stocks||0)+(iv.spec||0); iv.stocks=0; iv.spec=0; }
-  else { got=iv[kind]||0; iv[kind]=0; }
-  if(got<=0){ closeModal(); return; } money(got); iv.cost=Math.max(0,(iv.cost||0)-got);
+function investCashOut(kind){ const iv=ivInit(); let got=0;
+  if(kind==='all'){ got=investValue(); iv.stocks=0; iv.spec=0; iv.bonds=0; iv.stocksCost=0; iv.specCost=0; iv.bondsCost=0; }
+  else { got=iv[kind]||0; iv[kind]=0; iv[kind+'Cost']=0; }
+  iv.cost=(iv.stocksCost||0)+(iv.specCost||0)+(iv.bondsCost||0);   // keep the combined basis consistent
+  if(got<=0){ closeModal(); return; } money(got);
   pushLog(`I cashed out <b>${cur()}${got.toLocaleString()}</b> in investments. 💰`,[['good',`+${cur()}${got.toLocaleString()} investments`]]);
   resultModal('Investments','Cashed Out','💰',[`You sold for <b>${cur()}${got.toLocaleString()}</b>.`,`It's back in your account.`],()=>investMenu()); }
 
@@ -2736,7 +2759,7 @@ const EVENTS = [
     text:`The ${currentEra().name} is minting fortunes overnight. A once-in-a-generation technological boom is here — the bold are getting rich, and the cautious are getting left behind.`,
     choices:[
       {label:'Go all in on the wave', tip:'Bet big on the future', when:S=>S.money>3000, apply:()=>{ const put=Math.min(S.money,rng(3000,25000)); if(!spend(put)) return {text:`You couldn't get in fast enough.`,tags:[['flag','Missed the boom']]};
-        const iv=S.investments=S.investments||{stocks:0,spec:0,cost:0}; iv.spec+=put; iv.cost=(iv.cost||0)+put; driftPers('boldness',2);
+        const iv=S.investments=S.investments||{stocks:0,spec:0,cost:0}; iv.spec+=put; iv.specCost=(iv.specCost||0)+put; iv.cost=(iv.cost||0)+put; driftPers('boldness',2);
         return {text:`You threw <b>${cur()}${put.toLocaleString()}</b> into the boom. Ride it right and you're set for life — the cycle is on your side, for now. 🚀`, tags:[['good','Rode the boom']]}; }},
       {label:'Retrain for the new world', tip:'Build skills the era rewards', apply:()=>{ chg('smarts',rng(2,5)); driftPers('openness',2); addSelfWorth(3);
         return {text:`You spent the boom learning the skills the new era demands. No overnight fortune — but you won't be left behind. 📚`, tags:[['good','Future-proofed yourself']]}; }},
@@ -2754,7 +2777,7 @@ const EVENTS = [
     text:`The recession has people desperate. ${asset.charAt(0).toUpperCase()+asset.slice(1)} is going for a fraction of its worth — if you have the nerve (and the cash) to buy when everyone else is selling.`,
     choices:[
       {label:'Buy the dip', tip:'Be greedy when others are fearful', apply:()=>{ const put=Math.min(S.money, rng(5000,40000)); if(!spend(put)) return {text:`You couldn't pull the cash together in time.`,tags:[['flag','Missed the dip']]};
-        const iv=S.investments=S.investments||{stocks:0,spec:0,cost:0}; iv.stocks+=put; iv.cost=(iv.cost||0)+put;
+        const iv=S.investments=S.investments||{stocks:0,spec:0,cost:0}; iv.stocks+=put; iv.stocksCost=(iv.stocksCost||0)+put; iv.cost=(iv.cost||0)+put;
         return {text:`You bought <b>${cur()}${put.toLocaleString()}</b> worth while the market bled. When the cycle turns, this could pay off enormously. 📈`, tags:[['good',`Bought the dip`]]}; }},
       {label:'Too risky — stay liquid', apply:()=>{ return {text:`You kept your powder dry. Safe — but the bold will reap this recovery.`, tags:[['flag','Stayed liquid']]}; }},
     ]};}},
@@ -2766,7 +2789,7 @@ const EVENTS = [
     text:`The market is euphoric and ${fad} is the talk of every dinner table. People are making fortunes overnight. Your gut says bubble — but the fear of missing out is real.`,
     choices:[
       {label:'Pile in — don’t miss out', tip:'Chase the bubble', apply:()=>{ const put=Math.min(S.money, rng(4000,30000)); if(!spend(put)) return {text:`You couldn't get your money in fast enough.`,tags:[['flag','Missed it']]};
-        const iv=S.investments=S.investments||{stocks:0,spec:0,cost:0}; iv.spec+=put; iv.cost=(iv.cost||0)+put;
+        const iv=S.investments=S.investments||{stocks:0,spec:0,cost:0}; iv.spec+=put; iv.specCost=(iv.specCost||0)+put; iv.cost=(iv.cost||0)+put;
         return {text:`You threw <b>${cur()}${put.toLocaleString()}</b> at ${fad}. Maybe you ride it to the moon — maybe you're the greater fool. The cycle always turns. 🎲`, tags:[['bad',`Chased a bubble`]]}; }},
       {label:'Stay disciplined', tip:'Bubbles always pop', apply:()=>{ addSelfWorth(1); return {text:`You watched others chase it and kept your discipline. When it pops, you'll be glad.`, tags:[['good','Resisted the FOMO']]}; }},
     ]};}},
