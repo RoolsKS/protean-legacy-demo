@@ -6421,6 +6421,7 @@ function bbHub(){ const b=bb(); if(!b||!b.player){ bballMenuRoute(); return; } c
   if((b.trophies||[]).length||(b.awards||[]).length) ch.push({label:'🏆 Trophy Cabinet', alt:true, fn:bbCabinet});
   if((S.seasonHistory||[]).some(r=>r.sport==='bball')) ch.push({label:'📋 Season History', alt:true, fn:()=>seasonHistoryView('bball', bbHub)});
   if(!b.owned && S.age>=18) ch.push({label:`🏟️ Buy a Franchise${p.retired?'':' (own & run)'}`, alt:true, fn:()=>{ const min=Math.round(3000000*priceMult()); if(netWorth()<min){ toast(`Need ${fcm(min)}+ net worth to buy a franchise.`); bbHub(); return; } bbBuyFranchisePrompt(); }});
+  if(senior && p.contract) ch.push({label:'🤝 Renegotiate Contract', alt:true, fn:negotiateContract});
   if(senior && S.age>=31) ch.push({label:'🚪 Retire', alt:true, fn:bbRetirePrompt});
   ch.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
   openModal({banner:'Basketball', title:'🏀 My Career', icon:'🏀', closable:true, text:body, choices:ch}); }
@@ -6740,6 +6741,7 @@ function nflHub(){ const b=nf(); if(!b||!b.player){ nflMenuRoute(); return; } co
   if((b.trophies||[]).length||(b.awards||[]).length) ch.push({label:'🏆 Trophy Cabinet', alt:true, fn:nflCabinet});
   if((S.seasonHistory||[]).some(r=>r.sport==='nfl')) ch.push({label:'📋 Season History', alt:true, fn:()=>seasonHistoryView('nfl', nflHub)});
   if(!b.owned && S.age>=18) ch.push({label:`🏟️ Buy a Franchise${p.retired?'':' (own & run)'}`, alt:true, fn:()=>{ const min=Math.round(5000000*priceMult()); if(netWorth()<min){ toast(`Need ${fcm(min)}+ net worth to buy a franchise.`); nflHub(); return; } nflBuyFranchisePrompt(); }});
+  if(senior && p.contract) ch.push({label:'🤝 Renegotiate Contract', alt:true, fn:negotiateContract});
   if(senior && S.age>=30) ch.push({label:'🚪 Retire', alt:true, fn:nflRetirePrompt});
   ch.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
   openModal({banner:'Football', title:'🏈 My Career', icon:'🏈', closable:true, text:body, choices:ch}); }
@@ -6972,6 +6974,7 @@ function sp2Hub(k){ const def=SP2_DEFS[k], s=S[k]; if(!s||!s.player){ sp2Route(k
   const ch=[]; if(!p.retired){ ch.push({label:`${def.emoji} Play a Big Match${s._gamed?` (${s._gamed})`:''}`, alt:true, fn:()=>sp2PlayBig(k)}); ch.push({label:'🏋️ Train', alt:true, fn:()=>sp2Train(k)}); }
   if((s.trophies||[]).length||(s.awards||[]).length) ch.push({label:'🏆 Trophy Cabinet', alt:true, fn:()=>sp2Cabinet(k)});
   if((S.seasonHistory||[]).some(r=>r.sport==='sp2_'+k)) ch.push({label:'📋 Season History', alt:true, fn:()=>seasonHistoryView('sp2_'+k, ()=>sp2Hub(k))});
+  if(!p.retired && p.contract) ch.push({label:'🤝 Renegotiate Contract', alt:true, fn:negotiateContract});
   if(!p.retired && S.age>=(def.peak+2)) ch.push({label:'🚪 Retire', alt:true, fn:()=>sp2RetirePrompt(k)});
   ch.push({label:'‹ Back', fn:()=>{closeModal();setTab('specialcareers');}});
   openModal({banner:def.name, title:`${def.emoji} My Career`, icon:def.emoji, closable:true, text:body, choices:ch}); }
@@ -7070,15 +7073,40 @@ function socPotential(){ const ath=Math.round(geneVal('vitality')*0.6 + (S.stats
 function soc(){ return S.soccer; }
 function socClub(){ const sc=soc(); return sc && sc.world && sc.world.clubs[sc.player.clubId]; }
 function socActive(){ return !!(S.soccer && S.soccer.player && !S.soccer.player.retired); }
-// the player's currently-active PRO sports career (any of the packs), for cross-sport story beats
+// the player's currently-active PRO sports career (any of the packs), for cross-sport story beats + contract talks
 function proAthlete(){
-  if(socActive())return {p:S.soccer.player, label:'⚽ football', club:(socClub()&&socClub().name)||'your club', retire:()=>socDoRetire(true)};
-  if(bbActive())return {p:S.bball.player, label:'🏀 basketball', club:(bbTeam()&&bbTeam().name)||'your team', retire:()=>bbDoRetire(true)};
-  if(nflActive())return {p:S.nfl.player, label:'🏈 football', club:(nflTeam()&&nflTeam().name)||'your team', retire:()=>nflDoRetire(true)};
-  for(const k of ['tennis','volley','hockey']) if(sp2Active(k)) return {p:S[k].player, label:SP2_DEFS[k].emoji+' '+SP2_DEFS[k].name.toLowerCase(), club:SP2_DEFS[k].name, retire:()=>sp2Retire(k,true)};
+  if(socActive())return {sport:'soccer', p:S.soccer.player, label:'⚽ football', club:(socClub()&&socClub().name)||'your club', ov:socOverall(S.soccer.player), hub:socHub, retire:()=>socDoRetire(true)};
+  if(bbActive())return {sport:'bball', p:S.bball.player, label:'🏀 basketball', club:(bbTeam()&&bbTeam().name)||'your team', ov:bbOverall(S.bball.player), hub:bbHub, retire:()=>bbDoRetire(true)};
+  if(nflActive())return {sport:'nfl', p:S.nfl.player, label:'🏈 football', club:(nflTeam()&&nflTeam().name)||'your team', ov:nflOverall(S.nfl.player), hub:nflHub, retire:()=>nflDoRetire(true)};
+  for(const k of ['tennis','volley','hockey']) if(sp2Active(k)) return {sport:k, p:S[k].player, label:SP2_DEFS[k].emoji+' '+SP2_DEFS[k].name.toLowerCase(), club:SP2_DEFS[k].name, ov:sp2Overall(S[k].player), hub:()=>sp2Hub(k), retire:()=>sp2Retire(k,true)};
   return null;
 }
 function proAthleteActive(){ return !!proAthlete(); }
+/* 🤝 CONTRACT RENEGOTIATION — the pro-side counterpart to NIL: push for a raise, extend, or a signing bonus.
+   Leverage = your overall + form + fame (+ agent). Never forces free agency (leaving is the breach-suit system). */
+function negotiateContract(){ const a=proAthlete(); if(!a||!a.p||!a.p.contract){ toast('No contract to negotiate right now.'); return; }
+  const cur=a.p.contract;
+  openModal({banner:'Contract', title:'🤝 Contract Talks', icon:'🤝', closable:true,
+    text:`Your ${a.label} deal with <b>${a.club}</b>: <b>${fcm(cur.wagePerYear)}/yr</b>, <b>${cur.yearsRemaining} year${cur.yearsRemaining!==1?'s':''}</b> left${has('has_sports_agent')?' · 🕴️ your agent is at the table':''}. How do you play the negotiation?`,
+    choices:[
+      {label:'💰 Push for a big raise', tip:'High risk, high reward', alt:true, fn:()=>ctDo('raise')},
+      {label:'📝 Sign a long, secure extension', tip:'Security over upside', alt:true, fn:()=>ctDo('extend')},
+      {label:'🤝 Hold out for a signing bonus', tip:'Cash up front', alt:true, fn:()=>ctDo('bonus')},
+      {label:'‹ Back', fn:()=>{ closeModal(); if(a.hub)a.hub(); }},
+    ]});
+}
+function ctDo(kind){ const a=proAthlete(); if(!a||!a.p||!a.p.contract)return; closeModal(); const p=a.p, cur=p.contract;
+  const back=()=>{ if(a.hub)a.hub(); };
+  const lev = a.ov*0.6 + ((p.form||60)-50)*0.3 + (S.fame||0)*0.2 + (has('has_sports_agent')?15:0) + rng(-20,20);
+  if(kind==='raise'){
+    if(lev>72){ cur.wagePerYear=Math.round(cur.wagePerYear*rng(145,195)/100); p.morale=clamp((p.morale||60)+rng(2,6),0,100); pushLog(`🤝 I forced a huge new deal out of ${a.club} — ${fcm(cur.wagePerYear)}/yr.`,[['good','Landed a big raise']]); resultModal('Contract','Cha-Ching 💰','💰',[`You're too valuable to lose. ${a.club} caves and hands you a monster raise: <b>${fcm(cur.wagePerYear)}/yr</b>.`],back); }
+    else if(lev>40){ cur.wagePerYear=Math.round(cur.wagePerYear*rng(108,130)/100); pushLog(`🤝 I negotiated a raise with ${a.club} — ${fcm(cur.wagePerYear)}/yr.`,[['good','Got a raise']]); resultModal('Contract','A Solid Bump 📈','📈',[`After some back-and-forth, ${a.club} bumps you to <b>${fcm(cur.wagePerYear)}/yr</b>. Respectable.`],back); }
+    else { p.morale=clamp((p.morale||60)-rng(3,9),0,100); pushLog(`🤝 I demanded a raise and ${a.club} shut me down.`,[['bad','Lowballed']]); resultModal('Contract','Lowballed 😒','😒',[`${a.club} calls your bluff — no raise, and the front office is quietly annoyed you pushed. Earn it on the field first.`],back); }
+  } else if(kind==='extend'){ const yrs=rng(3,5); cur.yearsRemaining=Math.max(cur.yearsRemaining,yrs); cur.wagePerYear=Math.round(cur.wagePerYear*rng(105,122)/100); p.morale=clamp((p.morale||60)+rng(3,7),0,100); pushLog(`🤝 I signed a ${yrs}-year extension with ${a.club}.`,[['good','Signed an extension']]); resultModal('Contract','Locked In 📝','📝',[`You sign a <b>${yrs}-year extension</b> at <b>${fcm(cur.wagePerYear)}/yr</b>. Long-term security and a modest bump — and the fans love the commitment.`],back);
+  } else { // bonus
+    if(lev>45){ const bonus=Math.round(cur.wagePerYear*rng(30,90)/100); money(bonus); pushLog(`🤝 I held out and ${a.club} paid me a ${fcm(bonus)} signing bonus.`,[['good',`+${fcm(bonus)} bonus`]]); resultModal('Contract','Signing Bonus 🤝','🤝',[`You hold firm and ${a.club} sweetens the deal with a <b>${fcm(bonus)}</b> signing bonus, straight to your account.`],back); }
+    else { p.morale=clamp((p.morale||60)-rng(1,5),0,100); pushLog(`🤝 ${a.club} refused my signing-bonus demand.`,[['flag','No bonus']]); resultModal('Contract','No Bonus 😕','😕',[`${a.club} won't budge on a bonus. You'll have to prove you're worth it on the field.`],back); } }
+}
 // the player's active SCHOOL-sports profile (feeds the NIL / transfer-portal / booster beats)
 function schoolAthlete(){
   if(S.schoolSport&&S.schoolSport.onTeam)return {prof:S.schoolSport, sport:'soccer', lvl:schoolSportLevel(), label:'⚽ football'};
@@ -7375,6 +7403,7 @@ function socHub(){ if(!S){toast('Start a life first.');return;} const sc=soc(); 
   else if(!p.retired){ choices.push({label:'🧒 Still in the academy', fn:socHub, tip:`Senior football from age 16 (you're ${S.age})`}); }
   if((sc.trophies||[]).length||(sc.awards||[]).length) choices.push({label:'🏆 Trophy Cabinet', alt:true, fn:socCabinet});
   if((S.seasonHistory||[]).some(r=>r.sport==='soccer')) choices.push({label:'📋 Season History', alt:true, fn:()=>seasonHistoryView('soccer', socHub)});
+  if(senior && p.contract) choices.push({label:'🤝 Renegotiate Contract', alt:true, fn:negotiateContract});
   if(senior && S.age>=30) choices.push({label:'🚪 Retire from playing', alt:true, fn:socRetirePrompt});
   if(!sc.owned && S.age>=18) choices.push({label:`🏟️ Buy a Club${p.retired?'':' (own & manage)'}`, alt:true, fn:()=>{ const min=Math.round(3000000*priceMult()); if(netWorth()<min){ toast(`Need ${fcm(min)}+ net worth to buy a club.`); socHub(); return; } socBuyClubPrompt(); }});
   choices.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
