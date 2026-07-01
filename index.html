@@ -3218,6 +3218,30 @@ const EVENTS = [
         return {text:`You skipped <b>${d.name}</b>'s funeral. The family noticed — and they'll remember.`,tags:[['bad','Skipped the funeral']]}; }},
     ]};}},
 
+/* --- ☁️ SOUNDCLOUD: a parent offers vocals on your latest track --- */
+{ id:'sc_mom_vocals', once:false, weight:12,
+  when:S=>has('soundcloud_artist') && S.sm&&(S.sm.tracks||[]).length>0 && S._scLastTrack!=null && (S.sm.tracks[S._scLastTrack]) && !(S.sm.tracks[S._scLastTrack].feat) && (P('mom')&&P('mom').alive || P('dad')&&P('dad').alive) && (S.age-(S._lastScEv||-99)>=2),
+  build:S=>{ S._lastScEv=S.age; const par=(P('mom')&&P('mom').alive)?P('mom'):P('dad'); const t=S.sm.tracks[S._scLastTrack];
+    return {yr:`Age ${S.age}`, title:'🎤 A Featured Vocalist',
+    text:`Your ${par.rel.toLowerCase()}, <b>${par.name}</b>, heard your track “${t.name}” and is offering to lay down vocals for it.`,
+    choices:[
+      {label:'Let them feature', apply:()=>{ t.feat=par.name; const boost=Math.round(t.plays*rng(3,9)/100); t.followers+=boost; t.reception=clamp(t.reception+rng(4,12),0,100); const plat=scPlat(); if(plat) plat.followers=Math.max(0,plat.followers+boost); rel(par.id,+rng(4,9),+rng(2,5),`They featured on your track “${t.name}”.`);
+        return {text:`${par.name}'s vocals take “${t.name}” to another level — +${fc(boost)} followers and a nice bump in reception.`,tags:[['good',`Feat. ${par.name}`]]}; }},
+      {label:'Refuse — it\'s your sound', apply:()=>{ rel(par.id,-rng(2,6),-rng(1,3),`You turned down their offer to feature.`);
+        return {text:`You keep “${t.name}” all your own. ${par.name} is a little stung, but respects the vision.`,tags:[['flag','Kept it solo']]}; }},
+    ]};}},
+/* --- ☁️ SOUNDCLOUD: bots flood your comments with phishing links --- */
+{ id:'sc_bots', once:false, weight:10,
+  when:S=>has('soundcloud_artist') && S.sm&&(S.sm.tracks||[]).length>0 && (S.age-(S._lastScEv||-99)>=2),
+  build:S=>{ S._lastScEv=S.age; const plat=scPlat();
+    return {yr:`Age ${S.age}`, title:'🎧 Comment Section Chaos',
+    text:`A wave of bots has flooded your latest track's comments with <b>phishing links</b>. What do you do?`,
+    choices:[
+      {label:'Report them one by one', tip:'Tedious but right', apply:()=>{ chg('happy',-rng(1,3)); if(plat) plat.sentiment=clamp((plat.sentiment||0)+rng(2,5),-100,100); return {text:`Hours of clicking 'report' later, the section's clean. Your real fans appreciate it.`,tags:[['good','Cleaned it up']]}; }},
+      {label:'Highlight the real comments', tip:'Best move', apply:()=>{ if(plat){ plat.sentiment=clamp((plat.sentiment||0)+rng(4,8),-100,100); plat.followers=Math.max(0,plat.followers+Math.round((plat.followers||0)*0.01)); } return {text:`You pin and boost the genuine comments — the community feels seen, and it drowns out the spam.`,tags:[['good','Community first']]}; }},
+      {label:'Let it flood', tip:'Do nothing', apply:()=>{ if(plat) plat.sentiment=clamp((plat.sentiment||0)-rng(3,7),-100,100); const lost=plat?Math.round((plat.followers||0)*rng(1,3)/100):0; if(plat)plat.followers=Math.max(0,plat.followers-lost); return {text:`You ignore it. A few fans get scammed and blame you — you lose ${fc(lost)} followers.`,tags:[['bad',`-${fc(lost)} followers`]]}; }},
+    ]};}},
+
 /* --- CHILDHOOD: parents have another baby --- */
 { id:'new_sibling', once:false, weight:16,
   when:S=>S.age>=1 && S.age<=12 && Object.values(S.people).filter(p=>/Brother|Sister/.test(p.rel)).length<5,
@@ -9119,12 +9143,63 @@ function minorViolation(c){      // a minor posted age-restricted content → mo
   pushLog(`As a minor I posted a ${c.label} on ${pn} — ${banned?'my account got <b>banned</b>. 🚫':'the post was removed. ⚠️'}`,[['bad','Moderation']]);
   setTab('life');
 }
+/* ============================================================
+   ☁️ SOUNDCLOUD — a deep music-creation flow: pick a genre, vibe, featured
+   instrument & name, publish, and watch plays/followers/reception roll in.
+   Plus storyline events (a parent offers vocals; bots flood your comments).
+   Reached through post('track') (a logged opener) → replay-safe. Deterministic.
+   ============================================================ */
+const SC_GENRES=['Alternative','Hip-Hop','Pop','EDM','Rock','R&B','Lo-Fi','Country','Indie','Trap','Jazz','K-Pop'];
+const SC_VIBES=['Bookstore Cafe Hours','3AM Heartbreak','Sunset Drive','Rainy Window','Gym Beast Mode','Cozy Winter','Festival Main Stage','Late-Night Study','Beach Bonfire','Villain Origin Story','Road Trip Anthem','Soft Launch'];
+const SC_INSTRUMENTS=['Aztec Death Whistle','808 Bass','Grand Piano','Distorted Guitar','Analog Synth','Saxophone','Steel Drums','Theremin','Cello','Kazoo','Trap Hi-Hats','Church Organ'];
+const SC_NAMES=['Semi Sweet Symphony','Neon Tears','Paper Planes','Midnight Static','Golden Hour','Velvet Bruise','Concrete Dreams','Echoes of You','Static Bloom','Ghost in the Machine','Crimson Sky','Lost Signal','Faded Polaroid','Bittersweet','Afterglow','Silent Riot','Paper Crowns','Blue Hour','Sugar & Static','Wildfire'];
+function scPlat(){ return S.sm&&S.sm.platforms&&S.sm.platforms.sc; }
+function scCreateTrack(){ const plat=scPlat(); if(!plat){ toast('Sign up for SoundCloud first.'); return; }
+  S._trackDraft={genre:null,vibe:null,instrument:null,name:pick(SC_NAMES),feat:null};
+  openModal({banner:'SoundCloud', title:'☁️ New Track', icon:'🎵', closable:true, text:`Publish a track to your SoundCloud. First — <b>pick your genre</b>.`,
+    choices: SC_GENRES.map(g=>({label:g, alt:true, fn:()=>scPickGenre(g)})).concat([{label:'‹ Cancel', fn:()=>{closeModal();setTab('social');}}]) }); }
+function scPickGenre(g){ const d=S._trackDraft; if(!d)return; d.genre=g;
+  openModal({banner:'SoundCloud', title:`🎸 ${g} Track`, icon:'🎸', closable:true, text:`Pick the <b>vibe</b> of your ${g.toLowerCase()} track.`,
+    choices: SC_VIBES.map(v=>({label:v, alt:true, fn:()=>scPickVibe(v)})).concat([{label:'‹ Back', fn:scCreateTrack}]) }); }
+function scPickVibe(v){ const d=S._trackDraft; if(!d)return; d.vibe=v;
+  openModal({banner:'SoundCloud', title:'🎺 Featured Instrument', icon:'🎺', closable:true, text:`Pick your <b>featured instrument</b>.`,
+    choices: SC_INSTRUMENTS.map(i=>({label:i, alt:true, fn:()=>scPickInstrument(i)})).concat([{label:'‹ Back', fn:()=>scPickGenre(d.genre)}]) }); }
+function scPickInstrument(i){ const d=S._trackDraft; if(!d)return; d.instrument=i; scFinalize(); }
+function scFinalize(){ const d=S._trackDraft; if(!d)return;
+  const body=`<div style="text-align:left"><div class="genlabel" style="margin:2px 0 6px">🎵 “${d.name}”</div>${socStatLine('Genre',d.genre)}${socStatLine('Vibe',d.vibe)}${socStatLine('Featured Instrument',d.instrument)}</div>`;
+  openModal({banner:'SoundCloud', title:'🎤 Edit Your Track', icon:'🎤', closable:true, text:body,
+    choices:[{label:'✅ Publish', alt:true, fn:scPublish},{label:'🎲 Reroll the name', fn:scRerollName},{label:'‹ Cancel', fn:()=>{closeModal();setTab('social');}}] }); }
+function scRerollName(){ const d=S._trackDraft; if(!d)return; d.name=pick(SC_NAMES); scFinalize(); }
+function scPublish(){ const sm=S.sm, plat=scPlat(), d=S._trackDraft; if(!plat||!d){ closeModal(); return; }
+  if(!spendEnergy(20,'a studio session')){ setTab('social'); return; }
+  sm.postsThisYear=(sm.postsThisYear||0)+1;
+  const talent=(has('talent_music')?20:0)+(plat.verified?10:0);
+  const score=(S.stats.smarts*0.28)+(S.stats.looks*0.12)+talent+((plat.sentiment||0)/5)+rng(-25,42)-Math.max(0,(sm.postsThisYear-3))*8;
+  const base=Math.max(60,Math.round(Math.sqrt(plat.followers+120)*rng(20,80)));
+  let reception,plays,folGain,sentD=0,note;
+  if(score>60){ reception=rng(78,98); plays=base*rng(6,30)+rng(2000,45000); folGain=Math.round(plays*rng(2,5)/100); sentD=5; note=pick(['a genuine hit — the discover feed ate it up','it blew up overnight','fans are calling it your best work','the mix is flawless']); }
+  else if(score>33){ reception=rng(52,74); plays=base*rng(2,8)+rng(200,4000); folGain=Math.round(plays*rng(2,4)/100); note=pick(['a solid drop','steady, honest growth','well received by the core fans','a grower, not a shower']); }
+  else { reception=rng(18,48); plays=base+rng(20,700); folGain=Math.round(plays*rng(0,2)/100); sentD=-2; note=pick(['it mostly flopped','crickets in the comments','the mix needed more work','buried by the algorithm']); }
+  plays=Math.round(plays); folGain=Math.max(0,folGain||0);
+  plat.followers=Math.max(0,(plat.followers||0)+folGain); plat.totalViews=(plat.totalViews||0)+plays; plat.sentiment=clamp((plat.sentiment||0)+sentD,-100,100);
+  if(reception>=82) gainFame(rng(1,4)); chg('happy',reception>=60?rng(2,5):-rng(0,3));
+  const track={name:d.name,genre:d.genre,vibe:d.vibe,instrument:d.instrument,feat:d.feat||null,plays,followers:folGain,reception,age:S.age};
+  (sm.tracks=sm.tracks||[]).push(track); setFlag('soundcloud_artist'); S._scLastTrack=(sm.tracks.length-1); S._trackDraft=null;
+  pushLog(`☁️ I dropped a ${d.genre.toLowerCase()} track, “<b>${d.name}</b>” — ${fc(plays)} plays, +${fc(folGain)} followers. 🎵`,[[reception>=60?'good':'flag',`Track: ${d.name}`]]);
+  const stats=socStatLine('Genre',d.genre)+socStatLine('Vibe',d.vibe)+(track.feat?socStatLine('Featured Artist',track.feat):'')+socStatLine('Featured Instrument',d.instrument)+socStatLine('Plays',fc(plays))+socStatLine('Followers Gained','+'+fc(folGain));
+  resultModal('SoundCloud', d.name, '🎵', [`Your song, <b>${d.name}</b>, was published — ${note}.`, `<div style="text-align:left;margin-top:4px">${stats}</div>`, statBar('Reception',reception)], ()=>{ setTab('social'); }); }
+function scTrackList(){ const sm=S.sm, tr=(sm&&sm.tracks||[]).slice().reverse();
+  let body=`<div style="text-align:left"><div class="genlabel" style="margin:2px 0 6px">🎵 Your Tracks <span>${tr.length}</span></div>`;
+  body+= tr.length? tr.map(t=>`<div style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${t.name}</b> <span style="color:var(--dim);font-size:11px">· ${t.genre} · age ${t.age}</span><br><span style="font-size:12px;color:var(--dim)">${fc(t.plays)} plays · +${fc(t.followers)} followers · reception ${t.reception}${t.feat?` · ft. ${t.feat}`:''}</span></div>`).join('') : `<p style="color:var(--dim)">No tracks yet — drop one!</p>`;
+  body+=`</div>`;
+  openModal({banner:'SoundCloud', title:'💿 Track List', icon:'💿', closable:true, text:body, choices:[{label:'‹ Back', fn:()=>setTab('social')},{label:'Close', fn:closeModal}]}); }
 function post(type){
   const sm=S.sm, c=POSTS[type];
   if(!sm.handle || !sm.active) return;
   const plat=sm.platforms[sm.active];
   if(sm.bannedUntil && S.age<sm.bannedUntil){ toast(`🚫 Account suspended until age ${sm.bannedUntil}.`); return; }
   logAct('call',{fn:'post',args:[type]});
+  if(type==='track'){ scCreateTrack(); return; }   // 🎵 SoundCloud gets the deep track-creation flow
   if(type==='promo'){ crossPromote(plat); return; }
   if(type==='merch'){ merchDrop(plat); return; }
   if(c.minAge && S.age<c.minAge){ minorViolation(c); return; }
@@ -10680,6 +10755,14 @@ function renderSocial(){
          return `<button class="pbtn${locked?' locked':''}" onclick="post('${k}')">
            <span class="pi">${c.icon}</span><span class="pl">${c.label}${locked?' <span class="agewarn">18+</span>':''}</span>
            <span class="pd">${locked?'⚠️ Minors get banned for this.':c.desc}</span></button>`; }).join('')+`</div>`;
+  }
+  if(sm.active==='sc'){ const nt=(sm.tracks||[]).length;
+    h+=`<div class="genlabel">🎵 Music <span>${nt} track${nt===1?'':'s'}</span></div>
+      <div class="card" style="padding:13px">
+        <div class="pf" style="margin-bottom:8px">Build a discography — pick a genre, vibe & featured instrument, then publish. Big receptions grow your following and your fame.</div>
+        <button class="verifybtn" style="margin:0 0 8px" onclick="scCreateTrack()">🎤 Create a Track</button>
+        ${nt?`<button class="verifybtn" style="margin:0" onclick="scTrackList()">💿 View Track List (${nt})</button>`:''}
+      </div>`;
   }
   if(sm.active==='of' && S.age>=18){
     const price=plat.subPrice||10;
