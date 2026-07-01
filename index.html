@@ -3933,6 +3933,7 @@ function ageUp(){
   logAct('age');                        // replay tape: one year advanced
   const _logStart=S.log.length;        // safety net: guarantee every year leaves a feed entry (no skipped ages)
   S.partiesThisYear=0;                 // a fresh allowance of big gatherings each year
+  S.energy=100;                        // ⏳ SCHEDULE: a fresh pool of free time/energy each year — effort activities draw it down so you can't do everything at once
   // WORLD-CLOCK (P3+): in Living-Timeline mode the world advances over time — the era can change mid-life (pure fn of dynastyYears → replay-safe)
   if(S.worldMode==='living'){ S.dynastyYears=(S.dynastyYears||0)+1; const _jump=syncWorldEra();
     if(_jump){ const b=ERA_DEFS[_jump.to];
@@ -4780,8 +4781,34 @@ function hubBack(view){
   if(!par) return '';
   return pageHead(VIEW_TITLES[view]||'', `setTab('${par}')`, '‹');   // deeper page header (‹ goes back to the parent hub)
 }
+/* ⏳ SCHEDULE / ENERGY — a yearly free-time pool so you can't do every activity at once (BitLife Schedule). */
+function occupationHours(){ let h=0; if(['primary','high','college','cc'].includes(S.eduLevel)) h+=30; if(S.job) h+=35+((S.job.level||0)*2);
+  const proSport=(typeof socActive==='function'&&socActive())||(typeof bbActive==='function'&&bbActive())||(typeof nflActive==='function'&&nflActive())||(typeof sp2Active==='function'&&(sp2Active('tennis')||sp2Active('volley')||sp2Active('hockey')));
+  if(proSport) h+=30; return Math.min(92,h); }
+function energyLeft(){ if(S.energy==null)S.energy=100; return clamp(S.energy); }
+function spendEnergy(cost,label){ if(S.energy==null)S.energy=100; if(S.energy<cost){ toast(`😮‍💨 You're spread thin this year${label?' — no time for '+label:''}. Advance a year first.`); return false; } S.energy-=cost; return true; }
+function activeSpecialCareer(){ if(typeof socActive==='function'&&socActive()) return {emoji:'⚽',name:'Footballer',sub:(typeof socClub==='function'&&socClub())?socClub().name:'',ov:socOverall(S.soccer.player)};
+  if(typeof bbActive==='function'&&bbActive()) return {emoji:'🏀',name:'Basketball',sub:bbTeam()?bbTeam().name:'',ov:bbOverall(S.bball.player)};
+  if(typeof nflActive==='function'&&nflActive()) return {emoji:'🏈',name:'NFL',sub:nflTeam()?nflTeam().name:'',ov:nflOverall(S.nfl.player)};
+  for(const k of ['tennis','volley','hockey']){ if(typeof sp2Active==='function'&&sp2Active(k)){ const p=S[k].player, def=SP2_DEFS[k]; return {emoji:def.emoji,name:def.name,sub:def.indiv?('World #'+p.rank):sp2Team(def,p),ov:sp2Overall(p)}; } }
+  return null; }
+function careerStatRow(icon,title,sub,barLabel,barVal,onclick){ return `<div class="card" style="padding:11px 13px;margin-bottom:8px${onclick?';cursor:pointer':''}"${onclick?` onclick="${onclick}"`:''}>
+  <div><b>${icon} ${title}</b>${sub?`<span style="font-size:12px;color:var(--dim);float:right">${sub}</span>`:''}</div>
+  <div class="relbars" style="margin-top:6px">${pbar(barLabel,barVal)}</div></div>`; }
+function scheduleView(){ if(!S){toast('Start a life first.');return;} if(isLocked())return; const oh=occupationHours();
+  const occ=[]; if(['primary','high','college','cc'].includes(S.eduLevel)) occ.push('Student'); if(S.job) occ.push(jobTitle(S.job)); { const sc=activeSpecialCareer(); if(sc) occ.push(`Pro ${sc.name}`); }
+  openModal({banner:'Schedule', title:'📅 My Schedule', icon:'📅', closable:true,
+    text:`<div style="text-align:left"><b>Weekly hours:</b> ${oh}${oh>=76?' — you\'re stretched thin':''}<br><span style="font-size:12px;color:var(--dim)">Occupation: ${occ.join(' · ')||'Unoccupied'}</span><div class="relbars" style="margin-top:10px">${pbar('Free time left',energyLeft())}${pbar('This year\'s load',100-energyLeft())}</div><p style="font-size:12px;color:var(--dim);margin-top:8px">Workouts, studying, nightlife, the salon and more all take time — pace yourself, or advance a year to recharge.</p></div>`,
+    choices:[{label:'Close', fn:closeModal}]}); }
 function renderCareer(){ const v=document.getElementById('careerView'); if(!v||!S)return;
   let h=`${feedX('Career')}`;
+  // 🧑 YOU — current standings at a glance (school / job / special career / schedule), BitLife-style
+  { let you=''; const student=['primary','high','college','cc'].includes(S.eduLevel);
+    if(student) you+=careerStatRow('🎓', ({primary:'Primary School',high:'High School',college:'University',cc:'Community College'}[S.eduLevel]||'School'), S.schoolName||'', 'Grades', S.grades||0, "setTab('school')");
+    if(S.job) you+=careerStatRow('💼', jobTitle(S.job), `${cur()}${S.job.salary.toLocaleString()}/yr`, 'Performance', S.jobPerf||50, "setTab('job')");
+    { const sc=activeSpecialCareer(); if(sc) you+=careerStatRow(sc.emoji, sc.name, sc.sub, 'Overall', sc.ov, "setTab('specialcareers')"); }
+    if(S.age>=6) you+=careerStatRow('📅','Schedule', `${occupationHours()} hrs/week`, 'Free time this year', energyLeft(), "scheduleView()");
+    if(you) h+=`<div class="genlabel">You</div>${you}<div class="genlabel">Explore</div>`; }
   h+=hubCard('💼','Job', S.job?`${jobTitle(S.job)} · ${cur()}${S.job.salary.toLocaleString()}/yr`:'Find work & climb the ladder', "setTab('job')");
   h+=hubCard('🎓','School', statusText().includes('Student')?statusText():(has('graduated_college')?'Graduate':'Education & enrollment'), "setTab('school')");
   if(S.age>=12) h+=hubCard('💸','Side Hustles', `Quick gigs for fast cash${S.gigs?` · ${S.gigs.filter(g=>!g.done).length} open`:''}`, "setTab('gigs')");
@@ -6840,6 +6867,8 @@ function renderActivities(){ const v=document.getElementById('activitiesView'); 
   h+=hubCard('🎟️','Go Out','Events, nightlife, find love', "setTab('events')");
   h+=hubCard('✈️','Take a Trip','Hotels worldwide, rent a car, ball out', "takeTrip()");
   h+=hubCard('🧘','Mind & Body','Gym, diet, meditation, therapy', "mindBody()");
+  if(S.age>=5) h+=hubCard('💅','Salon & Spa','Barber, nails, massage, tanning & more', "salonSpa()");
+  if(S.age>=18) h+=hubCard('🪩','Nightclub','Hit the clubs — dance, mingle, let loose', "clubbing()");
   if(S.age>=5){ const hb=Object.keys(S.hobbies||{}).filter(k=>typeof hobbyDef==='function'&&hobbyDef(k)); const top=hb.sort((a,b)=>S.hobbies[b].level-S.hobbies[a].level)[0];
     h+=hubCard('🎨','Hobbies & Passions', top?`${hobbyDef(top).icon} ${hobbyDef(top).name} · ${hobbyTier(S.hobbies[top].level)}${hb.length>1?` +${hb.length-1} more`:''}`:'Find a passion — talent, calm & income', "hobbiesMenu()"); }
   h+=hubCard('🩺','See a Doctor','Check-ups, illnesses & quitting habits', "seeDoctor()");
@@ -7935,6 +7964,7 @@ function mindBody(){ if(!S){toast('Start a life first.');return;} if(isLocked())
     ]});
 }
 function mbDo(kind){ closeModal();
+  if(!spendEnergy(25,'that')) { setTab('activities'); return; }
   if(kind==='gym'){ const cost=rng(0,600); if(S.money>0)money(-Math.min(cost,S.money)); S.fitness=clamp((S.fitness||50)+rng(5,12)); chg('looks',rng(1,3)); chg('health',rng(1,3));
     const story=pick(['You hit the weights hard — heavy squats, deadlifts and a brutal leg day every week.','Dawn runs, boxing three nights a week, and you finally stopped skipping cardio.','You practically lived at the gym: circuit training, spin class, and a new bench PR.','A year of CrossFit chewed you up and spat you back out — stronger.','Long swims and a couch-to-5K that quietly became a 10K.','You found a training partner who wouldn\'t let you quit, and it showed.','Powerlifting became an obsession; the plates kept going up.']);
     pushLog(`🏋️ ${story}`,[['good','Gym']]); resultModal('Mind & Body','Workout','🏋️',[story+' <span style="color:var(--dim);font-size:12px">(+Looks · +Health)</span>',statBar('Fitness',S.fitness)],()=>mindBody()); }
@@ -7949,6 +7979,42 @@ function mbDo(kind){ closeModal();
     const story=pick(['You finally talked through the things you\'d buried for years.','Week after week, you untangled knots you\'d carried since childhood.','Hard, honest sessions — you learned to name what you actually felt.','You did the work: the patterns, the triggers, the old wounds.','It wasn\'t easy, but you slowly started to forgive yourself.']);
     pushLog(`🛋️ ${story}${eased?' My depression lifted.':''}`,[['good','Therapy']]); resultModal('Mind & Body','Therapy','🛋️',[story,`Your head feels lighter. <span style="color:var(--dim);font-size:12px">(+Happiness${eased?' · depression eased':''})</span> · ${cur()}${cost.toLocaleString()}`],()=>setTab('life')); }
 }
+/* ---- 🪩 NIGHTLIFE / CLUBBING — pick a named venue, roll a night out. Deterministic. ---- */
+const CLUB_PRE=['Aristotle','Allure','Nirvana','Velvet','Neon','Echo','Mirage','Pulse','Halo','Onyx','Skyline','Gatsby','Prism','Lush','Vertigo','Opulence','Sapphire','Voodoo','Empire','Cirrus'];
+const CLUB_SUF=['Lounge','Disco','Club','Room','Nightclub','Social','After Dark','Rooftop'];
+function clubbing(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;} if(S.age<18){ toast('🚫 Nightclubs are 18+ — try Nightlife in Events for the under-age scene.'); return; }
+  logAct('call',{fn:'clubbing'});
+  const venues=[], used={}; while(venues.length<3){ const n=pick(CLUB_PRE)+' '+pick(CLUB_SUF); if(!used[n]){used[n]=1;venues.push(n);} }
+  openModal({banner:'Nightlife', title:'🪩 Clubbing', icon:'🪩', closable:true, text:`Which local nightclub are you hitting tonight?`,
+    choices: venues.map(v=>({label:v, alt:true, fn:()=>doClub(v)})).concat([{label:'‹ Not tonight', fn:()=>{closeModal();setTab('activities');}}]) }); }
+function doClub(venue){ if(!spendEnergy(25,'a night out')){ closeModal(); return; }
+  const cover=Math.round(rng(20,220)*priceMult()); if(S.money>0) money(-Math.min(cover,S.money));
+  const roll=rng(0,100); let title,icon,line,tags;
+  if(roll<40){ chg('happy',rng(5,10)); gainFame(rng(0,2)); addStress(-rng(2,6)); title='Best Night Out 🪩'; icon='🪩'; line=`You danced till close at <b>${venue}</b> — an unforgettable night with the crowd.`; tags=[['good','Great night out']]; }
+  else if(roll<58){ chg('happy',rng(3,6)); title='Made a Connection 💋'; icon='💋'; line=`You clicked with someone at <b>${venue}</b> and swapped numbers. Who knows where it leads.`; tags=[['good','Met someone clubbing']]; if(S.age>=18 && rng(0,100)<45 && typeof hookupTonight==='function'){ /* leave to player's romance choices — flavor only */ } }
+  else if(roll<74){ chg('happy',rng(1,4)); title='A Fun Night'; icon='🍸'; line=`A solid night at <b>${venue}</b> — a few drinks, a few laughs.`; tags=[['flag','A night out']]; }
+  else if(roll<88){ chg('health',-rng(3,7)); chg('happy',-rng(1,3)); setFlag('hungover'); title='Overdid It 🥴'; icon='🥴'; line=`You had way too much at <b>${venue}</b>. Tomorrow's hangover will be legendary.`; tags=[['bad','Overdid it']]; }
+  else { const loss=S.money>0?Math.round(Math.min(S.money*0.15,rng(80,1200))):0; if(loss>0)money(-loss); chg('happy',-rng(3,7)); karma(0); title='Trouble at the Club 🚨'; icon='🚨'; line=`It went sideways at <b>${venue}</b> — ${loss>0?`your wallet vanished (${cur()}${loss.toLocaleString()} gone)`:`you got tossed by security`}.`; tags=[['bad','Club trouble']]; }
+  pushLog(`🪩 ${line.replace(/<[^>]+>/g,m=>m)}`,tags); resultModal('Nightlife',title,icon,[line,`Cover: ${cur()}${cover.toLocaleString()}.`],()=>setTab('life')); }
+/* ---- 💅 SALON & SPA — pamper yourself for looks/happiness. Deterministic. ---- */
+const SPA_SERVICES=[
+  {k:'barber',name:'Barber',icon:'💈',desc:'A fresh cut',cost:[15,120],looks:[1,3],happy:[2,4]},
+  {k:'dye',name:'Dye Job',icon:'🎨',desc:'A new hair colour',cost:[30,180],looks:[1,3],happy:[1,3]},
+  {k:'massage',name:'Massage',icon:'💆',desc:'Melt the tension away',cost:[40,260],looks:[0,1],happy:[4,8],stress:true},
+  {k:'nails',name:'Nail Salon',icon:'💅',desc:'Get your nails done',cost:[20,120],looks:[1,2],happy:[2,5]},
+  {k:'tan',name:'Tanning Salon',icon:'🌞',desc:'Work on your tan',cost:[20,90],looks:[1,3],happy:[1,3],risk:true},
+  {k:'wax',name:'Waxing',icon:'🧖',desc:'Smooth it all out',cost:[25,140],looks:[1,2],happy:[1,3]},
+];
+function salonSpa(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;} if(S.age<5){ toast('Too young for the spa.'); return; }
+  logAct('call',{fn:'salonSpa'});
+  openModal({banner:'Salon & Spa', title:'💅 Salon & Spa', icon:'💅', closable:true, text:`Treat yourself — a little pampering for your looks and your mood.`,
+    choices: SPA_SERVICES.map(s=>({label:`${s.icon} ${s.name}`, tip:s.desc, alt:true, fn:()=>doSpa(s.k)})).concat([{label:'‹ Back', fn:()=>{closeModal();setTab('activities');}}]) }); }
+function doSpa(k){ const s=SPA_SERVICES.find(x=>x.k===k); if(!s)return; if(!spendEnergy(12,'the spa')){ closeModal(); return; }
+  const cost=Math.round(rng(s.cost[0],s.cost[1])*priceMult()); if(!spend(cost))return;
+  chg('looks',rng(s.looks[0],s.looks[1])); chg('happy',rng(s.happy[0],s.happy[1])); if(s.stress) addStress(-rng(6,14));
+  let extra=''; if(s.risk && rng(0,100)<12){ chg('looks',-rng(1,3)); chg('health',-1); extra=' — but you overdid it and got a burn. 🔥'; }
+  pushLog(`${s.icon} I treated myself to ${s.name.toLowerCase()} (${cur()}${cost.toLocaleString()}).`,[['good',s.name]]);
+  resultModal('Salon & Spa',`${s.icon} ${s.name}`,s.icon,[`You got the ${s.name.toLowerCase()} treatment — feeling fresh.${extra}`,`Cost: ${cur()}${cost.toLocaleString()}.`],()=>salonSpa()); }
 /* ---- Emigrate — kids ask parents (usually no); 18+ move freely ---- */
 function emigrate(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
   logAct('call',{fn:'emigrate'});
@@ -9926,7 +9992,7 @@ function bizAction(kind){ const b=S.business; if(!b)return; logAct('call',{fn:'b
     openModal({banner:'Business', title:`Sell ${b.name}?`, icon:'💸', closable:true, text:`Sell <b>${b.name}</b> for its valuation of <b>${cur()}${price.toLocaleString()}</b>? You'll go back to being an ordinary worker.`,
       choices:[{label:`💸 Sell for ${cur()}${price.toLocaleString()}`, alt:true, fn:()=>{ money(price); pushLog(`I sold <b>${b.name}</b> for ${cur()}${price.toLocaleString()}. 💸`,[['good',`Sold business +${cur()}${price.toLocaleString()}`]]); S.business=null; if(S.job){ S.job.owner=false; S.job=null; } closeModal(); resultModal('Business','Sold 💸','💸',[`You cashed out of <b>${b.name}</b> for <b>${cur()}${price.toLocaleString()}</b>.`,`You're a free agent again.`],()=>setTab('career')); }},{label:'Keep it', fn:()=>setTab('business')}]}); }
 }
-function workHarder(){ if(!S.job)return; logAct('call',{fn:'workHarder'}); S.jobPerf=clamp((S.jobPerf||50)+rng(5,12)); chg('happy',-2); chg('smarts',1);
+function workHarder(){ if(!S.job)return; logAct('call',{fn:'workHarder'}); if(!spendEnergy(25,'extra hours')){ setTab('job'); return; } S.jobPerf=clamp((S.jobPerf||50)+rng(5,12)); chg('happy',-2); chg('smarts',1);
   const story=pick(['You stayed late, took the projects nobody wanted, and made yourself indispensable.','First in, last out — you out-hustled the whole office this year.','You nailed the big presentation and quietly became the team\'s go-to.','Extra shifts, weekend emails, and results the boss couldn\'t ignore.','You mentored the new hires and shipped the project ahead of schedule.','You fixed the thing everyone else had given up on — and people noticed.']);
   pushLog(`💼 ${story}`,[['good',`Performance ${S.jobPerf}`]]);
   resultModal('Job','Hard at Work','💼',[story+' <span style="color:var(--dim);font-size:12px">(better promotion odds)</span>',statBar('Performance',S.jobPerf)],()=>setTab('job')); }
@@ -10297,7 +10363,7 @@ function enrollUni(majorKey){ closeModal(); const cost=rng(5000,40000); if(S.mon
   pushLog(`I declared a major in <b>${majorName(majorKey)}</b>. 🎓`,[['flag',majorName(majorKey)]]); }
 function studyHarder(){
   if(!['primary','high','college'].includes(S.eduLevel)){ toast('You’re not in school.'); return; }
-  logAct('call',{fn:'studyHarder'});
+  logAct('call',{fn:'studyHarder'}); if(!spendEnergy(20,'extra study')){ setTab('school'); return; }
   S.grades=clamp(S.grades+rng(4,9)); chg('smarts',rng(1,3)); chg('happy',-rng(1,3));
   const story=pick(['You lived in the library, color-coded your notes, and actually did the reading.','Late-night flashcards, study groups, and a highlighter that ran dry.','You turned your phone off and ground through every practice problem.','You found a rhythm — mornings for the hard subjects, evenings for review.','You asked the questions everyone else was afraid to, and it paid off.','You re-did every past paper until the answers came in your sleep.']);
   pushLog(`📚 ${story}`,[['good',`Grades ${S.grades}`]]);
