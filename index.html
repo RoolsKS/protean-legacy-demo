@@ -4630,6 +4630,7 @@ function continueAsHeir(id){
   if(S.soccer && S.soccer.owned){ S._inheritedClub=S.soccer.world.clubs[S.soccer.owned.clubId]?S.soccer.world.clubs[S.soccer.owned.clubId].name:'the family club'; S.soccer={ world:S.soccer.world, owned:S.soccer.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'', seasonsPlayed:0 }; }
   else S.soccer=null;
   S.schoolSport=null;   // ⚽ heir starts their own school-sports journey (inherits the athletic GENES → school prodigy)
+  S.greek=null; S.seasonHistory=[]; S._actsUsed=[];   // heir starts fresh: no inherited frat, no prior athlete's season log
   // 🏀 heir starts a fresh PLAYING career (inherits the athletic genes) but INHERITS the family FRANCHISE (arena, banners, finances compound across generations)
   if(S.bball && S.bball.owned){ const _ft=S.bball.world&&S.bball.world.teams[S.bball.owned.teamId]; S._inheritedFranchise=_ft?_ft.name:'the family franchise'; S.bball={ world:S.bball.world, owned:S.bball.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'' }; }
   else S.bball=null;
@@ -4642,7 +4643,7 @@ function continueAsHeir(id){
   if(heir.eduInvest){ const bonus=clamp(Math.round(heir.eduInvest*2.5),0,22); S.stats.smarts=clamp(S.stats.smarts+bonus); setFlag('privately_educated'); }   // 🎓 a privately-schooled heir starts life sharper (dynasty payoff)
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
   S.money=inheritance; S.peakMoney=Math.max(S.peakMoney||0,inheritance);
-  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
+  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
   S.rentOwed=0; S.rentMult=1; S.autopayRent=true; S.karma=0; S.landlord=null;
   S.scheduled=[]; S.fired={}; S.flags={}; S.passport=false; S.signature='';
   S.ledger=_inheritedFacts;   // THE LEDGER carries: the bloodline's deeds (scandals, honors) follow the heir at reduced weight
@@ -4776,9 +4777,10 @@ function render(){
     {label:'💼 Coworkers',          test:p=>p.alive&&p.coworker},
     {label:'💘 Partners',           test:p=>p.alive&&p.romantic},
     {label:'💒 Stepfamily',         test:p=>p.alive&&p.step},
+    {label:'🏛️ Greek Life',         test:p=>p.alive&&p.greek},
     {label:'💍 In-Laws',            test:p=>p.alive&&p.inlaw},
     {label:'🍯 Sugar Arrangements',  test:p=>p.alive&&p.sugar},
-    {label:'Friends & Others',      test:p=>p.alive&&!p.fam&&!p.pet&&!p.classmate&&!p.teacher&&!p.coworker&&!p.romantic},
+    {label:'Friends & Others',      test:p=>p.alive&&!p.fam&&!p.pet&&!p.classmate&&!p.teacher&&!p.coworker&&!p.romantic&&!p.greek},
     {label:'🐾 Pets',               test:p=>p.alive&&p.pet},
     {label:'⚰️ Late Relationships', test:p=>!p.alive},
   ];
@@ -6473,6 +6475,30 @@ function socActive(){ return !!(S.soccer && S.soccer.player && !S.soccer.player.
 const SS_LEVEL_NAME={elementary:'Elementary',middle:'Middle School',highSchool:'High School',college:'College'};
 const SS_THRESHOLD={elementary:28, middle:40, highSchool:56, college:72};   // athleticism needed to make the team — rises by level
 function schoolSportLevel(){ if(S.eduLevel==='college'||S.eduLevel==='cc') return 'college'; if(S.eduLevel==='high') return 'highSchool'; if(S.eduLevel==='primary') return S.age>=11?'middle':'elementary'; return S.age<11?'elementary':S.age<14?'middle':S.age<18?'highSchool':'college'; }
+/* ---- 🏫 INTERSCHOOL LEAGUE — your school plays a division of rival schools each season (deterministic table) ---- */
+const SS_SCHOOL_PRE=['Northgate','Riverside','Oakwood','Westfield','Hillcrest','Lakeside','Fairview','Eastborough','Crestview','Maple Grove','Ridgemont','Brookside','Southpark','Kingsley','Ashford'];
+function ssLeagueSuffix(lvl){ return lvl==='college'?['State','Tech','University','A&M','Poly']:lvl==='highSchool'?['High','Prep','Academy','Central']:lvl==='middle'?['Middle','Junior High']:['Elementary','Primary']; }
+function ssGenLeague(lvl){ const suf=ssLeagueSuffix(lvl), used={}, out=[]; while(out.length<5){ const n=pick(SS_SCHOOL_PRE)+' '+pick(suf); if(!used[n]){ used[n]=1; out.push({name:n, strength:clamp(rng(28,80),20,90)}); } } return {lvl, schools:out}; }
+function ssRunLeague(s, lvl, myTeamStr){
+  if(!s.league || s.league.lvl!==lvl) s.league=ssGenLeague(lvl);
+  const games=s.league.schools.length*2;   // home & away vs each rival
+  let W=0,D=0,L=0;
+  s.league.schools.forEach(sch=>{ for(let g=0;g<2;g++){ const edge=myTeamStr - sch.strength + rng(-25,25); if(edge>6)W++; else if(edge<-6)L++; else D++; } });
+  const standings=[{name:S.schoolName, str:myTeamStr, W,D,L, pts:W*3+D, me:true}];
+  s.league.schools.forEach(sch=>{ const w=clamp(Math.round((sch.strength-38)/7)+rng(0,Math.round(games*0.7)),0,games); const l=clamp(games-w-rng(0,3),0,games-w); const d=games-w-l; standings.push({name:sch.name, str:sch.strength, W:w,D:d,L:l, pts:w*3+d}); });
+  standings.sort((a,b)=>b.pts-a.pts || b.str-a.str);
+  const pos=standings.findIndex(x=>x.me)+1;
+  s.lastTable=standings; s.lastPos=pos; s.lastRecord={W,D,L};
+  return {pos, W, D, L, size:standings.length, champions:pos===1};
+}
+function ssLeagueTable(){ const s=ssp(); if(!s||!s.lastTable){ toast('Play a season first to see the league table.'); return; }
+  const rows=s.lastTable.map((t,i)=>`<div style="display:flex;justify-content:space-between;padding:4px 6px;border-radius:6px;${t.me?'background:rgba(245,197,81,.14);font-weight:700':''}">
+    <span style="width:22px;color:var(--dim)">${i+1}.</span><span style="flex:1;text-align:left">${t.me?'⭐ ':''}${t.name}</span>
+    <span style="color:var(--dim);font-size:12px;width:78px;text-align:right">${t.W}W ${t.D}D ${t.L}L</span><span style="width:34px;text-align:right"><b>${t.pts}</b></span></div>`).join('');
+  openModal({banner:'League', title:`🏫 ${SS_LEVEL_NAME[schoolSportLevel()]} League`, icon:'🏫', closable:true,
+    text:`<div style="text-align:left">Final table — your school finished <b>${_ord(s.lastPos)}</b>.<div style="margin-top:8px">${rows}</div><div style="display:flex;justify-content:space-between;padding:4px 6px;color:var(--dim);font-size:11px;margin-top:4px"><span>Pos / School</span><span>Record · Pts</span></div></div>`,
+    choices:[{label:'‹ Back', fn:ssHub}] });
+}
 function schoolSportEligible(){ return soccerEraOK() && S.age>=7 && S.age<=23 && ['primary','high','college','cc'].includes(S.eduLevel) && !(S.soccer&&(S.soccer.player||S.soccer.owned)); }
 function ssp(){ return S.schoolSport; }
 function ssOnTeam(){ const s=ssp(); return !!(s && s.onTeam); }
@@ -6510,10 +6536,13 @@ function ssHub(){ const s=ssp(); if(!s){ ssJoinPrompt(); return; } const lvl=sch
     <div class="relbars" style="margin-bottom:8px">${pbar('Athleticism',s.athleticism)}${pbar('Skill (OVR)',ov)}${pbar('School Reputation',s.schoolReputation)}${(lvl==='highSchool'||lvl==='college')?pbar('Scout Interest',s.scoutInterest):''}</div>
     ${s.onTeam?`<div class="genlabel" style="margin:2px 0 4px">This Season</div>${socStatLine('Appearances',ss.apps)}${socStatLine('Goals · Assists',ss.goals+' · '+ss.assists)}${socStatLine('Avg rating',avg)}`:''}
     ${s.scholarshipOffered?`<div style="color:var(--good);font-size:12px;margin-top:6px">🎓 Athletic scholarship earned — tuition covered.</div>`:''}
+    ${s.lastPos?`<div style="font-size:12px;margin-top:6px">🏫 League: finished <b>${_ord(s.lastPos)}</b> last season.</div>`:''}
+    ${s.earningsTotal?`<div style="color:var(--good);font-size:12px;margin-top:2px">💰 Career earnings: <b>${cur()}${s.earningsTotal.toLocaleString()}</b> (NIL / sponsorships).</div>`:''}
     <p style="color:var(--dim);font-size:11px;margin-top:8px">Make the team, become captain, get scouted — your school skills carry straight into a pro career.</p></div>`;
   const choices=[];
   if(s._scoutOffer){ choices.push({label:'📣 Sign Pro (a scout wants you!)', alt:true, fn:ssGoPro}); }
   if(inSchool && !s.onTeam) choices.push({label:`⚽ Try out for the ${SS_LEVEL_NAME[lvl]} team`, alt:true, fn:ssTryout});
+  if(s.lastTable) choices.push({label:'🏫 League Table', alt:true, fn:ssLeagueTable});
   if(inSchool) choices.push({label:'🏋️ Train', alt:true, fn:ssTrain});
   if(!inSchool && !s._scoutOffer) choices.push({label:'🎓 School days are over', fn:()=>{ closeModal(); setTab('activities'); }, tip:'The school route has closed'});
   choices.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }});
@@ -6560,13 +6589,24 @@ function ssSeasonEnd(){ const s=ssp(); if(!s||!s.onTeam || !['primary','high','c
   const goals=Math.round(apps*posGoal*q*(0.6+rand()*0.8)), assists=Math.round(apps*0.15*q*(0.6+rand()*0.8));
   const rating=clamp(5.5 + (ov-30)/15 + (starter?0.5:0) + rand(), 4, 9);
   s.seasonStats={apps,goals,assists,ratingSum:rating*apps,ratingN:apps};
-  const wonTitle = rng(0,100) < clamp((ov-30)+s.schoolReputation/3,0,55)*0.4;
-  const perf=(rating-6)*8 + goals*3 + (wonTitle?12:0) + (starter?6:0);
+  // 🏫 interschool league — your school plays a division of rivals; your standing decides the title
+  const myTeamStr=clamp(Math.round(30 + (ov-30)*0.5 + s.schoolReputation*0.3 + s.athleticism*0.2 + (starter?6:0) + (s.wasCaptain?4:0)),20,95);
+  const league=ssRunLeague(s, lvl, myTeamStr);
+  const wonTitle=league.champions;
+  const perf=(rating-6)*8 + goals*3 + (wonTitle?12:0) + (starter?6:0) + Math.max(0,(league.size-league.pos))*1.5;
   s.schoolReputation=clamp(s.schoolReputation+Math.round(perf/2)+rng(-2,4),0,100);
   if(lvl==='highSchool'||lvl==='college') s.scoutInterest=clamp(s.scoutInterest+Math.max(0,Math.round(perf/3))+(s.wasCaptain?4:0)+(lvl==='college'?5:0),0,100);
   ssGrow(s); if(S.age<=18) s.athleticism=clamp(s.athleticism+rng(0,2),0,95);
   let lines=[];
-  if(wonTitle){ ssKeyMoment('wonTitle',`Won the ${SS_LEVEL_NAME[lvl]} title.`); gainFame(rng(1,3)); lines.push(`🏆 ${SS_LEVEL_NAME[lvl]} champions!`); }
+  if(wonTitle){ ssKeyMoment('wonTitle',`Won the ${SS_LEVEL_NAME[lvl]} league title.`); gainFame(rng(1,3)); lines.push(`🏆 <b>${SS_LEVEL_NAME[lvl]} league champions</b> (${league.W}-${league.D}-${league.L})!`); }
+  else lines.push(`🏫 ${_ord(league.pos)} of ${league.size} in the league (${league.W}W-${league.D}D-${league.L}L).`);
+  // 💰 school athletes can earn (NIL deals, local sponsorships, prize money) — biggest at college, tied to reputation & results
+  if((lvl==='highSchool'||lvl==='college') && s.schoolReputation>=45){
+    let earn=Math.round((lvl==='college'?1:0.3)*(s.schoolReputation-42)*rng(20,90)*priceMult());
+    if(wonTitle) earn+=Math.round((lvl==='college'?rng(2000,8000):rng(300,1500))*priceMult());
+    if(s.wasCaptain) earn+=Math.round(rng(120,700)*priceMult());
+    if(earn>0){ money(earn); s.earningsTotal=(s.earningsTotal||0)+earn; lines.push(`💰 Earned ${cur()}${earn.toLocaleString()} from ${lvl==='college'?'NIL deals & appearances':'local sponsorships'}.`); }
+  }
   if(!s.wasCaptain && starter && s.athleticism>=SS_THRESHOLD[lvl]+12 && s.schoolReputation>=55 && (lvl==='highSchool'||lvl==='college')){ s.squadStatus='captain'; s.wasCaptain=true; setFlag('school_captain'); s.scoutInterest=clamp(s.scoutInterest+12,0,100); ssKeyMoment('becameCaptain',`Named ${SS_LEVEL_NAME[lvl]} captain.`); gainFame(rng(2,4)); lines.push(`🎖️ Named <b>team captain</b>!`); }
   if(lvl==='highSchool' && !s.scholarshipOffered && s.schoolReputation>=62 && (goals+assists)>=6){ s.scholarshipOffered=true; setFlag('athletic_scholarship'); S.schoolTuition=0; ssKeyMoment('scholarship',`Earned an athletic scholarship.`); lines.push(`🎓 Earned an <b>athletic scholarship</b> — college tuition covered!`); }
   if(!s._scoutOffer && s.scoutInterest >= (lvl==='college'?68:78)){ s._scoutOffer={tier: s.scoutInterest>=88?0:(s.scoutInterest>=78?1:2), age:S.age}; ssKeyMoment('scoutOffer',`A pro scout came calling.`); lines.push(`📣 A <b>pro scout wants to sign you</b> — go pro from the Football hub!`); }
@@ -10816,6 +10856,125 @@ function schoolDance(){ if(!S||isLocked())return; if(!['primary','high','college
   else if(roll<88){ chg('happy',-rng(1,4)); title='Wallflower 🥲'; icon='🥲'; line=`The <b>${theme}</b> dance was awkward — you spent most of it by the punch bowl.`; tags=[['flag','Awkward dance']]; }
   else { S.popularity=clamp((S.popularity||50)-rng(2,6)); chg('happy',-rng(3,7)); title='Dance Drama 😬'; icon='😬'; line=`Drama erupted at the <b>${theme}</b> dance and you got dragged right into the middle.`; tags=[['bad','Dance drama']]; }
   pushLog(`💃 ${line.replace(/<[^>]+>/g,m=>m)}`,tags); resultModal('School Dance',title,icon,[line],()=>setTab('school')); }
+/* ---- 🏥 SCHOOL NURSE ---- */
+function schoolNurse(){ if(!S||isLocked())return; if(!['primary','high','college','cc'].includes(S.eduLevel)){ toast('You need to be in school for that.'); return; }
+  logAct('call',{fn:'schoolNurse'});
+  openModal({banner:'School', title:'🏥 School Nurse', icon:'🏥', closable:true,
+    text:`The nurse's office: a squeaky cot, a jar of tongue depressors, and a blessed escape from class. What do you need?`,
+    choices:[
+      {label:'🩺 Get a checkup', alt:true, fn:()=>nurseDo('checkup')},
+      {label:'🧠 Talk through some stress', alt:true, fn:()=>nurseDo('talk')},
+      {label:'🤒 Fake sick to get sent home', tip:'Risky', alt:true, fn:()=>nurseDo('fake')},
+      {label:'‹ Back', fn:()=>{ closeModal(); setTab('school'); }},
+    ]});
+}
+function nurseDo(kind){ closeModal();
+  if(kind==='checkup'){ const ill=(S.illnesses||[]).find(i=>!i.treated);
+    if(ill){ pushLog(`🩺 The school nurse flagged something during a checkup — see a doctor about your <b>${ill.name||ill.key}</b>.`,[['flag','Nurse checkup']]); resultModal('School Nurse','Checkup 🩺','🩺',[`The nurse notices signs of <b>${ill.name||ill.key}</b> and tells you to get it looked at by a doctor.`],()=>setTab('school')); }
+    else { chg('health',rng(0,2)); resultModal('School Nurse','All Clear 🩺','🩺',[`The nurse checks you over — height, weight, blood pressure. You're healthy as a horse. 🐴`],()=>setTab('school')); } return; }
+  if(kind==='talk'){ addStress(-rng(6,14)); chg('happy',rng(2,6));
+    const s=pick(['You vented about exam pressure and walked out feeling lighter.','The nurse listened without judgment — it helped more than you expected.','A quiet chat and a granola bar reset your whole day.','You admitted you\'d been overwhelmed, and just saying it out loud helped.']);
+    pushLog(`🧠 ${s}`,[['good','Talked to the nurse']]); resultModal('School Nurse','A Kind Ear 🧠','🧠',[s,`<span style="color:var(--dim);font-size:12px">(−Stress · +Happiness)</span>`],()=>setTab('school')); return; }
+  // fake sick — once per year
+  if(!onceYear('nurse_fake','faked sick')){ setTab('school'); return; }
+  if(rng(0,100) < 60 + S.stats.smarts/8){ chg('happy',rng(3,7)); S.grades=clamp(S.grades-rng(0,2));
+    pushLog(`🤒 I faked a fever and got sent home early. Freedom!`,[['good','Ditched via the nurse']]); resultModal('School Nurse','Sent Home 🤒','🤒',[`You pressed the thermometer to the lightbulb — the nurse bought it and sent you home. A free afternoon. 😌`],()=>setTab('school')); }
+  else { S.grades=clamp(S.grades-rng(2,5)); S.popularity=clamp((S.popularity||50)-rng(0,3));
+    pushLog(`🤒 The nurse saw right through my fake illness — busted.`,[['bad','Caught faking sick']]); resultModal('School Nurse','Busted 😬','😬',[`The nurse wasn't born yesterday — you got marched straight back to class with a note sent home.`],()=>setTab('school')); }
+}
+/* ---- 🚌 SCHOOL TRIP (player-initiated field trip) ---- */
+const SCHOOL_TRIPS=[
+  {label:'Natural History Museum', n:'the natural history museum', icon:'🦕', fee:[10,40]},
+  {label:'Aquarium', n:'the aquarium', icon:'🐠', fee:[15,50]},
+  {label:'National Park', n:'a national park', icon:'🏞️', fee:[20,70]},
+  {label:'State Capital', n:'the state capital', icon:'🏛️', fee:[15,60]},
+  {label:'Amusement Park', n:'an amusement park', icon:'🎢', fee:[30,110]},
+  {label:'Historic Battlefield', n:'a historic battlefield', icon:'⚔️', fee:[10,45]},
+  {label:'Planetarium', n:'the planetarium', icon:'🔭', fee:[12,45]},
+  {label:'The Theatre', n:'a matinee at the theatre', icon:'🎭', fee:[18,65]},
+];
+function schoolTrip(){ if(!S||isLocked())return; if(!['primary','high','college','cc'].includes(S.eduLevel)){ toast('You need to be in school for that.'); return; }
+  if(actDone('school_trip')){ toast('⏳ You already took a school trip this year — Age Up first.'); return; }
+  logAct('call',{fn:'schoolTrip'});
+  const pool=SCHOOL_TRIPS.slice(), opts=[]; while(opts.length<3 && pool.length){ opts.push(pool.splice(rng(0,pool.length-1),1)[0]); }
+  openModal({banner:'School Trip', title:'🚌 Plan a School Trip', icon:'🚌', closable:true,
+    text:`Sign the permission slip and pick where the class is headed. There's a small fee — and no telling how the day will go.`,
+    choices: opts.map(t=>({label:`${t.icon} ${t.label}`, tip:`Fee ~${cur()}${t.fee[1]}`, alt:true, fn:()=>doTrip(t.n,t.icon)}))
+      .concat([{label:'‹ Back', fn:()=>{ closeModal(); setTab('school'); }}]) });
+}
+function doTrip(name,icon){ if(!onceYear('school_trip','went on a trip')){ setTab('school'); return; }
+  const t=SCHOOL_TRIPS.find(x=>x.n===name)||{fee:[10,50]}; const cost=Math.round(rng(t.fee[0],t.fee[1])*priceMult()); if(S.money>0)money(-Math.min(cost,S.money));
+  const roll=rng(0,100); let title,line,tags;
+  if(roll<36){ S.popularity=clamp((S.popularity||50)+rng(2,6)); chg('happy',rng(4,9)); if(rng(0,100)<45)addSchoolFriend('the trip'); title='Best Trip Ever 🎒'; line=`The trip to ${name} was a blast — you bonded with your class and made a real memory.`; tags=[['good','School trip']]; }
+  else if(roll<56){ chg('happy',rng(2,5)); title='A Fun Day Out 🚌'; line=`${name.charAt(0).toUpperCase()+name.slice(1)} was a solid day away from the classroom.`; tags=[['flag','School trip']]; }
+  else if(roll<70 && S.age>=13){ chg('happy',rng(3,7)); S.popularity=clamp((S.popularity||50)+rng(0,3)); if(rng(0,100)<50)addSchoolFriend('the bus ride'); title='Trip Romance 💘'; line=`You and a classmate hit it off on the long bus ride to ${name}. 💘`; tags=[['good','Trip crush']]; }
+  else if(roll<86){ chg('happy',rng(2,6)); if(rng(0,1))S.grades=clamp(S.grades-rng(0,2)); title='Mischief on the Bus 😜'; line=`You and your friends caused a bit of chaos on the way to ${name} — completely worth it.`; tags=[['flag','Trip mischief']]; }
+  else { S.popularity=clamp((S.popularity||50)-rng(1,4)); chg('happy',-rng(2,5)); S.grades=clamp(S.grades-rng(0,3)); title='Trip Trouble 😱'; line=`Disaster on the trip to ${name} — ${pick(['you got separated and nearly missed the bus home','a teacher caught you messing around and gave you detention','you lost your bag and half your money'])}.`; tags=[['bad','Trip trouble']]; }
+  pushLog(`🚌 ${line.replace(/<[^>]+>/g,'')}`,tags); resultModal('School Trip',title,icon,[line,`Fee: ${cur()}${cost.toLocaleString()}.`],()=>setTab('school')); }
+/* ---- 🏛️ FRATERNITIES & SORORITIES (college) ---- */
+const GREEK_FRAT=['Alpha Sigma Phi','Beta Theta Pi','Sigma Chi','Kappa Alpha Order','Phi Delta Theta','Tau Kappa Epsilon','Delta Upsilon','Pi Kappa Alpha'];
+const GREEK_SOR=['Alpha Phi','Chi Omega','Delta Gamma','Kappa Kappa Gamma','Pi Beta Phi','Zeta Tau Alpha','Gamma Phi Beta','Delta Delta Delta'];
+function greekName(h){ return h||'Greek Life'; }
+function greekRoleLabel(r){ return ({pledge:'Pledge',member:'Member',president:'⭐ Chapter President'})[r]||'Member'; }
+function greekAddSib(){ const g=S.greek; if(!g)return; const gg=g.kind==='frat'?'m':'f'; const id='greek_'+Object.keys(S.people).length;
+  S.people[id]=person(id, nm(gg)+' '+pick(LAST), g.kind==='frat'?'Frat Brother':'Sorority Sister', rng(50,68), rng(45,60), {gender:gg, gen:0, age:S.age+rng(-1,2)}); S.people[id].greek=true; }
+function greekLife(){ if(!S||isLocked())return; if(!(S.eduLevel==='college'||S.eduLevel==='cc')){ toast('Greek life is a university thing.'); return; }
+  logAct('call',{fn:'greekLife'});
+  if(S.greek){ greekHub(); return; }
+  openModal({banner:'Greek Life', title:'🏛️ Rush Week', icon:'🏛️', closable:true,
+    text:`It's rush week. Pledging a house means parties, lifelong connections and campus clout — but also hazing, dues and drama. Which do you rush?`,
+    choices:[
+      {label:'🕺 Rush a fraternity', alt:true, fn:()=>greekRush('frat')},
+      {label:'💃 Rush a sorority', alt:true, fn:()=>greekRush('sor')},
+      {label:'‹ Back', fn:()=>{ closeModal(); setTab('school'); }},
+    ]});
+}
+function greekRush(kind){ closeModal();
+  const house=pick(kind==='frat'?GREEK_FRAT:GREEK_SOR);
+  const score=(S.popularity||50)*0.5 + S.stats.looks*0.3 + S.stats.smarts*0.1 + (netWorth()>500000?8:0) + rng(-12,12);
+  if(score < 40){ chg('happy',-rng(2,6)); pushLog(`🏛️ I rushed ${house} but didn't get a bid. Ouch.`,[['bad','No bid']]); resultModal('Greek Life','No Bid 😞','😞',[`You rushed <b>${house}</b>, but they passed on you this time. Build your popularity and try again next year.`],()=>setTab('school')); return; }
+  S.greek={ house, kind, role:'pledge', joinedAge:S.age, dues:Math.round(rng(300,1500)*priceMult()), semesters:0 };
+  setFlag('greek_life'); greekAddSib(); greekAddSib();
+  pushLog(`🏛️ I got a bid and pledged <b>${house}</b>! Hell week starts now.`,[['good','Pledged a house']]);
+  greekHazing();
+}
+function greekHazing(){ openModal({banner:'Greek Life', title:'😈 Hell Week', icon:'😈', closable:false,
+    text:`As a pledge of <b>${S.greek.house}</b>, the ${S.greek.kind==='frat'?'brothers':'sisters'} put you through hazing. How do you handle it?`,
+    choices:[
+      {label:'Take it like a champ', tip:'Earn respect', fn:()=>greekHazeDo('tough')},
+      {label:'Play along, laugh it off', fn:()=>greekHazeDo('go')},
+      {label:'Refuse — that\'s too far', tip:'Principled, risky', alt:true, fn:()=>greekHazeDo('refuse')},
+    ]}); }
+function greekHazeDo(kind){ closeModal(); const g=S.greek; if(!g)return;
+  if(kind==='tough'){ if(rng(0,100)<80){ g.role='member'; S.popularity=clamp((S.popularity||50)+rng(5,12)); chg('happy',rng(1,4)); driftPers('boldness',2); pushLog(`😈 I gutted out hell week — now a full member of ${g.house}.`,[['good','Initiated']]); resultModal('Greek Life','Initiated 🎉','🎉',[`You gutted out hell week and earned your letters. You're a full <b>${g.house}</b> member.`],()=>setTab('school')); }
+    else { g.role='member'; chg('health',-rng(3,8)); addStress(rng(6,14)); pushLog(`😈 Hazing went too far and I got hurt — but I'm in.`,[['bad','Hazing injury']]); resultModal('Greek Life','It Went Too Far 🤕','🤕',[`The hazing crossed a line and you got hurt — but you made it into <b>${g.house}</b>. Barely.`],()=>setTab('school')); } }
+  else if(kind==='go'){ g.role='member'; S.popularity=clamp((S.popularity||50)+rng(3,7)); chg('happy',rng(2,5)); pushLog(`🏛️ I laughed through hell week and made it into ${g.house}.`,[['good','Initiated']]); resultModal('Greek Life','You\'re In 🎉','🎉',[`You rolled with the jokes and made it through. Welcome to <b>${g.house}</b>.`],()=>setTab('school')); }
+  else { if(rng(0,100)<45){ S.greek=null; chg('happy',-rng(2,5)); pushLog(`🏛️ I refused the hazing and got dropped from the house.`,[['bad','Dropped']]); resultModal('Greek Life','Dropped 😞','😞',[`You drew a hard line on the hazing, and the house rescinded your bid. No shame in it.`],()=>setTab('school')); }
+    else { g.role='member'; karma(2); S.popularity=clamp((S.popularity||50)+rng(1,4)); pushLog(`🏛️ I refused the worst of the hazing — and they respected it. I'm in.`,[['good','Stood up, initiated']]); resultModal('Greek Life','Respect 🤝','🤝',[`You refused to cross the line — and the house respected your backbone. You're in, on your own terms.`],()=>setTab('school')); } }
+}
+function greekHub(){ const g=S.greek; if(!g){ greekLife(); return; }
+  const sibs=Object.values(S.people).filter(p=>p.alive&&p.greek).length;
+  let body=`<div style="text-align:left"><div style="font-size:15px"><b>🏛️ ${g.house}</b></div>
+    <div style="color:var(--dim);font-size:12px;margin-bottom:8px">${greekRoleLabel(g.role)} · ${g.kind==='frat'?'Fraternity':'Sorority'} · ${sibs} ${g.kind==='frat'?'brother':'sister'}${sibs===1?'':'s'}</div>
+    <p style="color:var(--dim);font-size:12px">Dues run ${cur()}${g.dues.toLocaleString()}/yr. Throw parties for clout, network for your future, or run for chapter president.</p></div>`;
+  const choices=[{label:'🎉 Throw a house party', alt:true, fn:greekParty}];
+  if(g.role==='member') choices.push({label:'🗳️ Run for chapter president', alt:true, fn:greekRunPres});
+  choices.push({label:'🚪 Leave the house', alt:true, fn:greekLeave});
+  choices.push({label:'‹ Back', fn:()=>{ closeModal(); setTab('school'); }});
+  openModal({banner:'Greek Life', title:`🏛️ ${g.house}`, icon:'🏛️', closable:true, text:body, choices});
+}
+function greekParty(){ if(!S.greek)return; if(!onceYear('greek_party','threw a house party')){ setTab('school'); return; } closeModal();
+  const cost=Math.round(rng(80,500)*priceMult()); if(S.money>0)money(-Math.min(cost,S.money));
+  const roll=rng(0,100); let title,line,tags;
+  if(roll<50){ S.popularity=clamp((S.popularity||50)+rng(4,10)); chg('happy',rng(4,9)); gainFame(rng(0,2)); if(rng(0,100)<40)greekAddSib(); title='Legendary Rager 🎉'; line=`The ${S.greek.house} party was the talk of campus — your stock soared.`; tags=[['good','Greek party']]; }
+  else if(roll<78){ S.popularity=clamp((S.popularity||50)+rng(1,4)); chg('happy',rng(2,5)); title='Good Turnout 🍻'; line=`A solid night at the house — drinks, music and a packed floor.`; tags=[['flag','Greek party']]; }
+  else { S.popularity=clamp((S.popularity||50)-rng(1,5)); chg('happy',-rng(1,4)); title='Party Got Busted 🚨'; line=`Campus security shut down the ${S.greek.house} party — the chapter's on thin ice.`; tags=[['bad','Party busted']]; }
+  pushLog(`🎉 ${line}`,tags); resultModal('Greek Life',title,'🎉',[line,`Cost: ${cur()}${cost.toLocaleString()}.`],()=>setTab('school')); }
+function greekRunPres(){ if(!S.greek)return; closeModal(); const g=S.greek;
+  const score=(S.popularity||50)*0.6 + S.stats.smarts*0.2 + rng(-15,15);
+  if(score>55){ g.role='president'; S.popularity=clamp((S.popularity||50)+rng(4,9)); gainFame(rng(1,4)); setFlag('greek_president'); driftPers('boldness',2); pushLog(`🗳️ I was elected president of ${g.house}!`,[['good','Chapter president']]); resultModal('Greek Life','Chapter President ⭐','⭐',[`The house voted you in as <b>president</b> of ${g.house}. Leadership looks good on you.`],()=>setTab('school')); }
+  else { chg('happy',-rng(1,4)); pushLog(`🗳️ I ran for ${g.house} president but lost the vote.`,[['flag','Lost the vote']]); resultModal('Greek Life','Lost the Vote 😕','😕',[`The chapter went another way this time. Build your rep and run again.`],()=>setTab('school')); } }
+function greekLeave(){ if(!S.greek)return; closeModal(); const h=S.greek.house; S.greek=null; S.popularity=clamp((S.popularity||50)-rng(2,6)); pushLog(`🚪 I hung up my letters and left ${h}.`,[['flag','Left the house']]); resultModal('Greek Life','You Left 🚪','🚪',[`You left <b>${h}</b> behind.`],()=>setTab('school')); }
 function renderSchool(){
   const v=document.getElementById('schoolView'); if(!v||!S)return;
   if(!['primary','high','college','cc','grad'].includes(S.eduLevel)){
@@ -10841,17 +11000,21 @@ function renderSchool(){
   const prest=S.schoolPrestige||30;
   const clubs=(S.clubs||[]);
   let h=hubBack('school')+`<div class="card profile"><div class="handle">🏫 ${S.schoolName}</div>
-    <div class="pf" style="margin-top:4px">${S.schoolType} · ${lvl}${S.eduLevel==='college'&&S.major?` · 📘 ${majorName(S.major)}`:''}${S.clique?` · 🫂 ${cliqueName(S.clique)}`:''}</div>
+    <div class="pf" style="margin-top:4px">${S.schoolType} · ${lvl}${S.eduLevel==='college'&&S.major?` · 📘 ${majorName(S.major)}`:''}${S.clique?` · 🫂 ${cliqueName(S.clique)}`:''}${S.greek?` · 🏛️ ${S.greek.house}`:''}${(S.age>=13&&S.virgin)?` · 💗 Virgin`:''}</div>
     <div class="relbars" style="margin-top:10px">${pbar('Grades',S.grades,gc)}${pbar('🎉 Popularity',S.popularity||50)}${pbar('⭐ Prestige',prest)}</div></div>`;
   if(clubs.length){ h+=`<div class="genlabel">Your Activities</div>`;
     clubs.forEach(k=>{ const a=SCHOOL_ACTS.find(x=>x.k===k)||{name:actName(k),icon:'🎽'}; const d=(S.clubData&&S.clubData[k])||{perf:50};
       h+=`<div class="card" style="padding:11px 13px;margin-bottom:8px;cursor:pointer" onclick="clubDetail('${k}')"><div><b>${a.icon} ${a.name}</b>${d.captain?' <span style="color:var(--good);font-size:12px">⭐ Captain</span>':''}</div><div class="relbars" style="margin-top:6px">${pbar('Performance',d.perf)}</div></div>`; }); }
+  const inCollege=(S.eduLevel==='college'||S.eduLevel==='cc');
   h+=`<div class="genlabel">School</div><div class="composer">
     <button class="pbtn" onclick="schoolActivities()"><span class="pi">🎽</span><span class="pl">Activities</span><span class="pd">Join a club or try out for a sports team.</span></button>
     <button class="pbtn" onclick="cliques()"><span class="pi">🫂</span><span class="pl">Cliques</span><span class="pd">Join a school crowd — fit in, boost popularity.</span></button>
+    ${inCollege?`<button class="pbtn" onclick="greekLife()"><span class="pi">🏛️</span><span class="pl">${S.greek?greekName(S.greek.house):'Fraternities & Sororities'}</span><span class="pd">${S.greek?`${greekRoleLabel(S.greek.role)} — parties, dues & connections`:'Rush a Greek house — parties, brothers/sisters & clout.'}</span></button>`:''}
     <button class="pbtn" onclick="houseParty()"><span class="pi">🎉</span><span class="pl">House Party</span><span class="pd">Throw a bash — popularity up, but it can go sideways.</span></button>
     <button class="pbtn" onclick="schoolDance()"><span class="pi">💃</span><span class="pl">School Dance</span><span class="pd">Hit the themed dance — popularity & a fun night.</span></button>
+    <button class="pbtn" onclick="schoolTrip()"><span class="pi">🚌</span><span class="pl">Plan a Trip</span><span class="pd">Sign up for a school trip — bonding, mischief & memories.</span></button>
     <button class="pbtn" onclick="studyHarder()"><span class="pi">📚</span><span class="pl">Study Harder</span><span class="pd">Extra effort → grades & smarts.</span></button>
+    <button class="pbtn" onclick="schoolNurse()"><span class="pi">🏥</span><span class="pl">School Nurse</span><span class="pd">Checkup, a mental-health chat — or fake sick to skip class.</span></button>
     <button class="pbtn" onclick="skipSchool()"><span class="pi">🫢</span><span class="pl">Skip School</span><span class="pd">Ditch class — fun, but risky for your grades.</span></button>
     <button class="pbtn" onclick="switchSchool()"><span class="pi">🔁</span><span class="pl">Switch School</span><span class="pd">Ask your parents to transfer you — pricier schools, richer friends.</span></button>
     <button class="pbtn" onclick="setTab('people')"><span class="pi">👥</span><span class="pl">My Class</span><span class="pd">Classmates & teachers.</span></button>
