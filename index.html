@@ -5436,8 +5436,11 @@ function render(){
         `<div class="people">${m.map(personCard).join('')}</div>`;
   }
   const _livingPpl=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used)).length;
+  const _bffN=Object.values(S.people).filter(p=>p.alive&&p.bestFriend).length;
+  const _nemN=Object.values(S.people).filter(p=>p.alive&&p.nemesis).length;
+  const _summary=`<div class="card profile" style="padding:9px 12px;margin-bottom:8px"><div class="pf" style="font-size:12.5px">👥 <b>${_livingPpl}</b> living relationship${_livingPpl===1?'':'s'}${_bffN?` · 🤝 <b>${_bffN}</b> best friend${_bffN>1?'s':''}`:''}${_nemN?` · 😈 <b>${_nemN}</b> ${_nemN>1?'nemeses':'nemesis'}`:''}</div></div>`;
   const _allBtn=_livingPpl>=2 ? hubCard('⏱️','Spend Time With All','Invest in every relationship at once',"spendTimeAll()") : '';
-  document.getElementById('peopleView').innerHTML=hubBack('people')+_allBtn+ph;
+  document.getElementById('peopleView').innerHTML=hubBack('people')+_summary+_allBtn+ph;
   renderCareer();
   renderAssets();
   renderConnections();
