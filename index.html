@@ -8121,7 +8121,7 @@ function openPerson(id){
   const moments = km.length? `<br><b style="color:var(--text)">Defining moments</b>`+km.map(m=>`<br>${MOMENT_EMO[m.type]||'•'} <i>“${m.description}”</i> <span style="font-size:11px">(age ${m.ageAtEvent})</span>`).join('') : '';
   const summ = p.summary? `<br><span style="font-size:12px">📖 <i>${p.summary}</i></span>` : '';
   const detail=`<div style="text-align:left;font-size:13px;color:var(--dim);line-height:1.6">
-    ${p.rel}${p.fam?` · Age ${p.age}`:''} · <b style="color:${col}">${relStatus(p)}</b> · ${TRAIT_EMO[tr]||'🙂'} <b style="color:var(--text)">${tr.charAt(0).toUpperCase()+tr.slice(1)}</b>
+    ${p.rel}${p.fam?` · Age ${p.age}`:''} · <b style="color:${col}">${relStatus(p)}</b> · ${TRAIT_EMO[tr]||'🙂'} <b style="color:var(--text)">${tr.charAt(0).toUpperCase()+tr.slice(1)}</b>${p.bestFriend?` · <b style="color:var(--good)">🤝 Best Friend</b>`:''}${p.tricks&&p.tricks.length?`<br>🎓 Knows ${p.tricks.length} trick${p.tricks.length>1?'s':''}`:''}
     ${occ?`<br>💼 ${occ}`:''}${est!=null?`<br>💰 ~${fcm(est)} est. net worth${p.affinity<60?' <span style="font-size:11px">(likely more — get closer)</span>':''}`:''}
     ${p.custody&&(p.age||0)<18?`<br>🧑‍⚖️ Custody: <b style="color:var(--text)">${p.custody==='you'?'lives with you':p.custody==='ex'?'lives with '+(p.coParentName||'your ex'):p.custody==='foster'?'in foster care':'joint custody'}</b>`:''}
     ${p.adopted?`<br>💛 <b style="color:var(--text)">Adopted</b> into the family`:''}${p.privateSchool?`<br>🎓 <b style="color:var(--text)">Private school</b>${p.eduInvest?` · ${p.eduInvest}yr`:''}`:''}${p.nanny?`<br>👶 <b style="color:var(--text)">Nanny</b> in the home`:''}
@@ -8745,8 +8745,8 @@ function personCard(p){
   const col=pbColor(p.affinity);
   return `<div class="person ${p.alive?'':'dead'}" onclick="openPerson('${p.id}')" style="cursor:pointer">
     <div class="avatar" style="background:linear-gradient(135deg,${col},#3a4658)">${p.name[0]}</div>
-    <div class="meta"><div class="nm">${p.name}</div>
-      <div class="rl">${p.rel}${p.fam&&p.alive?` · Age ${p.age}`:!p.alive?' · ✝ deceased':''}</div>
+    <div class="meta"><div class="nm">${p.name}${p.bestFriend&&p.alive?' 🤝':''}${p.tricks&&p.tricks.length>=3?' 🎓':''}</div>
+      <div class="rl">${p.bestFriend&&p.alive?'Best Friend · ':''}${p.rel}${p.fam&&p.alive?` · Age ${p.age}`:!p.alive?' · ✝ deceased':''}</div>
       ${p.alive?`<div class="rl" style="color:${col};font-weight:700">${relStatus(p)}</div>
       <div class="relbars">${pbar('Relationship',p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}</div>`:''}
     </div></div>`;
