@@ -307,6 +307,9 @@
     background:linear-gradient(180deg,#222a38,#171d28); border:1px solid #323d4f; color:var(--dim);
     box-shadow:0 4px 0 rgba(0,0,0,.45), 0 7px 13px rgba(0,0,0,.34);
   }
+  /* generic selected state — any toggle in the create screen clearly shows what's picked (M/F below override with their own colors) */
+  #create .sexbtn.on{ color:#fff; background:linear-gradient(180deg,#2e3f66,#233158); border-color:var(--accent);
+    box-shadow:0 0 0 2px var(--accent), 0 5px 0 #1c2b52, 0 10px 18px rgba(91,140,255,.4); }
   #create #sexM.on{ color:#fff; background:linear-gradient(180deg,#5b8cff,#3a63d6); border-color:#84a6ff; box-shadow:0 5px 0 #2b48a8, 0 11px 20px rgba(91,140,255,.55); }
   #create #sexF.on{ color:#fff; background:linear-gradient(180deg,#ff7bb0,#df518e); border-color:#ffa6cb; box-shadow:0 5px 0 #b53b6e, 0 11px 20px rgba(255,123,176,.55); }
   #create .sexbtn:active{ transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,.4); }
