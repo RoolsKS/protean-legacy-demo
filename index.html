@@ -1289,7 +1289,9 @@ function startLife(opts){
   if(S.origin==='royal'){
     const monarchies=Object.keys(COUNTRIES).filter(c=>c!==S.country && /monarch|king|emperor|sultan|emir/i.test(COUNTRIES[c].gov||''));
     const pool=monarchies.length?monarchies:Object.keys(COUNTRIES).filter(c=>c!==S.country);
-    S.royal={ crownCountry:pool[rng(0,pool.length-1)], throne:'grandparent', returned:0, fled:0, found:0, summonsAt:0 };
+    S.royal={ crownCountry:pool[rng(0,pool.length-1)], throne:'grandparent', returned:0, fled:0, found:0, summonsAt:0,
+      palace:{ name:pick(['Aurelian','Vermillion','Whitehall','Sunspire','Falkenrath','Montclair','Bellrose','Stormhold','Lionsgate','Crownfield'])+' '+pick(['Palace','Castle']),
+        built:rng(1200,1900), rooms:rng(120,775), staff:rng(80,420), acres:rng(40,900), value:rng(80,900)*1e6 } };
     if(P('pgf')){ P('pgf').alive=true; P('pgf').job='reigning monarch'; P('pgf').memory=P('pgf').memory.filter(m=>!/Passed before/.test(m.note)); }
     if(P('pgm')){ P('pgm').job='queen consort'; }
   } else S.royal=null;
@@ -2522,20 +2524,63 @@ function allowanceYear(){ if(!S || S.age<5 || S.age>17) return;
    · SUCCESSION: the monarch grandfather dies → your parent takes the throne (you become heir apparent);
      your parent dies → the crown passes to YOU if you're an adult AT court, else to a regent (crown lost).
    · A royal purse pays adults who are at court and in good standing. */
+/* Returning a runaway royal to court — shared by the hunt (forced) and the surrender option (voluntary). */
+function royReturnToCourt(voluntary){ const R=S.royal; if(!R) return; R.found=S.age;
+  emigrateCore(R.crownCountry,{}); S.emigration.residencyStatus='citizen'; S.emigration.naturalizationProgress=100;   // royal blood — you ARE a national there
+  for(const p of Object.values(S.people)){ if(!p.alive||p.pet) continue; if(p.fam && (p.rel==='Mother'||p.rel==='Father'||/Brother|Sister/.test(p.rel))){ p.coLocated=true; p.countryOf=R.crownCountry; } }
+  if(voluntary){ addStress(rng(2,6)); setFlag('returned_by_choice');
+    if(P('dad')&&P('dad').alive)rel('dad',+rng(4,10),+rng(3,8),'You came back to court on your own terms.');
+    if(P('mom')&&P('mom').alive)rel('mom',+rng(4,10),+rng(3,8),'You came home by choice.');
+  } else { addStress(rng(10,20)); if(typeof addTrauma==='function')addTrauma('control',rng(10,20),'being hunted down and returned to the palace');
+    if(P('dad')&&P('dad').alive)rel('dad',-rng(6,14),-rng(4,10),'He sent the guards that brought you back.');
+    if(P('mom')&&P('mom').alive)rel('mom',-rng(3,9),-rng(2,6),'She let them take you.');
+    setFlag('dragged_to_court'); gainFame(rng(2,6)); }
+}
+/* 🏰 THE FAMILY SEAT — the palace lives in Assets with its full story; visits are logged openers (replay-safe). */
+function palaceView(){ if(!S||!S.royal){ toast('No family seat.'); return; } if(isLocked()){ toast('You have passed on. ⚰️'); return; }
+  logAct('call',{fn:'palaceView'});
+  const R=S.royal, pl=R.palace||{}; const cn=countryName(R.crownCountry), cf=countryFlag(R.crownCountry);
+  const status = R.throne==='you'?'👑 <b>The seat of YOUR reign.</b>'
+    : R.throne==='regent'?'A regent keeps the keys — and the court remembers whose they should be.'
+    : R.throne==='parent'?'Your parent reigns here; the halls are waiting for their heir.'
+    : 'Your grandfather holds court here, as his line has for centuries.';
+  const here=S.emigration && S.emigration.currentCountry===R.crownCountry;
+  const hiding=!!(R.fled&&!R.found); const kid=S.age<18;
+  openModal({banner:'Family Seat', title:`🏰 ${pl.name||'The Palace'}`, icon:'🏰', closable:true,
+    text:`<div style="text-align:left">${cf} <b>${cn}</b> · est. <b>${pl.built||'long ago'}</b><br>
+      🚪 <b>${(pl.rooms||0).toLocaleString()}</b> rooms · 🧑‍🍳 <b>${(pl.staff||0).toLocaleString()}</b> household staff · 🌳 <b>${(pl.acres||0).toLocaleString()}</b> acres of grounds<br>
+      💰 Estimated value <b>${fcm(pl.value||0)}</b> — held by the Crown${R.throne==='you'?' <b>(yours, in trust)</b>':''}; never for sale.<br><br>${status}${hiding?'<br><br>🕯️ You are in hiding — these gates are the one place where the hunt ends.':''}${here?'<br><br>🏰 You live at court — these halls are home.':''}</div>`,
+    choices:[
+      ...((!here&&!hiding)?[{label: kid?'🏰 Ask your parents to take you for a visit':'🏰 Visit the palace', tip: kid?'A family trip to court — they\'ll happily arrange it':'A journey back to the old country', fn:()=>palaceVisit()}]:[]),
+      ...(hiding?[{label:'🏳️ End the running — walk through the front gates', tip:'Surrender on YOUR terms. The family will receive you gently.', fn:()=>palaceSurrender()}]:[]),
+      {label:'✖ Close', alt:true, fn:closeModal},
+    ]});
+}
+function palaceVisit(){ closeModal();   // modalpick leaf → no logAct
+  if(!onceYear('palace_visit','visited the palace')){ setTab('assets'); return; }
+  const R=S.royal; if(!R)return; const pl=R.palace||{}; const cn=countryName(R.crownCountry), cf=countryFlag(R.crownCountry);
+  const kid=S.age<18; let costLine='the family covered the journey';
+  if(!kid && R.throne!=='you'){ const cost=Math.round(rng(2000,8000)*priceMult()); if(!spend(cost)) return; costLine=`travel ran ${cur()}${cost.toLocaleString()}`; }
+  chg('happy',rng(3,8)); addStress(-rng(2,6)); setFlag('visited_palace');
+  if(P('pgf')&&P('pgf').alive)rel('pgf',+rng(4,10),+rng(3,7),'You visited them at the palace.');
+  if(P('pgm')&&P('pgm').alive)rel('pgm',+rng(4,10),+rng(3,7),'You came all the way to court to see them.');
+  const beat=pick([`the King himself showed you the portrait hall — every face has your nose.`,`you got lost twice on the way to breakfast and the staff pretended not to notice.`,`a footman taught you to fence with umbrellas in the long gallery.`,`you fed the swans on the palace lake at dawn, like your parent did as a child.`,`the throne room at night, empty and echoing, made the whole "royalty" thing suddenly real.`,`your grandmother slipped you sweets at dinner under the table, monarch or not.`]);
+  pushLog(`🏰 ${kid?'The family flew to':'I traveled to'} <b>${pl.name}</b> in ${cn} ${cf} — ${beat}`,[['good','Visited the palace']]);
+  resultModal('Family Seat', pl.name, '🏰', [`A ${kid?'family visit':'journey'} to <b>${pl.name}</b> — ${costLine}.`, beat.charAt(0).toUpperCase()+beat.slice(1), `The old country feels a little less foreign now.`], ()=>setTab('assets'));
+}
+function palaceSurrender(){ closeModal();   // modalpick leaf → no logAct
+  const R=S.royal; if(!R||!R.fled||R.found) return; const pl=R.palace||{}; const cn=countryName(R.crownCountry), cf=countryFlag(R.crownCountry);
+  royReturnToCourt(true); chg('happy',rng(0,4));
+  pushLog(`🏳️ I ended the running myself — I walked through the front gates of <b>${pl.name}</b> in ${cn} ${cf} and asked to see my family. No guards, no headlines. My terms.`,[['flag','Came back by choice'],['echo','The hunt ends on your terms']]);
+  resultModal('Family Seat','Home, By Choice','🏳️',[`You walked into <b>${pl.name}</b> before they ever found you.`,`The relief on your parents' faces outweighs the lecture that follows. Court life begins — but this chapter was written by YOU.`],()=>setTab('life'));
+}
 function royaltyYear(){ if(!S || !S.royal) return; const R=S.royal; emInit();
   const cn=countryName(R.crownCountry), cf=countryFlag(R.crownCountry);
   // — the hunt for a runaway royal —
   if(R.fled && !R.found){
     const yrs=S.age-R.fled;
     if(rng(0,100) < Math.min(15+yrs*13, 85)){
-      R.found=S.age;
-      emigrateCore(R.crownCountry,{});
-      S.emigration.residencyStatus='citizen'; S.emigration.naturalizationProgress=100;   // royal blood — you ARE a national there
-      for(const p of Object.values(S.people)){ if(!p.alive||p.pet) continue; if(p.fam && (p.rel==='Mother'||p.rel==='Father'||/Brother|Sister/.test(p.rel))){ p.coLocated=true; p.countryOf=R.crownCountry; } }
-      addStress(rng(10,20)); if(typeof addTrauma==='function')addTrauma('control',rng(10,20),'being hunted down and returned to the palace');
-      if(P('dad')&&P('dad').alive)rel('dad',-rng(6,14),-rng(4,10),'He sent the guards that brought you back.');
-      if(P('mom')&&P('mom').alive)rel('mom',-rng(3,9),-rng(2,6),'She let them take you.');
-      setFlag('dragged_to_court'); gainFame(rng(2,6));
+      royReturnToCourt(false);
       pushLog(`🚨 They found me. ${pick(['Two men in grey suits were waiting outside school.','A "family friend" I\'d never met knew my coffee order and my address.','The kind new neighbor turned out to be palace security.'])} Royal protection officers escorted me "home" to <b>${cn}</b> ${cf}. The papers called it a joyful family reunion. It wasn't.`,[['bad','Found and returned'],['echo','The palace always wins']]);
     } else if(rng(0,100)<40){
       pushLog(`👁️ ${pick(['A stranger photographed me at the bus stop, then vanished.','Someone asked my teacher about "the transfer student with the accent."','A private investigator\'s card was tucked under our door.','The evening news ran ANOTHER segment: "Where is the runaway royal?"','I changed my hair. The man at the corner still looked twice.'])} The palace is still searching.`,[['flag','Still hiding']]);
@@ -4643,6 +4688,28 @@ const EVENTS = [
       {label:'Have the palace handle it', tip:'Invoke the machine', apply:()=>{ if(P('dad')&&P('dad').alive)rel('dad',+rng(2,5),+rng(1,4),'You let the family handle the press — like a royal would.');
         return {text:`One phone call. The photographer is gone by dawn and the story dies in a drawer. It's the first time you've felt the family's reach — protective and a little frightening.`,tags:[['good','Story killed'],['echo','The family\'s reach is long']]}; }},
     ]};}},
+/* --- 👑 ROYALTY: your parents offer a family visit to the palace --- */
+{ id:'roy_visit', once:false, weight:16,
+  when:S=>S.royal && S.royal.palace && !S.royal.returned && !S.royal.fled && S.age>=4 && S.age<=16 && S.emigration && S.emigration.currentCountry!==S.royal.crownCountry && (S.age-(S._lastRoyV||-99)>=5),
+  build:S=>{ S._lastRoyV=S.age; const R=S.royal; const pl=R.palace; const cn=countryName(R.crownCountry), cf=countryFlag(R.crownCountry); const par=(P('dad')&&P('dad').alive)?P('dad'):P('mom');
+    return {yr:`Age ${S.age}`, title:'🏰 A Trip to the Palace?',
+    text:`${par?`<b>${par.name.split(' ')[0]}</b> sits on the edge of your bed with old photographs`:'Your family gathers around old photographs'} — marble halls, swans on a lake, a grandfather in uniform. "How would you like to spend the holidays at <b>${pl.name}</b>?" A family visit to ${cn} ${cf} — the world your parents left behind.`,
+    choices:[
+      {label:'🏰 Yes — see where the family comes from', apply:()=>{ chg('happy',rng(4,9)); setFlag('visited_palace');
+        if(P('pgf')&&P('pgf').alive)rel('pgf',+rng(5,12),+rng(4,9),'They met you at the palace steps themselves.');
+        if(P('pgm')&&P('pgm').alive)rel('pgm',+rng(5,12),+rng(4,9),'A palace holiday together.');
+        if(par)rel(par.id,+rng(3,7),+rng(2,5),'You embraced the family\'s world.');
+        gainFame(rng(0,3));
+        return {text:`Two weeks at <b>${pl.name}</b>: ${pl.rooms.toLocaleString()} rooms and you tried to count them all, a grandfather who turned out to be warmer than his portraits, and staff who bowed to YOU. On the flight home, ${cn} doesn't feel like a stranger's country anymore.`,
+          tags:[['good','Palace holiday'],['rel','Closer to the crown side']]}; }},
+      {label:'😴 Stay home — palaces sound boring', apply:()=>{ if(par)rel(par.id,-rng(2,5),-rng(1,3),'You shrugged at their whole world.'); chg('happy',rng(0,2));
+        return {text:`You stay with a sitter and have a perfectly ordinary week — cartoons, cereal, zero curtsies. ${par?par.name.split(' ')[0]+' comes home with distant eyes and a snow globe of a palace you\'ve never seen.':''}`,
+          tags:[['flag','Skipped the palace']]}; }},
+      {label:'🕵️ Go — and sneak into the forbidden wing', tip:'The doors are locked for a reason', when:S=>S.age>=8, apply:()=>{ chg('happy',rng(3,7)); chg('smarts',rng(1,3)); karma(-2); setFlag('visited_palace'); setFlag('palace_secret');
+        const secret=pick(['a portrait with the face scratched out — and your father\'s eyes','a locked nursery kept exactly as it was forty years ago','letters in a drawer, signed by a name nobody in the family ever says','a servant\'s staircase that leads to a door sealed with wax']);
+        return {text:`You go — and on the third night you slip past the velvet rope into the forbidden wing. Inside: ${secret}. A guard's torch sweeps the corridor and you flee with your heart hammering. You tell no one. But you'll remember.`,
+          tags:[['flag','Found a palace secret 🕯️'],['echo','Some doors are locked for a reason']]}; }},
+    ]};}},
 /* --- 👑 ROYALTY: your first public duty at court --- */
 { id:'roy_duty', once:true, weight:40,
   when:S=>S.royal && (S.royal.returned||S.royal.found) && S.age>=10 && S.age<=25 && S.emigration && S.emigration.currentCountry===S.royal.crownCountry,
@@ -6119,6 +6186,12 @@ function renderAssets(){ const v=document.getElementById('assetsView'); if(!v||!
   h+=hubCard('🛍️','Go Shopping','Homes, cars, jewelry, storage & more', "setTab('shop')");
   // 🏠 where you live — surface current housing (a rental isn't an owned asset, so it doesn't count toward net worth, but you should still see it)
   { const hz=housingLine(); if(hz) h+=hz; }
+  // 👑 the family seat — the palace in the crown country (tap for its full story)
+  if(S.royal && S.royal.palace){ const R=S.royal, pl=R.palace;
+    const who=R.throne==='you'?'Seat of YOUR reign 👑':R.throne==='regent'?'Held by the regent':R.throne==='parent'?'Your parent wears the crown — you are heir':'Your grandfather\'s court — the family seat';
+    h+=`<div class="genlabel">👑 Family Seat</div>
+    <div class="platrow" onclick="palaceView()"><div class="picon" style="background:linear-gradient(135deg,#4a3b12,#241d09)">🏰</div>
+      <div class="pinfo"><div class="pn">${pl.name}</div><div class="pf">${countryFlag(R.crownCountry)} ${countryName(R.crownCountry)} · ${who}</div></div><span class="parrow">›</span></div>`; }
   // owned things
   const a=S.assets||{properties:[],vehicles:[],belongings:[]};
   if(a.properties.length){ h+=`<div class="genlabel">🏠 Properties</div>`;
