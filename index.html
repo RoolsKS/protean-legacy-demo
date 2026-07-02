@@ -6037,6 +6037,84 @@ const JEWELRY=[
   {name:'Ruby Necklace',   value:90000,  icon:'📿'},
   {name:'Royal Tiara',     value:650000, icon:'👑'},
 ];
+/* Real-life shopping catalogs — items may carry req:<era-cap> so gadgets don't appear in 1850. */
+const ELECTRONICS=[
+  {name:'Vintage Radio',        value:350,   icon:'📻', req:'telephone'},
+  {name:'Gaming Console',       value:600,   icon:'🎮', req:'internet'},
+  {name:'VR Headset',           value:900,   icon:'🥽', req:'internet'},
+  {name:'Smartphone (flagship)',value:1400,  icon:'📱', req:'internet'},
+  {name:'Turntable & Vinyl Rig',value:1600,  icon:'🎚️', req:'telephone'},
+  {name:'Drone',                value:1900,  icon:'🛸', req:'internet'},
+  {name:'Laptop (top spec)',    value:2800,  icon:'💻', req:'internet'},
+  {name:'Pro Camera Kit',       value:3400,  icon:'📷', req:'telephone'},
+  {name:'4K Home Theater',      value:5200,  icon:'📺', req:'internet'},
+  {name:'Smart Home System',    value:7000,  icon:'🏠', req:'internet'},
+];
+const FURNITURE=[
+  {name:'Cozy Armchair',    value:420,    icon:'🛋️'},
+  {name:'Designer Sofa',    value:2900,   icon:'🛋️'},
+  {name:'Antique Dresser',  value:3600,   icon:'🗄️'},
+  {name:'Pool Table',       value:3900,   icon:'🎱'},
+  {name:'Dining Set for 8', value:4400,   icon:'🍽️'},
+  {name:'Four-Poster Bed',  value:5600,   icon:'🛏️'},
+  {name:'Home Gym',         value:7800,   icon:'🏋️', req:'telephone'},
+  {name:'Hot Tub',          value:9800,   icon:'🛁', req:'telephone'},
+  {name:'Persian Rug',      value:13000,  icon:'🧶'},
+  {name:'Grand Chandelier', value:19000,  icon:'💡'},
+];
+const FASHION=[
+  {name:'Fresh Sneakers',        value:260,   icon:'👟', req:'telephone'},
+  {name:'Silk Scarf Collection', value:950,   icon:'🧣'},
+  {name:'Bespoke Leather Shoes', value:1300,  icon:'👞'},
+  {name:'Tailored Suit',         value:1900,  icon:'🤵'},
+  {name:'Limited-Run Sneakers',  value:4400,  icon:'👟', req:'internet'},
+  {name:'Designer Handbag',      value:6800,  icon:'👜'},
+  {name:'Couture Gown',          value:16000, icon:'👗'},
+  {name:'Fur-Trimmed Greatcoat', value:23000, icon:'🧥'},
+];
+const INSTRUMENTS=[
+  {name:'Banjo',                value:600,   icon:'🪕'},
+  {name:'Acoustic Guitar',      value:750,   icon:'🎸'},
+  {name:'Drum Kit',             value:2300,  icon:'🥁'},
+  {name:'Electric Guitar & Amp',value:2600,  icon:'🎸', req:'telephone'},
+  {name:'Saxophone',            value:3000,  icon:'🎷'},
+  {name:'Violin',               value:4000,  icon:'🎻'},
+  {name:'Upright Piano',        value:6800,  icon:'🎹'},
+  {name:'Grand Piano',          value:52000, icon:'🎹'},
+];
+const SPORTS_GEAR=[
+  {name:'Skateboard',        value:190,   icon:'🛹', req:'motorVehicles'},
+  {name:'Fishing Gear',      value:520,   icon:'🎣'},
+  {name:'Bicycle',           value:650,   icon:'🚲'},
+  {name:'Surfboard',         value:900,   icon:'🏄'},
+  {name:'Camping Rig',       value:1000,  icon:'🏕️'},
+  {name:'Snowboard & Gear',  value:1200,  icon:'🏂', req:'motorVehicles'},
+  {name:'Kayak',             value:1500,  icon:'🛶'},
+  {name:'Telescope',         value:2200,  icon:'🔭'},
+  {name:'Golf Clubs',        value:2800,  icon:'⛳'},
+  {name:'Home Climbing Wall',value:5400,  icon:'🧗', req:'telephone'},
+];
+const ART_COLLECT=[
+  {name:'Framed Print',            value:320,    icon:'🖼️'},
+  {name:'Local Artist\'s Canvas',  value:2300,   icon:'🎨'},
+  {name:'Vintage Vinyl Collection',value:3800,   icon:'💿', req:'telephone'},
+  {name:'Antique Globe',           value:4900,   icon:'🌍'},
+  {name:'Signed Memorabilia',      value:5600,   icon:'🏆'},
+  {name:'Rare First Edition',      value:8800,   icon:'📚'},
+  {name:'Bronze Sculpture',        value:15000,  icon:'🗿'},
+  {name:'Rare Coin Collection',    value:27000,  icon:'🪙'},
+  {name:'Old Master Painting',     value:260000, icon:'🖼️'},
+];
+const BELONGING_CATS={
+  jewelry:    {label:'Jewelry',            icon:'💍', sub:'Rings, watches & fine pieces',   list:JEWELRY},
+  electronics:{label:'Electronics',        icon:'📱', sub:'Phones, consoles & gadgets',     list:ELECTRONICS},
+  furniture:  {label:'Furniture & Home',   icon:'🛋️', sub:'Comfort for your castle',        list:FURNITURE},
+  fashion:    {label:'Fashion',            icon:'👗', sub:'Designer wear & accessories',    list:FASHION},
+  instruments:{label:'Instruments',        icon:'🎸', sub:'Make some noise',                list:INSTRUMENTS},
+  sports:     {label:'Sports & Outdoors',  icon:'🚲', sub:'Gear for the active life',       list:SPORTS_GEAR},
+  art:        {label:'Art & Collectibles', icon:'🖼️', sub:'Culture that holds its value',   list:ART_COLLECT},
+};
+function belongingAvail(x){ return !x.req || worldRules.cap(x.req); }
 const STORAGE_TIERS=[
   {t:'Small Locker',  slots:6,   rent:600,   secure:false, icon:'📦'},
   {t:'Medium Unit',   slots:18,  rent:1800,  secure:false, icon:'📦'},
@@ -6318,7 +6396,7 @@ function renderShop(){ const v=document.getElementById('shopView'); if(!v||!S)re
     h+=worldRules.cap('motorVehicles')
       ? hubCard('🚗','Vehicles','Cars, boats & aircraft (need a license)', "openShop('vehicles')")
       : hubCard('🐴','Transport','Horses, carriages & ships', "openShop('vehicles')");
-    h+=hubCard('💍','Jewelry','Rings, watches & fine pieces', "openShop('jewelry')");
+    Object.entries(BELONGING_CATS).forEach(([k,c])=>{ if(c.list.some(belongingAvail)) h+=hubCard(c.icon,c.label,c.sub,`openShop('${k}')`); });
     h+=hubCard('📦','Storage Units','Rent space for your belongings', "openShop('storage')");
     v.innerHTML=h; return;
   }
@@ -6354,10 +6432,10 @@ function renderShop(){ const v=document.getElementById('shopView'); if(!v||!S)re
     h+=`<div class="genlabel">Rent Car Storage</div>`;
     h+=CAR_STORAGE.map((t,i)=>`<div class="platrow" onclick="rentCarStorage(${i})"><div class="picon" style="background:#222b37">${t.icon}</div>
       <div class="pinfo"><div class="pn">${t.t}</div><div class="pf">${t.slots} car${t.slots>1?'s':''} · ${cur()}${t.rent.toLocaleString()}/yr</div></div><span class="parrow">›</span></div>`).join('');
-  } else if(cat==='jewelry'){
-    h+=`<div class="genlabel">Jewelry <span>${storedCount()}/${storageCapacity()} stored</span></div>`;
-    h+=JEWELRY.map((x,i)=>`<div class="platrow" onclick="buyBelonging('jewelry',${i})"><div class="picon" style="background:#222b37">${x.icon}</div>
-      <div class="pinfo"><div class="pn">${x.name}</div><div class="pf">${fcm(Math.round(x.value*colFactor()))}</div></div><span class="parrow">›</span></div>`).join('');
+  } else if(BELONGING_CATS[cat]){ const bc=BELONGING_CATS[cat];
+    h+=`<div class="genlabel">${bc.label} <span>${storedCount()}/${storageCapacity()} stored</span></div>`;
+    h+=bc.list.map((x,i)=>belongingAvail(x)?`<div class="platrow" onclick="buyBelonging('${cat}',${i})"><div class="picon" style="background:#222b37">${x.icon}</div>
+      <div class="pinfo"><div class="pn">${x.name}</div><div class="pf">${fcm(Math.round(x.value*colFactor()))}</div></div><span class="parrow">›</span></div>`:'').join('');
   } else if(cat==='storage'){
     h+=`<div class="genlabel">Your Units <span>${storedCount()}/${storageCapacity()} used</span></div>`;
     h+=(S.storageUnits||[]).length? S.storageUnits.map((u,i)=>{ const t=STORAGE_TIERS.find(x=>x.t===u.tier);
@@ -6431,6 +6509,12 @@ function buyFlex(kind){ return pick(({
   vehicle:['You drove it straight off the lot with the windows down.','You couldn\'t stop grinning at every red light.','You washed it twice the first week — completely obsessed.','Heads turned the moment you pulled up.','You took the long way home just to feel it move.'],
   home:['You got the keys and stood in the empty rooms, imagining it all.','First night, you slept on the floor just to be there.','You already know exactly where every piece of furniture will go.','It finally feels real — this place is yours.','You lay awake that night grinning at the ceiling that was finally your own.'],
   jewelry:['It caught the light — and every eye in the room.','You couldn\'t stop sneaking glances at it.','A little sparkle to remind you how far you\'ve come.','You wore it out that very night, just because.'],
+  electronics:['You spent the whole evening setting it up and regretted nothing.','The box-opening alone was worth half the price.','Your group chat demanded photos immediately.','Old tech got demoted to the drawer of forgotten cables.'],
+  furniture:['The room suddenly looks like someone with taste lives there.','You rearranged everything three times to do it justice.','Guests will absolutely be steered past this on every tour.','You sat on/near it for an hour, just admiring.'],
+  fashion:['You checked yourself out in every reflective surface on the way home.','It fits like it was made for you — because it basically was.','You planned three outfits around it before bed.','Somewhere, a fashion editor felt a disturbance.'],
+  instruments:['The neighbors are about to learn your practice schedule.','You played terribly and loved every second.','It sits in the corner looking beautiful and slightly judgmental.','First song learned before midnight.'],
+  sports:['New gear, new you — the trailhead awaits.','You already planned the first outing for dawn.','It leans by the door, radiating potential.','You broke it in the very same day.'],
+  art:['It hangs perfectly — the whole wall works now.','You stood back, arms crossed, nodding slowly. Yes.','Every guest will hear its provenance, whether they ask or not.','A piece of culture that\'s yours to keep.'],
 })[kind]||['A little something for yourself — well earned.']); }
 function buyVehicle(i){ const x=VEHICLES[i]; if(!x)return;
   if(x.lic && !(S.licenses[x.lic]&&S.licenses[x.lic].has)){ toast(`🔒 You need a ${LIC_DEF[x.lic].name} first (Activities → Licenses).`); return; }
@@ -6488,7 +6572,7 @@ function reconcileParking(){ const cap=garageCap(); const garaged=myCars().filte
   let over=garaged.length-cap;
   for(let k=garaged.length-1; k>=0 && over>0; k--){ garaged[k].parked='street'; garaged[k].streetSince=S.age; over--; }
 }
-function buyBelonging(kind,i){ const list=kind==='jewelry'?JEWELRY:[]; const x=list[i]; if(!x)return;
+function buyBelonging(kind,i){ const bc=BELONGING_CATS[kind]; const list=bc?bc.list:[]; const x=list[i]; if(!x)return;
   if(storedCount()>=storageCapacity()){
     resultModal('No Room','Storage Full','📦',[`You've no room left for more belongings (${storedCount()}/${storageCapacity()}).`,`Rent or upgrade a <b>Storage Unit</b> first.`],()=>{ S._shopCat='storage'; setTab('shop'); });
     return;
@@ -6498,7 +6582,7 @@ function buyBelonging(kind,i){ const list=kind==='jewelry'?JEWELRY:[]; const x=l
   logAct('call',{fn:'buyBelonging',args:[kind,i]});
   spend(price); S.assets.belongings.push({name:x.name, icon:x.icon, value:price});
   pushLog(`I bought ${x.name} for ${fcm(price)}. ${x.icon}`,[['good',`Bought ${x.name}`]]);
-  resultModal('Jewelry', x.name, x.icon, [`You bought the <b>${x.name}</b> for ${fcm(price)}.`, buyFlex('jewelry'), `Stored: ${storedCount()}/${storageCapacity()}.`], ()=>setTab('shop'));
+  resultModal(BELONGING_CATS[kind].label, x.name, x.icon, [`You bought the <b>${x.name}</b> for ${fcm(price)}.`, buyFlex(kind), `Stored: ${storedCount()}/${storageCapacity()}.`], ()=>setTab('shop'));
 }
 function rentStorage(i){ const t=STORAGE_TIERS[i]; if(!t)return;
   if(S.money<t.rent){ penniless2(t.rent, `rent the ${t.t.toLowerCase()}`); return; }
