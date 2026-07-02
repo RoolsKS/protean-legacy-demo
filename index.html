@@ -5065,7 +5065,7 @@ function hobbiesMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked
   const choices=[];
   // your active passions first (practice / sell)
   mine.sort((a,b)=>S.hobbies[b].level-S.hobbies[a].level).forEach(k=>{ const h=hobbyDef(k), r=S.hobbies[k];
-    choices.push({label:`${h.icon} ${h.name} · ${hobbyTier(r.level)} (${r.level}%)`, fn:()=>practiceHobby(k)}); });
+    choices.push({label:`${h.icon} ${h.name} · ${hobbyTier(r.level)} (${r.level}%)${r.compWins?` · 🏆${r.compWins}`:''}`, fn:()=>practiceHobby(k)}); });
   // a couple of fresh hobbies to pick up — the ones you'd be best at (talent-suggested), then any
   const fresh=HOBBIES.filter(h=>!S.hobbies[h.k]).sort((a,b)=>hobbyAffinity(b)-hobbyAffinity(a));
   fresh.slice(0,5).forEach(h=>{ const aff=hobbyAffinity(h); choices.push({label:`➕ Take up ${h.icon} ${h.name}${aff>1.5?' ✨ (a natural fit)':''}`, alt:true, fn:()=>practiceHobby(h.k)}); });
@@ -9092,7 +9092,7 @@ function enduranceRun(k){ const race=ENDURANCE.find(x=>x.k===k); if(!race){ setT
 function mindBody(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
   logAct('call',{fn:'mindBody'});   // ⚠️ replay: the opener MUST be logged so its modalpick (gym/diet/meditate) can reattach on replay (mbDo consumes RNG)
   openModal({banner:'Mind & Body', title:'🧘 Mind & Body', icon:'🧘', closable:true,
-    text:`<div style="text-align:left">Work on yourself — a fit body ages slower and dies later.<div class="relbars" style="margin-top:7px">${barRow('💪 Fitness',S.fitness||50,100)}${barRow('❤️ Health',S.stats.health,100)}</div></div>`,
+    text:`<div style="text-align:left">Work on yourself — a fit body ages slower and dies later.<div class="relbars" style="margin-top:7px">${barRow('💪 Fitness',S.fitness||50,100)}${barRow('❤️ Health',S.stats.health,100)}</div>${S.age>=14?`<div class="pf" style="margin-top:6px">🏃 Endurance: ${enduranceIdx()>=0?`<b>${ENDURANCE[enduranceIdx()].name}</b> conquered`:'untested'}${enduranceNext()?` · next: ${enduranceNext().name}`:' · every distance done 🏆'}</div>`:''}</div>`,
     choices:[
       {label:actDone('mb_gym')?'🏋️ Hit the gym ✓ done this year':'🏋️ Hit the gym', fn:actDone('mb_gym')?()=>toast('⏳ Once a year — Age Up first.'):()=>mbDo('gym')},
       {label:actDone('mb_diet')?'🥗 Eat clean ✓ done this year':'🥗 Eat clean (diet)', alt:true, fn:actDone('mb_diet')?()=>toast('⏳ Once a year — Age Up first.'):()=>mbDo('diet')},
