@@ -675,12 +675,18 @@ const TALENTS=[
   {k:'dealing',icon:'🌿',name:'Dealing'},{k:'modeling',icon:'📸',name:'Modeling'},{k:'music',icon:'🎵',name:'Music'},{k:'sports',icon:'🏀',name:'Sports'},
 ];
 let createSex='m';
+/* Country pickers: USA, Canada & UK pinned on top, the rest A→Z. Cities render A→Z too (display only — catalog order untouched). */
+const COUNTRY_PINNED=['us','ca','uk'];
+function countryEntriesSorted(entries){ const list=entries||Object.entries(COUNTRIES);
+  const pin=COUNTRY_PINNED.map(k=>list.find(([key])=>key===k)).filter(Boolean);
+  const rest=list.filter(([k])=>!COUNTRY_PINNED.includes(k)).sort((a,b)=>a[1].name.localeCompare(b[1].name));
+  return pin.concat(rest); }
 function showCreate(){
   document.getElementById('title').style.display='none';
   document.getElementById('create').style.display='flex';
   const cs=document.getElementById('cCountry');
   if(!cs.options.length){
-    cs.innerHTML=Object.entries(COUNTRIES).map(([k,c])=>`<option value="${k}">${c.flag} ${c.name}</option>`).join('');
+    cs.innerHTML=countryEntriesSorted().map(([k,c])=>`<option value="${k}">${c.flag} ${c.name}</option>`).join('');
     document.getElementById('cTalent').innerHTML=TALENTS.map(t=>`<option value="${t.k}">${t.icon} ${t.name}</option>`).join('');
   }
   fillCities(); fillFamilyTiers(); createSex='m'; syncSex(); renderEraPicker(); pickEra(createEra); pickWorldMode(createWorldMode,false); rerollName();
@@ -717,12 +723,12 @@ function pickWorldPace(p){ createWorldPace=WORLD_PACE[p]?p:'balanced';
   [['pcHistorical','historical'],['pcBalanced','balanced'],['pcEpic','epic']].forEach(([id,k])=>{ const el=document.getElementById(id); if(el) el.classList.toggle('on',createWorldPace===k); });
 }
 function fillCities(){ const c=COUNTRIES[document.getElementById('cCountry').value];
-  document.getElementById('cCity').innerHTML=c.cities.map(ct=>`<option>${ct}</option>`).join(''); }
+  document.getElementById('cCity').innerHTML=c.cities.slice().sort((a,b)=>a.localeCompare(b)).map(ct=>`<option>${ct}</option>`).join(''); }
 function filterCountries(){
   const q=(document.getElementById('cSearch').value||'').toLowerCase();
   const cs=document.getElementById('cCountry'), keep=cs.value;
   const list=Object.entries(COUNTRIES).filter(([k,c])=>c.name.toLowerCase().includes(q));
-  const use=list.length?list:Object.entries(COUNTRIES);
+  const use=countryEntriesSorted(list.length?list:Object.entries(COUNTRIES));
   cs.innerHTML=use.map(([k,c])=>`<option value="${k}">${c.flag} ${c.name}</option>`).join('');
   if([...cs.options].some(o=>o.value===keep)) cs.value=keep;
   fillCities();
@@ -9566,6 +9572,7 @@ function emigrate(){ if(!S){toast('Start a life first.');return;} if(isLocked())
   const codes=Object.keys(COUNTRIES).filter(c=>c!==S.country);
   const sample=[]; const idx=[...codes.keys()]; while(sample.length<6 && idx.length){ sample.push(codes[idx.splice(rng(0,idx.length-1),1)[0]]); }
   const choices=[{label:`🏙️ New city in ${COUNTRIES[S.country].name}`, fn:()=>doMove(S.country,true)}];
+  sample.sort((a,b)=>{ const pa=COUNTRY_PINNED.indexOf(a), pb=COUNTRY_PINNED.indexOf(b); if(pa>=0||pb>=0) return (pa<0?9:pa)-(pb<0?9:pb); return COUNTRIES[a].name.localeCompare(COUNTRIES[b].name); });
   sample.forEach(c=>choices.push({label:`${COUNTRIES[c].flag} ${COUNTRIES[c].name}`, alt:true, fn:()=>doMove(c,false)}));
   openModal({banner:'Emigrate', title:'✈️ Move Where?', icon:'✈️', closable:true,
     text:`Moving <b>overseas</b> means <b>leaving it all behind</b> — your job and school team end, and everyone who doesn't move with you (your spouse & kids come along) becomes <b>long-distance</b>. You'll start over as an immigrant and slowly earn citizenship. A move within your country keeps everyone close.`, choices});
