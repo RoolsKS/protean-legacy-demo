@@ -88,8 +88,15 @@
   .tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.4px;padding:2px 7px;border-radius:20px;margin:6px 6px 0 0;text-transform:uppercase}
   .tag.flag{background:rgba(123,91,255,.18);color:#b9a6ff}
   .tag.rel{background:rgba(62,207,142,.16);color:var(--good)}
-  .tag.bad{background:rgba(255,91,110,.16);color:var(--bad)}
-  .tag.echo{background:rgba(255,194,75,.16);color:var(--warn)}
+  .tag.good{background:rgba(62,207,142,.2);color:var(--good);border:1px solid rgba(62,207,142,.35)}
+  .tag.bad{background:rgba(255,91,110,.2);color:var(--bad);font-weight:900;border:1px solid rgba(255,91,110,.35)}
+  .tag.echo{background:rgba(255,194,75,.16);color:var(--warn);border:1px dashed rgba(255,194,75,.45)}
+  .tag.warn{background:rgba(255,194,75,.16);color:var(--warn)}
+  /* empty states — icon + title + hint instead of a lone gray sentence */
+  .empty{ text-align:center; padding:30px 14px 26px; color:var(--dim) }
+  .empty .em-ic{ font-size:38px; line-height:1; margin-bottom:10px; opacity:.9 }
+  .empty .em-t{ font-size:15px; font-weight:800; color:var(--text); margin-bottom:4px }
+  .empty .em-s{ font-size:12.5px; line-height:1.5 }
 
   /* Choices */
   .choices{display:flex;flex-direction:column;gap:8px;margin-top:12px}
@@ -166,7 +173,9 @@
   .cmts{margin-top:9px;border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:5px}
   .cmt{font-size:12px;color:#c2ccd9;line-height:1.35}
   .cmt b{color:var(--text);font-weight:700}
-  .platrow{display:flex;align-items:center;justify-content:space-between;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px;margin-bottom:9px;cursor:pointer}
+  .platrow{display:flex;align-items:center;justify-content:space-between;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px;margin-bottom:9px;cursor:pointer;transition:transform .1s}
+  .platrow:active{transform:scale(.985)}
+  .platrow.pinned{border-left:3px solid #f5c518;background:linear-gradient(90deg,rgba(245,197,24,.07),var(--panel) 40%)}
   .platrow:active{background:var(--panel2)}
   .platrow .picon{width:42px;height:42px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:20px;margin-right:12px}
   .platrow .pinfo{flex:1;min-width:0}
@@ -3203,23 +3212,35 @@ const EVENTS = [
 
 /* --- SCHOOL LIFE: field trips, prom & graduation --- */
 { id:'field_trip', once:false, weight:9, when:S=>['primary','high'].includes(S.eduLevel) && S.age>=7 && S.age<=17,
-  build:S=>({ yr:`Age ${S.age}`, title:'🚌 Field Trip',
-    text:`Your class at ${S.schoolName} is going on a field trip${(S.schoolPrestige||0)>=64?' — somewhere fancy':''}. There's a permission slip and a small fee.`,
+  build:S=>{ const dest=pick(['the natural history museum 🦖','the aquarium 🐠','a working farm 🐄','the state capitol 🏛️','an old gold mine ⛏️','the planetarium 🔭','a chocolate factory 🍫','the fire station 🚒']); const cost=rng(20,200);
+    return { yr:`Age ${S.age}`, title:'🚌 Field Trip',
+    text:`Your class at ${S.schoolName} is going to <b>${dest}</b>${(S.schoolPrestige||0)>=64?' — first class, naturally':''}. Permission slip, packed lunch, and a <b>${cur()}${cost}</b> fee. The whole class is buzzing about it.`,
     choices:[
-      {label:'Go and have fun', apply:()=>{ const cost=rng(20,200); if(S.money>0)money(-Math.min(cost,S.money)); chg('happy',rng(3,8)); chg('smarts',rng(1,3));
-        return {text:`You went on the trip and had a blast.`, tags:[['good','Field trip']]}; }},
-      {label:'Skip it', apply:()=>{ chg('happy',-2); return {text:`You stayed home. Everyone came back with stories you weren't part of.`, tags:[['flag','Skipped trip']]}; }},
-    ]})},
+      {label:'Go and soak it all in', tip:'Memories are made on the bus', apply:()=>{ if(S.money>0)money(-Math.min(cost,S.money)); chg('happy',rng(3,8)); chg('smarts',rng(1,3));
+        const beat=pick([`You got the back seat of the bus — the loud kids' throne.`,`Your best moment: the gift shop, obviously.`,`The tour guide picked YOU to answer a question — and you nailed it.`,`Someone got lost for twenty glorious minutes. Not you.`,`You and a friend narrated the whole thing like a nature documentary.`]);
+        return {text:`A day at ${dest} with the whole class. ${beat}`, tags:[['good','Field trip']]}; }},
+      {label:'Sneak off with a friend mid-tour', tip:'Risky — legendary if it works', when:S=>S.age>=11, apply:()=>{ if(S.money>0)money(-Math.min(cost,S.money));
+        if(rng(0,100)<45){ S.grades=clamp((S.grades||50)-rng(4,9)); chg('happy',2); return {text:`You slipped away at ${dest} — and walked straight into a teacher doing a headcount. Detention, a phone call home, and a story you'll tell forever.`, tags:[['bad','Caught sneaking off'],['flag','Class legend']]}; }
+        chg('happy',rng(6,11)); rep(+3); return {text:`You ghosted the tour at ${dest}, had the adventure of the year, and slid back in line before the final headcount. The class treats you like a folk hero.`, tags:[['good','Got away with it'],['flag','Class legend']]}; }},
+      {label:'Ask to work off the fee', tip:'No money? No problem', when:S=>S.money<cost, apply:()=>{ chg('smarts',rng(1,3)); chg('happy',rng(2,6)); karma(+2); driftPers('discipline',1);
+        return {text:`You couldn't cover the fee, so you helped the teacher carry equipment and hand out worksheets all day at ${dest}. You rode the bus like everyone else — and earned it.`, tags:[['good','Earned your seat']]}; }},
+      {label:'Skip it', apply:()=>{ chg('happy',-2); return {text:`You stayed home. For a week the whole class speaks in inside jokes from ${dest} that you'll never be part of.`, tags:[['flag','Skipped trip']]}; }},
+    ]};}},
 { id:'prom', once:true, weight:16, when:S=>S.eduLevel==='high' && S.age>=16 && S.age<=18,
-  build:S=>({ yr:`Age ${S.age}`, title:'👑 Prom Night',
-    text:`It's prom at ${S.schoolName} — the dance of the year!`,
+  build:S=>{ const date=Object.values(S.people).find(p=>p.alive&&p.romantic); const crush=!date&&Object.values(S.people).find(p=>p.alive&&p.classmate&&!p.enemy);
+    return { yr:`Age ${S.age}`, title:'👑 Prom Night',
+    text:`Prom at ${S.schoolName} — the dance the whole year has been building toward. ${date?`<b>${date.name}</b> is your date, obviously.`:crush?`You don't have a date… but <b>${crush.name}</b> doesn't either.`:`No date, no plan — just the night, wide open.`}`,
     choices:[
       {label:'Go all out — outfit & limo', tip:'Pricey, but a night to remember', apply:()=>{ const cost=rng(200,1500); if(S.money>0)money(-Math.min(cost,S.money));
-        const won=rng(0,100)<(18+S.stats.looks/3); chg('happy',rng(6,12)); if(won)setFlag('prom_royalty');
-        return {text: won?`You were crowned <b>Prom ${S.gender==='f'?'Queen':'King'}</b>! 👑 The whole school is talking.`:`You danced all night and made memories.`, tags:[[won?'good':'flag', won?'Prom royalty 👑':'Prom']]}; }},
-      {label:'Go casual with friends', apply:()=>{ chg('happy',rng(3,7)); return {text:`You kept it low-key with friends. A good night.`, tags:[['flag','Prom']]}; }},
-      {label:'Skip prom', apply:()=>{ chg('happy',-3); return {text:`You skipped prom entirely.`, tags:[['flag','Skipped prom']]}; }},
-    ]})},
+        const won=rng(0,100)<(18+S.stats.looks/3); chg('happy',rng(6,12)); if(won){setFlag('prom_royalty'); rep(+8); gainFame(rng(0,1));} if(date)rel(date.id,+rng(5,10),+rng(2,5),'Prom night together — the photos live forever.');
+        return {text: won?`You were crowned <b>Prom ${S.gender==='f'?'Queen':'King'}</b>! 👑 ${date?`${date.name} screamed louder than anyone.`:'The whole school is talking.'}`:`${date?`You and ${date.name} owned the dance floor until they turned the lights on.`:'You danced all night and made memories.'} The photos are already legendary.`, tags:[[won?'good':'flag', won?'Prom royalty 👑':'Prom'],...(date?[['rel',`${date.name} closer`]]:[])]}; }},
+      {label:crush?`Ask ${crush.name.split(' ')[0]} to go with you`:'Go casual with friends', tip:crush?'Heart in your throat':'', apply:()=>{ if(crush){ if(rng(0,100)<40+S.stats.looks/4){ crush.romantic=true; crush.rel=crush.gender==='f'?'Girlfriend':'Boyfriend'; crush.spark=rng(55,85); rel(crush.id,+rng(10,18),+rng(6,12),'You asked them to prom — and they said yes.'); chg('happy',rng(8,14));
+          return {text:`You asked. There was a pause the length of a lifetime — then <b>"yes."</b> You and ${crush.name.split(' ')[0]} walked in together, and walked out a couple. 💘`, tags:[['good','Prom date → partner'],['rel',`${crush.name} 💘`]]}; }
+          rel(crush.id,-rng(2,5),0,'The prom ask that didn\'t land.'); chg('happy',-rng(3,6));
+          return {text:`You asked. ${crush.name.split(' ')[0]} winced — "as friends, maybe?" You went, you danced in a group, you survived. It stung anyway.`, tags:[['bad','Shot down'],['flag','Went anyway']]}; }
+        chg('happy',rng(3,7)); return {text:`You kept it low-key with friends — cheap corsage, loud playlist, fries at midnight. Honestly? A perfect night.`, tags:[['flag','Prom']]}; }},
+      {label:'Skip prom', apply:()=>{ chg('happy',-3); return {text:`You skipped it. Years from now, when people say "remember prom?", you'll have nothing — which is a kind of memory too.`, tags:[['flag','Skipped prom']]}; }},
+    ]};}},
 
 /* --- NATURAL DISASTERS: can wreck your home, your road, and take loved ones --- */
 { id:'natural_disaster', once:false, weight:3, when:S=>S.age>=5 && (S.age-(S.lastDisaster||-40))>=8 && rng(0,100)<35,
@@ -3243,6 +3264,8 @@ const EVENTS = [
     text:`Your top FanVault subscriber, <b>${fan}</b>, has been sending lavish gifts for months — and is now begging to meet you in person, offering serious money.`,
     choices:[
       {label:'Meet them — for the right price', tip:'Big money, but you never really know who they are', apply:()=>ofFanMeet(fan,true)},
+      {label:'Offer a paid video call instead', tip:'The money without the risk', apply:()=>{ const fee=Math.round(rng(400,2500)*(typeof priceMult==='function'?priceMult():1)); money(fee); const p=S.sm.platforms.of; if(p)p.followers=Math.max(0,p.followers+rng(5,40));
+        return {text:`You counter with a private video call — boundaries intact, ${cur()}${fee.toLocaleString()} up front. ${fan} gushes for the full half hour and tips extra. Parasocial, professional, profitable.`,tags:[['good',`+${cur()}${fee.toLocaleString()}`],['flag','Kept it safe']]}; }},
       {label:'Take the gift, keep it online', tip:'Safe', apply:()=>ofFanMeet(fan,false)},
     ]};}},
 
@@ -3250,22 +3273,24 @@ const EVENTS = [
 { id:'vaccination', once:true, weight:50,
   when:S=>S.age>=1 && S.age<=2,
   build:S=>({ yr:`Age ${S.age}`, title:'Vaccination',
-    text:`${P('mom')?'Your mother '+P('mom').name:'Your mother'} is taking you to the doctor's office to get vaccinated. How will you behave?`,
+    text:`${P('mom')?'Your mother '+P('mom').name:'Your mother'} carries you into the doctor's office. There's a needle involved. The toddler in the next chair is already screaming — setting the bar. How will you behave?`,
     choices:[
-      {label:'Try to stay calm', apply:()=>{ chg('health',3); if(P('mom'))rel('mom',+3,+2,'You were a brave little patient.');
-        return {text:`You barely flinch. The doctor is impressed.`,tags:[['flag','+Health']]};}},
-      {label:'Throw a tantrum', apply:()=>{ chg('happy',-2);
-        return {text:`You scream the whole building down. Mortifying — but you survive.`,tags:[['bad','A scene was made']]};}},
+      {label:'Try to stay calm', tip:'Brave little soldier', apply:()=>{ chg('health',3); if(P('mom'))rel('mom',+3,+2,'You were a brave little patient.');
+        return {text:`You barely flinch. The doctor calls you "the bravest patient all week" and you get TWO stickers. ${P('mom')?P('mom').name+' beams all the way home.':''}`,tags:[['flag','+Health'],['good','Two stickers']]};}},
+      {label:'Throw a tantrum', apply:()=>{ chg('happy',-2); if(P('mom'))rel('mom',-1,0,'The vaccination incident. The whole waiting room remembers.');
+        return {text:`You scream the whole building down. A nurse loses an earring in the struggle. Mortifying — but the shot happens anyway.`,tags:[['bad','A scene was made']]};}},
+      {label:'Bite the doctor', tip:'Chaos', apply:()=>{ chg('health',3); chg('happy',2); if(P('mom'))rel('mom',-2,-1,'You BIT the pediatrician.'); setFlag('bit_the_doctor');
+        return {text:`You sink four brand-new teeth into the doctor's thumb. There's a note in your file now. A permanent note.`,tags:[['bad','Flagged in the file'],['flag','Menace']]};}},
     ]})},
 
 /* --- CHILDHOOD: mashed avocado scenario --- */
 { id:'avocado', once:true, weight:42, when:S=>S.age>=1 && S.age<=3,
   build:S=>({yr:`Age ${S.age}`,title:'Mashed Avocado',
-    text:`It's dinner time and your ${P('dad')?'father is':'parent is'} swirling a spoonful of green muck toward your lips. What will you do?`,
+    text:`Dinner time. Your ${P('dad')?'father is':'parent is'} swirling a spoonful of green muck toward your lips, making airplane noises with total commitment. The spoon circles. It's coming in for a landing. What will you do?`,
     choices:[
-      {label:'Eat it', apply:()=>{ chg('health',2); if(P('dad'))rel('dad',+3,+2,'You ate your veggies.'); return {text:`Yum? You eat it like a champ.`,tags:[['flag','+Health']]};}},
-      {label:'Slap the spoon', apply:()=>{ chg('happy',2); if(P('dad'))rel('dad',-2,-1,'You made a mess.'); return {text:`SPLAT. Avocado everywhere.`,tags:[['bad','Mess made']]};}},
-      {label:'Cry', apply:()=>{ chg('happy',-1); return {text:`You wail until they give up.`,tags:[['flag','Pure drama']]};}},
+      {label:'Eat it', tip:'The airplane lands', apply:()=>{ chg('health',2); if(P('dad'))rel('dad',+3,+2,'You ate your veggies.'); setFlag('good_eater'); return {text:`Yum? You eat it like a champ. The airplane noises escalate to a full airshow. Your parents exchange a look: "we're good at this."`,tags:[['flag','+Health']]};}},
+      {label:'Slap the spoon', tip:'Air disaster', apply:()=>{ chg('happy',2); if(P('dad'))rel('dad',-2,-1,'You made a mess.'); setFlag('picky_eater'); return {text:`SPLAT. Avocado on the ceiling, the wall, and the dog. The airplane has been shot down. You cackle like a supervillain.`,tags:[['bad','Mess made'],['flag','Menace']]};}},
+      {label:'Cry', tip:'Siege warfare', apply:()=>{ chg('happy',-1); setFlag('picky_eater'); return {text:`You wail with the sustained power of a fire alarm until they give up and open a jar of the sweet stuff. You've learned something important: crying works.`,tags:[['flag','Pure drama']]};}},
     ]})},
 
 /* --- CHILDHOOD: a kid wants to be your friend --- */
@@ -3273,12 +3298,14 @@ const EVENTS = [
   when:S=>S.age>=4 && S.age<=16 && Object.values(S.people).filter(p=>p.rel==='Friend'&&p.alive).length<5,
   build:S=>{ const g=rand()<.5?'m':'f', full=nm(g)+' '+pick(LAST), fn=full.split(' ')[0];
     return {yr:`Age ${S.age}`, title:'New Friend',
-    text:`A ${g==='f'?'girl':'boy'} named <b>${fn}</b> (age ${rng(Math.max(3,S.age-1),S.age+1)}) wants to be your friend.`,
+    text:`A ${g==='f'?'girl':'boy'} named <b>${fn}</b> (age ${rng(Math.max(3,S.age-1),S.age+1)}) ${pick(['plops down next to you at lunch and starts talking like you\'ve known each other for years','challenges you to a race and then, winded, asks if you want to be friends','shares their snack with you without being asked — the universal peace treaty','picks you first for the team when nobody else would'])}. Looks like you're being adopted.`,
     choices:[
-      {label:'Become friends', apply:()=>{ const id='fr'+Object.keys(S.people).length; S.people[id]=person(id,full,'Friend',rng(55,80),rng(50,75),{gender:g}); chg('happy',4);
-        return {text:`You and ${fn} hit it off! A new friendship begins.`,tags:[['rel',`New friend: ${fn}`]]};}},
+      {label:'Become friends', tip:'Every legend starts somewhere', apply:()=>{ const id='fr'+Object.keys(S.people).length; S.people[id]=person(id,full,'Friend',rng(55,80),rng(50,75),{gender:g}); chg('happy',4);
+        return {text:`You and ${fn} hit it off instantly — by the end of the week you have inside jokes, a secret handshake, and a shared enemy (homework).`,tags:[['rel',`New friend: ${fn}`]]};}},
+      {label:'Play it cool — see how it goes', tip:'Trust is earned', apply:()=>{ const id='fr'+Object.keys(S.people).length; S.people[id]=person(id,full,'Friend',rng(35,55),rng(30,50),{gender:g}); chg('smarts',1);
+        return {text:`You don't commit — but ${fn} keeps showing up anyway, undeterred. A slow-burn friendship starts on YOUR terms. Time will tell if they're worth it.`,tags:[['rel',`Acquaintance: ${fn}`]]};}},
       {label:'Reject them', apply:()=>{ chg('happy',-1);
-        return {text:`You brush ${fn} off. Their little face falls.`,tags:[['bad','Stayed solo']]};}},
+        return {text:`You brush ${fn} off. Their little face falls, and they drift back across the playground. Somewhere in a parallel life, you two were inseparable.`,tags:[['bad','Stayed solo']]};}},
     ]};}},
 
 /* --- ⚰️ FUNERAL — an interactive pop-up when a relative dies (fired from S._deathQueue) --- */
@@ -3304,9 +3331,11 @@ const EVENTS = [
     text:`Your ${par.rel.toLowerCase()}, <b>${par.name}</b>, heard your track “${t.name}” and is offering to lay down vocals for it.`,
     choices:[
       {label:'Let them feature', apply:()=>{ t.feat=par.name; const boost=Math.round(t.plays*rng(3,9)/100); t.followers+=boost; t.reception=clamp(t.reception+rng(4,12),0,100); const plat=scPlat(); if(plat) plat.followers=Math.max(0,plat.followers+boost); rel(par.id,+rng(4,9),+rng(2,5),`They featured on your track “${t.name}”.`);
-        return {text:`${par.name}'s vocals take “${t.name}” to another level — +${fc(boost)} followers and a nice bump in reception.`,tags:[['good',`Feat. ${par.name}`]]}; }},
+        return {text:`${par.name}'s vocals take “${t.name}” to another level — the comment section can't decide if it's wholesome or iconic (it's both). +${fc(boost)} followers and a nice bump in reception.`,tags:[['good',`Feat. ${par.name}`]]}; }},
+      {label:'One hook — but you produce it your way', tip:'Their voice, your vision', apply:()=>{ const boost=Math.round(t.plays*rng(1,5)/100); t.followers+=boost; t.reception=clamp(t.reception+rng(2,7),0,100); const plat=scPlat(); if(plat) plat.followers=Math.max(0,plat.followers+boost); rel(par.id,+rng(2,5),+rng(1,3),`You gave them one hook on “${t.name}” — on your terms.`);
+        return {text:`You give ${par.name} exactly eight bars, pitched down and buried in reverb. They tell everyone at work they're "basically a recording artist now." A modest boost — and the vision survives. +${fc(boost)} followers.`,tags:[['good','Compromise track'],['flag','Your terms']]}; }},
       {label:'Refuse — it\'s your sound', apply:()=>{ rel(par.id,-rng(2,6),-rng(1,3),`You turned down their offer to feature.`);
-        return {text:`You keep “${t.name}” all your own. ${par.name} is a little stung, but respects the vision.`,tags:[['flag','Kept it solo']]}; }},
+        return {text:`You keep “${t.name}” all your own. ${par.name} hums it pointedly around the house for a week — a little stung, but they respect the vision.`,tags:[['flag','Kept it solo']]}; }},
     ]};}},
 /* --- ☁️ SOUNDCLOUD: bots flood your comments with phishing links --- */
 { id:'sc_bots', once:false, weight:10,
@@ -3325,19 +3354,25 @@ const EVENTS = [
   when:S=>S.age>=1 && S.age<=12 && Object.values(S.people).filter(p=>/Brother|Sister/.test(p.rel)).length<5,
   build:S=>{ const g=rand()<.5?'m':'f', full=nm(g)+' '+(S.surname||pick(LAST)), fn=full.split(' ')[0];
     return {yr:`Age ${S.age}`, title:'A New Sibling',
-    text:`Your parents just had a baby ${g==='f'?'girl':'boy'} named <b>${fn}</b> — your new little ${g==='f'?'sister':'brother'}.`,
+    text:`Your parents sit you down with the news: a baby ${g==='f'?'girl':'boy'} named <b>${fn}</b> is coming home. Your new little ${g==='f'?'sister':'brother'}. The house — and everything in it, including the attention — is about to be shared.`,
     choices:[
-      {label:'Welcome them 🍼', apply:()=>{ const id='sn'+Object.keys(S.people).length; S.people[id]=person(id,full,g==='f'?'Sister':'Brother',rng(60,85),rng(60,80),{gender:g,gen:0,fam:true,age:0}); chg('happy',3);
-        return {text:`You have a new ${g==='f'?'sister':'brother'}, ${fn}!`,tags:[['rel','New sibling']]};}},
+      {label:'Welcome them 🍼', tip:'Big sibling energy', apply:()=>{ const id='sn'+Object.keys(S.people).length; S.people[id]=person(id,full,g==='f'?'Sister':'Brother',rng(60,85),rng(60,80),{gender:g,gen:0,fam:true,age:0}); chg('happy',3); if(P('mom'))rel('mom',+2,+1,`You welcomed ${fn} like a pro.`);
+        return {text:`You hold ${fn} for the first time — tiny fingers wrap around one of yours. Okay. You'd fight the world for this one.`,tags:[['rel','New sibling']]};}},
+      {label:'Sulk — you were here first', tip:'The throne is contested', apply:()=>{ const id='sn'+Object.keys(S.people).length; S.people[id]=person(id,full,g==='f'?'Sister':'Brother',rng(35,55),rng(35,55),{gender:g,gen:0,fam:true,age:0}); chg('happy',-2); if(P('mom'))rel('mom',-2,-1,'You did NOT take the new-baby news well.'); setFlag('sibling_rivalry');
+        return {text:`You announce that the baby can sleep in the garage. Nobody laughs. ${fn} arrives anyway, and you glare at the crib like it's a rival's throne. This one might take a while.`,tags:[['bad','Sibling rivalry'],['rel','New sibling']]};}},
+      {label:'Demand naming rights', tip:'It was almost worse', apply:()=>{ const id='sn'+Object.keys(S.people).length; S.people[id]=person(id,full,g==='f'?'Sister':'Brother',rng(60,85),rng(60,80),{gender:g,gen:0,fam:true,age:0}); chg('happy',4); chg('smarts',1);
+        const rej=pick(['Blaster','Princess Sparklehoof','Dinosaur','Batman Jr.','Captain Nugget','Zorp']);
+        return {text:`You lobby HARD for "${rej}." The committee (your parents) overrules you and goes with ${fn} — but they let you announce it to the grandparents, which is almost as good.`,tags:[['rel','New sibling'],['flag',`Almost named them ${rej}`]]};}},
     ]};}},
 
 /* --- CHILDHOOD: imaginary friend --- */
 { id:'imaginary', once:true, weight:18, when:S=>S.age>=4 && S.age<=7,
   build:S=>({yr:`Age ${S.age}`,title:'Imaginary Friend',
-    text:`You've made an imaginary friend named Mr. Wiggles. Your parents are a little worried.`,
+    text:`You've made an imaginary friend named <b>Mr. Wiggles</b>. He's seven feet tall, invisible, and has strong opinions about bedtime. Your parents keep exchanging glances over your head at dinner.`,
     choices:[
-      {label:'Introduce everyone to them', apply:()=>{ chg('happy',4); chg('smarts',1); return {text:`Mr. Wiggles is the life of every party.`,tags:[['flag','Big imagination']]};}},
-      {label:'Keep them a secret', apply:()=>{ chg('smarts',2); return {text:`Mr. Wiggles is your private confidant.`,tags:[['flag','+Smarts']]};}},
+      {label:'Introduce everyone to them', tip:'He insists on a place setting', apply:()=>{ chg('happy',4); chg('smarts',1); setFlag('creative_child'); return {text:`Mr. Wiggles now has his own chair at dinner, a seatbelt in the car, and a vote in family decisions. Your parents have fully surrendered. He's the life of every party.`,tags:[['flag','Big imagination']]};}},
+      {label:'Keep them a secret', tip:'A private confidant', apply:()=>{ chg('smarts',2); setFlag('creative_child'); return {text:`Mr. Wiggles becomes your private confidant — long strategy meetings under the blanket fort, classified. Some friendships aren't for sharing.`,tags:[['flag','+Smarts']]};}},
+      {label:'Blame him for the broken vase', tip:'He can take the fall', apply:()=>{ chg('happy',2); karma(-2); if(P('mom'))rel('mom',-2,-2,'"Mr. Wiggles did it." She knew. She always knew.'); return {text:`"Mr. Wiggles did it." Your mother stares at you for a long, long moment. You hold eye contact. Neither of you blinks. You are not punished — but something between you has changed.`,tags:[['bad','Framed an innocent (imaginary) man'],['flag','Big imagination']]};}},
     ]})},
 
 /* --- CHILDHOOD: adopt a stray (only if you don't have a pet) --- */
@@ -3345,30 +3380,38 @@ const EVENTS = [
   when:S=>S.age>=6 && S.age<=16 && !Object.values(S.people).some(p=>p.pet&&p.alive),
   build:S=>{ const t=pick(PET_TYPES), pn=pick(t.names);
     return {yr:`Age ${S.age}`,title:'A Stray',
-    text:`A stray ${t.s.toLowerCase()} has been following you home. It looks hungry.`,
+    text:`A stray ${t.s.toLowerCase()} has been following you for three blocks — ribs showing, one ear bent, eyes locked on yours like you're already its person. It sits down at your front gate and waits.`,
     choices:[
-      {label:'Take it in 🐾', apply:()=>{ const id='pet'+Object.keys(S.people).length; S.people[id]={id,name:pn,rel:t.s,species:t.s,affinity:rng(45,70),trust:rng(40,65),alive:true,memory:[{age:S.age,note:'You rescued them off the street.'}],pet:true,age:rng(0,2),fam:false,gender:'?',gen:9}; chg('happy',5); karma(+3);
-        return {text:`You named them ${pn}. A new best friend! 🐾`,tags:[['rel',`Adopted ${pn}`]]};}},
+      {label:'Smuggle it in 🐾', tip:'Ask forgiveness, not permission', apply:()=>{ const id='pet'+Object.keys(S.people).length; S.people[id]={id,name:pn,rel:t.s,species:t.s,affinity:rng(45,70),trust:rng(40,65),alive:true,memory:[{age:S.age,note:'You rescued them off the street.'}],pet:true,age:rng(0,2),fam:false,gender:'?',gen:9}; chg('happy',5); karma(+3);
+        return {text:`Operation Hide-The-${t.s} lasts exactly four hours before a bark/meow/rustle gives it away. By then it's asleep on your bed and the battle is already lost. Welcome home, <b>${pn}</b>. 🐾`,tags:[['rel',`Adopted ${pn}`]]};}},
+      {label:'Ask your parents first', tip:'The diplomatic route', when:S=>S.age<=15&&((P('mom')&&P('mom').alive)||(P('dad')&&P('dad').alive)), apply:()=>{ const par=(P('mom')&&P('mom').alive)?P('mom'):P('dad');
+        if((par.affinity||50)>=55||rng(0,100)<40){ const id='pet'+Object.keys(S.people).length; S.people[id]={id,name:pn,rel:t.s,species:t.s,affinity:rng(50,75),trust:rng(45,70),alive:true,memory:[{age:S.age,note:'The family agreed to take them in.'}],pet:true,age:rng(0,2),fam:false,gender:'?',gen:9}; chg('happy',6); karma(+3); rel(par.id,+3,+2,`You asked before bringing ${pn} home. Points for honesty.`);
+          return {text:`${par.name} takes one look at the hopeful face at the gate — the ${t.s.toLowerCase()}'s, then yours — and sighs the sigh of the defeated. "Fine. But YOU'RE feeding it." Meet <b>${pn}</b>! 🐾`,tags:[['rel',`Adopted ${pn}`],['good','Asked first']]}; }
+        chg('happy',-3); karma(+2); rel(par.id,0,+2,'You asked about the stray. The answer was no — but you asked.');
+        return {text:`${par.name} says no — money's tight and it might belong to someone. You leave food out for it anyway, every night, until one night the bowl stays full.`,tags:[['flag','The answer was no'],['good','Kind anyway']]};}},
       {label:'Leave it', apply:()=>{ chg('happy',-1);
-        return {text:`You walk away. It watches you go.`,tags:[['flag','Walked on']]};}},
+        return {text:`You walk away. Half a block on, you look back — it's still sitting there, watching you go. You'll think about that ${t.s.toLowerCase()} at odd moments for years.`,tags:[['flag','Walked on']]};}},
     ]};}},
 
 /* --- SCHOOL: eye exam (healthcare) --- */
 { id:'eye_exam', once:true, weight:20, when:S=>S.age>=6 && S.age<=12,
   build:S=>({yr:`Age ${S.age}`,title:'Eyesight',
-    text:`Your parents are concerned about your eyesight and take you to the optometrist for an eye exam.`,
+    text:`You've been squinting at the board and sitting closer to the TV every month. Your parents book you an eye exam. In the waiting room, the letter chart on the wall stares back at you — E, F, P... and then it gets blurry.`,
     choices:[
-      {label:'Take the exam', apply:()=>{ if(rng(0,10)<4){ setFlag('glasses'); chg('looks',-3); chg('smarts',2); return {text:`You need glasses! A small look change, but you can finally read the board.`,tags:[['flag','Got glasses']]}; } return {text:`20/20 vision — all good.`,tags:[['good','Healthy eyes']]};}},
+      {label:'Read the chart honestly', apply:()=>{ if(rng(0,10)<4){ setFlag('glasses'); chg('looks',-3); chg('smarts',2); return {text:`"E... F... P... uh... bird?" You need glasses. The first time you put them on, you gasp — trees have individual LEAVES?! The board at school finally makes sense.`,tags:[['flag','Got glasses'],['good','You can SEE']]}; } return {text:`20/20 vision — the optometrist says you were just sitting too close to the TV on purpose. Busted, but healthy.`,tags:[['good','Healthy eyes']]};}},
+      {label:'Memorize the chart while you wait', tip:'No glasses… no reading the board either', apply:()=>{ if(rng(0,10)<4){ setFlag('dodged_glasses'); S.grades=clamp((S.grades||50)-rng(3,7)); chg('smarts',-1); return {text:`"E, F, P, T, O, Z" — flawless recital. The doctor is fooled; the blackboard is not. You spend the rest of the year guessing what the teacher wrote, and your grades feel it.`,tags:[['flag','Fooled the eye test'],['bad','Grades slipping']]}; } chg('smarts',1); return {text:`You memorize the whole chart… and then it turns out your eyes are perfect anyway. All that espionage for nothing — though the memory drill sharpened you a little.`,tags:[['good','Healthy eyes']]};}},
     ]})},
 
 /* --- SCHOOL: a big exam — grades matter --- */
 { id:'big_exam', once:false, weight:26, when:S=>['primary','high','college'].includes(S.eduLevel),
   build:S=>({yr:`Age ${S.age}`,title:'Big Exam',
-    text:`There's a big exam at ${S.schoolName}. How do you prepare?`,
+    text:`${pick(['Finals week looms at','The midterm everyone\'s dreading hits','The exam that decides your whole grade lands at'])} ${S.schoolName}. ${(S.mind&&S.mind.stress>50)?'You\'re already stressed, and this isn\'t helping.':'The library is packed. The vending machine is empty. It\'s time.'} How do you prepare?`,
     choices:[
-      {label:'Study all week 📚', apply:()=>{ S.grades=clamp(S.grades+rng(5,12)); chg('smarts',2); chg('happy',-2); return {text:`You ace it! Grades climb.`,tags:[['good',`Grades ${S.grades}`]]};}},
-      {label:'Wing it', apply:()=>{ const ok=S.stats.smarts>65; S.grades=clamp(S.grades+(ok?rng(0,4):-rng(3,9))); return {text:ok?`You scrape by on raw talent.`:`You bomb it. Grades drop.`,tags:[[ok?'flag':'bad',`Grades ${S.grades}`]]};}},
-      {label:'Cheat 😈', apply:()=>{ if(rng(0,10)<4){ S.grades=clamp(S.grades-15); karma(-4); setFlag('caught_cheating'); return {text:`You got CAUGHT cheating — detention and a grade penalty.`,tags:[['bad','Caught cheating']]}; } S.grades=clamp(S.grades+rng(6,12)); karma(-2); return {text:`You cheated and got away with it… this time.`,tags:[['flag',`Grades ${S.grades}`]]};}},
+      {label:'Study all week 📚', tip:'Boring. Effective.', apply:()=>{ S.grades=clamp(S.grades+rng(5,12)); chg('smarts',2); chg('happy',-2); driftPers('discipline',1); return {text:`Flashcards, past papers, a color-coded revision plan that would impress a general. You walk out of the exam hall knowing you ate it alive. Grades climb.`,tags:[['good',`Grades ${S.grades}`]]};}},
+      {label:'Form a study group', tip:'Suffering, but together', when:S=>Object.values(S.people).some(p=>p.alive&&(p.classmate||p.rel==='Friend')), apply:()=>{ const bud=pick(Object.values(S.people).filter(p=>p.alive&&(p.classmate||p.rel==='Friend'))); S.grades=clamp(S.grades+rng(3,9)); chg('happy',2); rel(bud.id,+rng(3,7),+rng(2,4),'You survived exam week together.');
+        return {text:`You and ${bud.name.split(' ')[0]} hole up with snacks and quiz each other until midnight. Half revision, half comedy show — but the material sticks, and so does the friendship.`,tags:[['good',`Grades ${S.grades}`],['rel',`${bud.name.split(' ')[0]} closer`]]};}},
+      {label:'Wing it', tip:'Raw talent or bust', apply:()=>{ const ok=S.stats.smarts>65; S.grades=clamp(S.grades+(ok?rng(0,4):-rng(3,9))); return {text:ok?`You stroll in cold and scrape by on pure processing power. The kids who studied all week are furious.`:`You wing it. The first question might as well be in ancient Sumerian. You bomb it, hard.`,tags:[[ok?'flag':'bad',`Grades ${S.grades}`]]};}},
+      {label:'Cheat 😈', tip:'Answers on the water bottle', apply:()=>{ if(rng(0,10)<4){ S.grades=clamp(S.grades-15); karma(-4); setFlag('caught_cheating'); return {text:`The proctor clocks your water-bottle label from across the room like a hawk spotting a mouse. Confiscated, detention, a zero, and a phone call home. Catastrophic.`,tags:[['bad','Caught cheating']]}; } S.grades=clamp(S.grades+rng(6,12)); karma(-2); return {text:`Tiny answers, steady nerves. You get away with it… this time. Somewhere inside, a line got easier to cross.`,tags:[['flag',`Grades ${S.grades}`]]};}},
     ]})},
 
 /* --- SCHOOL: schoolyard drama → friend or rival --- */
@@ -3446,15 +3489,22 @@ const EVENTS = [
   when:S=>S.age>=12 && S.age<=15,
   build:S=>({
     yr:`Age ${S.age}`, title:'Behind the Gym',
-    text:`Some older kids offer you a cigarette. "Everyone does it."`,
+    text:`Behind the gym, where teachers don't look. A circle of older kids, one lit cigarette making the rounds. It stops in front of you. "Everyone does it." Every eye in the circle is on you now.`,
     choices:[
       {label:'Take it — fit in', tip:'Feels good now…',
         apply:()=>{ chg('happy',4); setFlag('smoker'); schedule(S.age+rng(28,36),'smoke_payoff');
-          return {text:`You cough, you laugh, you belong. Your lungs file the receipt. (Something is scheduled for decades from now.)`,
+          return {text:`You cough, you laugh, you belong. For one afternoon it's worth it. Your lungs quietly file the receipt. (Something is scheduled for decades from now.)`,
             tags:[['bad','Habit: smoker'],['echo','A consequence was scheduled ~30 yrs out']]};}},
-      {label:'Pass', tip:'',
-        apply:()=>{ chg('happy',-1); setFlag('clean');
-          return {text:`"Suit yourself." You walk away with your lungs intact.`,
+      {label:'Fake a drag', tip:'Fit in without inhaling — if you can sell it', when:S=>S.stats.smarts>=50,
+        apply:()=>{ if(rng(0,100)<70){ chg('happy',3); setFlag('clean');
+            return {text:`You cup it, let the smoke curl past your lips without inhaling, and hand it on like a veteran. The circle nods. You belong — and your lungs never got the memo.`,
+              tags:[['good','Faked it perfectly'],['flag','Memory: clean']]}; }
+          chg('happy',-2);
+          return {text:`You fumble the fake — no smoke, obvious bluff. "Yeah, thought so." The circle laughs you out. At least your lungs are clean, which is a hard comfort at ${S.age}.`,
+            tags:[['bad','Called out'],['flag','Memory: clean']]};}},
+      {label:'Pass', tip:'Walk away',
+        apply:()=>{ chg('happy',-1); setFlag('clean'); driftPers('discipline',1);
+          return {text:`"Suit yourself." You walk away to the sound of someone muttering. It costs you a little cool today. It pays you back for fifty years.`,
             tags:[['flag','Memory: clean']]};}},
     ]})},
 
@@ -3483,6 +3533,17 @@ const EVENTS = [
           chg('happy',-3);
           return {text:`Without anyone to vouch for you, the application stalls. A forgettable life is its own verdict.`,
             tags:[['flag','No strong reputation either way']]};}},
+      {label:'Own it — write your essay about the shoplifting', tip:'Turn the stain into the story', when:S=>has('stole_as_child')&&S.stats.smarts>=55,
+        apply:()=>{ if(rng(0,100)<55+S.stats.smarts/5){ money(6000); chg('smarts',5); chg('happy',9); rep(+6); setFlag('owned_your_past');
+            return {text:`You write about the candy, the shame, and what it taught you — no excuses. The board reads it twice. "This is the most honest application we've seen." Awarded — $6,000, and something worth more.`,
+              tags:[['echo','ECHO of "thief instinct" — redeemed'],['good','+$6,000']]};}
+          chg('happy',-4);
+          return {text:`You put it all on the page. The board admires the honesty and funds someone with a cleaner file anyway. You keep your head up; it was still the right essay.`,
+            tags:[['flag','Owned your past'],['bad','Still denied']]};}},
+      {label:'Ask your favorite teacher to vouch', tip:'Grades open doors reputations can\'t', when:S=>!has('honest_as_child')&&!has('resourceful_child')&&!has('stole_as_child')&&(S.grades||50)>=68,
+        apply:()=>{ money(5000); chg('happy',6); chg('smarts',4);
+          return {text:`Your teacher writes two pages about the student who never made noise but never missed a deadline. "Quiet ones like this build things." Awarded — $5,000. Turns out someone WAS watching.`,
+            tags:[['good','+$5,000'],['flag','A teacher believed in you']]};}},
     ]};}},
 
 /* --- AGE 18-25: Sam friendship deepens or is tested. --- */
@@ -3495,11 +3556,16 @@ const EVENTS = [
       {label:'Lend the money', tip:'Trust is an investment',
         apply:()=>{ money(-500); rel('sam',+10,+15,`You lent them $500 when it mattered.`); setFlag('lent_sam');
           schedule(S.age+rng(8,16),'sam_returns');
-          return {text:`You hand it over. ${P('sam').name} grips your shoulder. "I'll remember this." (They will.)`,
+          return {text:`You hand it over — no questions, no terms. ${P('sam').name} grips your shoulder. "I'll remember this." (They will.)`,
             tags:[['rel',`${P('sam').name} Trust → ${P('sam').trust}`],['echo','Scheduled payoff later in life']]};}},
+      {label:'Lend half — and ask what\'s really going on', tip:'Help the person, not just the problem',
+        apply:()=>{ money(-250); rel('sam',+6,+9,`You gave what you could and actually listened.`);
+          const why=pick(['a payday loan that spiraled','rent, three weeks late','a car repair they couldn\'t dodge','a debt to someone less patient than you']);
+          return {text:`You hand over half and ask the question nobody else has. It spills out — ${why}. The talk ends up worth more than the cash. ${P('sam').name} exhales like they've been holding it for a month.`,
+            tags:[['rel',`${P('sam').name} Trust → ${P('sam').trust}`],['flag','You listened']]};}},
       {label:'Say you can\'t', tip:'',
         apply:()=>{ rel('sam',-15,-10,`You turned them down when they needed you.`);
-          return {text:`${P('sam').name} nods slowly. "No worries." But the ledger between you just shifted.`,
+          return {text:`${P('sam').name} nods slowly. "No worries." But the ledger between you just shifted — and ${P('sam').name} keeps a careful ledger.`,
             tags:[['bad',`${P('sam').name} Trust → ${P('sam').trust}`]]};}},
     ]})},
 
@@ -3508,17 +3574,17 @@ const EVENTS = [
   when:S=>S.age>=21 && S.age<=24,
   build:S=>({
     yr:`Age ${S.age}`, title:'First Real Job',
-    text:`Two offers land the same week.`,
+    text:`Two offers land the same week — and suddenly your whole twenties have a fork in them. ${S.stats.smarts>=70?'Your grades opened doors; now you have to walk through one.':'Neither door opened easily; both are open now.'} Rent is due either way.`,
     choices:[
       {label:'Stable corporate job', tip:'Steady money, less joy',
-        apply:()=>{ setFlag('job_corporate'); money(4000); chg('happy',-2);
-          return {text:`A salary, a badge, a cubicle. Reliable.`,tags:[['flag','Career: corporate']]};}},
+        apply:()=>{ setFlag('job_corporate'); const sal=3000+Math.round(S.stats.smarts*30); money(sal); chg('happy',-2); driftPers('discipline',1);
+          return {text:`A salary, a badge, a cubicle with your name on a sticker. Your signing bonus lands: <b>${cur()}${sal.toLocaleString()}</b>. It's not a dream — it's a floor to build on. Reliable.`,tags:[['flag','Career: corporate'],['good',`+${cur()}${sal.toLocaleString()}`]]};}},
       {label:'Risky startup', tip:'Could soar or sink',
         apply:()=>{ setFlag('job_startup'); chg('happy',6); schedule(S.age+rng(4,8),'startup_fate');
-          return {text:`Low pay, big dreams. The dice are in the air.`,tags:[['flag','Career: startup'],['echo','Outcome scheduled']]};}},
+          return {text:`Folding chairs, free energy drinks, equity instead of a real salary, and a founder who says "rocket ship" unironically. The dice are in the air — you'll know in a few years whether this was genius or a cautionary tale.`,tags:[['flag','Career: startup'],['echo','Outcome scheduled']]};}},
       {label:'Chase a creative path', tip:'Smarts/Looks dependent',
-        apply:()=>{ setFlag('job_creative'); chg('happy',10); money(-1000);
-          return {text:`You bet on yourself. It feels right, if not lucrative — yet.`,tags:[['flag','Career: creative']]};}},
+        apply:()=>{ setFlag('job_creative'); money(-1000); const spark=S.stats.smarts+S.stats.looks>=130; chg('happy',spark?12:8);
+          return {text: spark?`You bet on yourself — and the early signs say the bet is live. A small commission here, a callback there. People are starting to say your name in rooms you're not in.`:`You bet on yourself. The money says you're wrong; your gut says wait. Every great story starts exactly this broke.`,tags:[['flag','Career: creative'],[spark?'good':'flag',spark?'Early buzz':'All in']]};}},
     ]})},
 
 /* --- CELEB: a chance encounter out in the world (you must meet them organically) --- */
@@ -3747,7 +3813,7 @@ const EVENTS = [
 /* MONEY — find a wallet */
 { id:'st_wallet', once:false, weight:13, when:S=>S.age>=8&&(S.age-(S._lastSt7||-99)>=4),
   build:S=>{ S._lastSt7=S.age; const cash=rng(40,600); return {yr:`Age ${S.age}`, title:'👛 A Lost Wallet',
-    text:`You find a fat wallet on the pavement — <b>${cur()}${cash}</b> in cash and an ID inside. Nobody's watching. What do you do?`,
+    text:`A fat wallet on the pavement — <b>${cur()}${cash}</b> in cash, an ID with a stranger's tired smile, and a photo of two kids tucked behind the cards.${S.money<100?' You are, at this exact moment, broke.':''} Nobody's watching. What do you do?`,
     choices:[
       {label:'Track down the owner', tip:'Return it all', apply:()=>{ karma(5); chg('happy',rng(2,5)); if(rng(0,100)<40){ const r=rng(20,200); money(r); return {text:`You return it untouched. The grateful owner presses <b>${cur()}${r}</b> on you as a reward. Good karma pays.`,tags:[['good',`Honest · +${cur()}${r}`]]}; } return {text:`You return every penny. No reward — just the quiet satisfaction of doing right.`,tags:[['good','Returned it']]}; }},
       {label:'Keep the cash, ditch the wallet', tip:'Finders keepers', apply:()=>{ money(cash); karma(-4); return {text:`You pocket the <b>${cur()}${cash}</b> and toss the wallet in a bin. Somewhere, someone's having a very bad day.`,tags:[['flag',`+${cur()}${cash}`]]}; }},
@@ -4332,25 +4398,36 @@ const EVENTS = [
   build:S=>{ setFlag('was_orphaned'); const relatives=Object.values(S.people).filter(p=>p.alive&&p.fam&&p.gen<0&&!p.romantic&&!p.inlaw);
     if(relatives.length){ const r=pick(relatives);
       return {yr:`Age ${S.age}`, title:'Taken In by Family',
-      text:`With your parents gone, your ${r.rel.toLowerCase()} <b>${r.name}</b> steps up to raise you.`,
-      choices:[{label:'A new home', apply:()=>{ rel(r.id,+rng(6,14),+rng(4,10),`They took you in when you had no one.`); setFlag('raised_by_relatives'); chg('happy',-2);
-        return {text:`${r.name} takes you in. Family looks after its own. 💛`,tags:[['good','Raised by relatives']]}; }}]}; }
+      text:`The house is full of casseroles and quiet voices. With your parents gone, your ${r.rel.toLowerCase()} <b>${r.name}</b> kneels down to your height and says the words that decide your childhood: "You're coming home with me."`,
+      choices:[
+        {label:'Hold their hand and go', apply:()=>{ rel(r.id,+rng(6,14),+rng(4,10),`They took you in when you had no one.`); setFlag('raised_by_relatives'); chg('happy',-2);
+          return {text:`${r.name} takes you in — a spare room repainted, a chair added at the table, your parents' photos framed in the hall so you never forget their faces. Family looks after its own. 💛`,tags:[['good','Raised by relatives']]}; }},
+        {label:'Go — but shut down for a while', tip:'Grief has no schedule', apply:()=>{ rel(r.id,+rng(2,6),+rng(1,4),`They took you in and weathered your grief.`); setFlag('raised_by_relatives'); chg('happy',-5); if(typeof addTrauma==='function')addTrauma('grief',rng(8,16),'losing your parents so young'); chg('smarts',1);
+          return {text:`You go with ${r.name}, but for months you barely speak — you read, you watch, you keep the world at arm's length. ${r.name} never pushes; they just keep leaving your favorite food outside your door. Slowly, that becomes love.`,tags:[['flag','Withdrew into yourself'],['good','Raised by relatives']]}; }},
+      ]}; }
     setFlag('in_foster_care');
     return {yr:`Age ${S.age}`, title:'Into the System',
-    text:`With no parents and no family to take you in, you enter <b>foster care</b>.`,
-    choices:[{label:'Make the best of it', apply:()=>{ const g=rand()<.5?'m':'f'; S.people.foster_parent=person('foster_parent', nm(g)+' '+pick(LAST), g==='f'?'Foster Mother':'Foster Father', rng(45,66), rng(40,58), {gender:g,gen:-1,age:rng(38,58)}); S.people.foster_parent.fosterParent=true; chg('happy',-6); if(typeof addTrauma==='function') addTrauma('adverse_childhood',20,'growing up in foster care');
-      return {text:`A foster family takes you in. It's hard, but ${S.people.foster_parent.name} tries. 🏠`,tags:[['flag','Entered foster care']]}; }}]};
+    text:`With no parents and no family able to take you, a caseworker with a thick folder and tired eyes buckles you into a car that isn't yours, heading somewhere you've never been. Everything you own fits in one bag.`,
+    choices:[
+      {label:'Make the best of it', apply:()=>{ const g=rand()<.5?'m':'f'; S.people.foster_parent=person('foster_parent', nm(g)+' '+pick(LAST), g==='f'?'Foster Mother':'Foster Father', rng(45,66), rng(40,58), {gender:g,gen:-1,age:rng(38,58)}); S.people.foster_parent.fosterParent=true; chg('happy',-6); if(typeof addTrauma==='function') addTrauma('adverse_childhood',20,'growing up in foster care');
+        return {text:`A foster family takes you in. It's not home — home is gone — but ${S.people.foster_parent.name} learns how you take your eggs and never misses a school pickup. It's hard. They try. Both things are true. 🏠`,tags:[['flag','Entered foster care']]}; }},
+      {label:'Trust no one', tip:'Armor up', apply:()=>{ const g=rand()<.5?'m':'f'; S.people.foster_parent=person('foster_parent', nm(g)+' '+pick(LAST), g==='f'?'Foster Mother':'Foster Father', rng(30,48), rng(25,42), {gender:g,gen:-1,age:rng(38,58)}); S.people.foster_parent.fosterParent=true; chg('happy',-8); chg('smarts',2); if(typeof addTrauma==='function') addTrauma('adverse_childhood',26,'growing up guarded in the system'); driftPers('discipline',1);
+        return {text:`You decide the only person you can count on is you. You keep your bag half-packed for years. ${S.people.foster_parent.name} keeps trying anyway. You grow up sharp, self-reliant — and harder to reach than a kid should ever have to be.`,tags:[['flag','Entered foster care'],['flag','Guarded heart']]}; }},
+    ]};
   }},
 /* --- FOSTER CARE (child side): be adopted out of the system into a forever home --- */
 { id:'foster_adopted', once:true, weight:70,
   when:S=>has('in_foster_care') && !has('adopted_out') && S.age>=3 && S.age<=16,
   build:S=>{ setFlag('adopted_out');
+    const fp=S.people.foster_parent; const close=fp&&fp.alive&&(fp.affinity||0)>=55;
     return {yr:`Age ${S.age}`, title:'A Forever Home',
-    text:`A loving family wants to <b>adopt you</b> out of foster care.`,
+    text:`${close?`${fp.name} sits you down at the kitchen table, slides a folder across, and can't finish the sentence — so the caseworker does: <b>they want to adopt you</b>. Not foster. Adopt. Forever.`:`The caseworker has news: a family has been reading your file for months and wants to <b>adopt you</b> out of foster care. A room of your own. A name on a birthday calendar. Forever, if you want it.`}`,
     choices:[
-      {label:'Accept — a real family', apply:()=>{ setFlag('adopted'); chg('happy',12); if(typeof addSelfWorth==='function')addSelfWorth(4); const fp=S.people.foster_parent; if(fp){ fp.rel=fp.gender==='f'?'Adoptive Mother':'Adoptive Father'; fp.fosterParent=false; rel(fp.id,+rng(8,16),+rng(6,12),'They adopted you and made it forever.'); }
-        return {text:`You're adopted into a real family at last — a forever home. 💛`,tags:[['good','Adopted into a family']]}; }},
-      {label:'Stay in the system', apply:()=>{ if(typeof addSelfWorth==='function')addSelfWorth(2); return {text:`You choose to stay put for now. The system is what you know.`,tags:[['flag','Stayed in foster care']]}; }},
+      {label:'Say yes — a real family', apply:()=>{ setFlag('adopted'); chg('happy',12); if(typeof addSelfWorth==='function')addSelfWorth(4); if(fp){ fp.rel=fp.gender==='f'?'Adoptive Mother':'Adoptive Father'; fp.fosterParent=false; rel(fp.id,+rng(8,16),+rng(6,12),'They adopted you and made it forever.'); }
+        return {text:`You say yes. There's a judge, a stamped paper, and a lunch after where everyone cries into their fries. The word "forever" stops being something you're scared to believe in. 💛`,tags:[['good','Adopted into a family']]}; }},
+      {label:'Yes — but keep your birth name', tip:'Carry where you came from', apply:()=>{ setFlag('adopted'); setFlag('kept_your_name'); chg('happy',10); chg('smarts',1); if(typeof addSelfWorth==='function')addSelfWorth(5); if(fp){ fp.rel=fp.gender==='f'?'Adoptive Mother':'Adoptive Father'; fp.fosterParent=false; rel(fp.id,+rng(6,14),+rng(6,12),'They adopted you — and honored your name.'); }
+        return {text:`You say yes — on one condition: you keep the name your parents gave you. ${fp?fp.name:'Your new family'} doesn't hesitate: "It's YOUR name. We're just adding to it." A forever home that honors where you came from. 💛`,tags:[['good','Adopted into a family'],['flag','Kept your name']]}; }},
+      {label:'Stay in the system', apply:()=>{ if(typeof addSelfWorth==='function')addSelfWorth(2); return {text:`You choose to stay put for now. Maybe it's loyalty, maybe it's fear of hoping again. The caseworker closes the folder gently. "The offer stands." The system is what you know.`,tags:[['flag','Stayed in foster care']]}; }},
     ]};}},
 /* --- FOSTER CARE (parent side): an unfit parent loses a child to the system --- */
 { id:'foster_removal', once:false, weight:20,
@@ -4385,14 +4462,19 @@ const EVENTS = [
   when:S=>S.age>=5 && S.age<=14 && livingKin(p=>/Aunt|Uncle/.test(p.rel)).length>0,
   build:S=>{ const a=pick(livingKin(p=>/Aunt|Uncle/.test(p.rel)));
     return {yr:`Age ${S.age}`, title:`${a.name} Visits`,
-    text:`Your ${a.rel.toLowerCase()} ${a.name} shows up with a gift and offers to spend the whole day with you.`,
+    text:`Your ${a.rel.toLowerCase()} <b>${a.name}</b> blows in ${pick(['smelling of perfume and gas-station coffee','with a suitcase full of mystery','mid-story, as always','unannounced, as is tradition'])} — carrying ${pick(['a wrapped box that rattles promisingly','a gift two sizes too young for you (it\'s the thought)','something they "saw and thought of you"','the good kind of chocolate'])} — and offers to spend the whole day with you.`,
     choices:[
       {label:'Spend the day together',
         apply:()=>{ chg('happy',5); rel(a.id,+8,+6,'You spent a fun day together.');
-          return {text:`A day to remember. ${a.name} adores you.`,tags:[['rel',`${a.name} closer`]]};}},
+          const day=pick(['They let you order dessert FIRST, like an outlaw.','They drive with the windows down and the radio loud.','They tell you embarrassing stories about your parents as teenagers. Gold.','They treat you like the most interesting person alive.']);
+          return {text:`A whole day, just you two. ${day} ${a.name} adores you — and days like this are why.`,tags:[['rel',`${a.name} closer`]]};}},
+      {label:'Ask about the old family stories', tip:'Where do we come from?', when:S=>S.age>=8,
+        apply:()=>{ chg('smarts',2); chg('happy',3); rel(a.id,+6,+8,'You asked about the family history. They lit up.'); setFlag('family_lore');
+          const lore=pick(['a great-grandparent who crossed an ocean with one suitcase and a lie about their age','the family feud nobody talks about at dinners','how your grandparents actually met (the official version is heavily edited)','the relative who was almost famous — and what went wrong']);
+          return {text:`${a.name} goes quiet, then starts talking — about ${lore}. You listen wide-eyed for hours. You're the keeper of the stories now.`,tags:[['rel',`${a.name} trusts you`],['flag','Keeper of the family lore']]};}},
       {label:'Grab the gift and run off',
         apply:()=>{ chg('happy',3); rel(a.id,-4,-2,'You took the gift and bolted.');
-          return {text:`You snatch the present and vanish. ${a.name} looks a little hurt.`,tags:[['bad',`${a.name} less close`]]};}},
+          return {text:`You snatch the present and vanish to your room. Through the door you hear ${a.name} say "…kids" in a voice that's only half a laugh.`,tags:[['bad',`${a.name} less close`]]};}},
     ]};}},
 
 /* --- RELATIONSHIPS WITH MEMORY: an NPC reaches out, driven by their personality & your shared history --- */
@@ -5451,7 +5533,7 @@ function render(){
   // Wellbeing rows — emoji · label · bar · percent (green when high, amber/red when low)
   document.getElementById('stats').innerHTML=STAT_DEFS.map(d=>{
     const v=S.stats[d.key];
-    const col=v>=66?'#2ecc55':v>=33?'#f5a623':'#ff3b5c';
+    const col=v>=66?'var(--good)':v>=33?'var(--warn)':'var(--bad)';
     return `<div class="stat"><span class="st-emo">${d.emo}</span><span class="st-lab">${d.name}</span>
       <div class="bar"><i style="width:${v}%;background:${col}"></i></div><span class="st-pct">${v}%</span></div>`;
   }).join('');
@@ -5478,7 +5560,7 @@ function render(){
     }).join('');
     html+=`<div class="tl-card${gi===byAge.length-1?' tl-now':''}"><div class="tl-age" style="color:${b[0]}">Age ${g.age}</div>${body}</div>`;
   });
-  document.getElementById('lifeView').innerHTML=html||'<p class="tl-line" style="text-align:center;padding:34px 10px">Press <b>Advance Age</b> to begin living.</p>';
+  document.getElementById('lifeView').innerHTML=html||`<div class="empty"><div class="em-ic">🍼</div><div class="em-t">Your story starts here</div><div class="em-s">Press the big <b style="color:var(--good)">+</b> button to live your first year.<br>Every choice writes a line in this book.</div></div>`;
   if(pending && !modalOpen()) showEventModal();   // keep the event modal in sync
 
   // family tree — living grouped by generation; the departed collected at the bottom
@@ -8014,7 +8096,7 @@ function activityEntries(){
 }
 function actCard(e,fav){
   const star=`<span onclick="event.stopPropagation();toggleFav('${e.id}')" style="font-size:17px;padding:2px 9px;line-height:1;color:${fav?'#f5c518':'#54606f'};align-self:center" title="${fav?'Unpin':'Pin to top'}">${fav?'⭐':'☆'}</span>`;
-  return `<div class="platrow" onclick="${e.onclick}">
+  return `<div class="platrow${fav?' pinned':''}" onclick="${e.onclick}">
     <div class="picon" style="background:linear-gradient(135deg,#2a3340,#1b222d)">${e.icon}</div>
     <div class="pinfo"><div class="pn">${e.title}</div><div class="pf">${e.sub}</div></div>${star}<span class="parrow">›</span></div>`;
 }
@@ -8886,8 +8968,8 @@ function personCard(p){
   const col=pbColor(p.affinity);
   return `<div class="person ${p.alive?'':'dead'}" onclick="openPerson('${p.id}')" style="cursor:pointer">
     <div class="avatar" style="background:linear-gradient(135deg,${col},#3a4658)">${p.name[0]}</div>
-    <div class="meta"><div class="nm">${p.name}${p.bestFriend&&p.alive?' 🤝':''}${p.nemesis&&p.alive?' 😈':''}${p.tricks&&p.tricks.length>=3?' 🎓':''}</div>
-      <div class="rl">${p.bestFriend&&p.alive?'Best Friend · ':''}${p.nemesis&&p.alive?'Nemesis · ':''}${p.rel}${p.fam&&p.alive?` · Age ${p.age}`:!p.alive?' · ✝ deceased':''}</div>
+    <div class="meta"><div class="nm">${p.name}${p.bestFriend&&p.alive?' 🤝':''}${p.nemesis&&p.alive?' 😈':''}${p.tricks&&p.tricks.length>=3?' 🎓':''}${(typeof emLongDistance==='function'&&emLongDistance(p)&&p.alive)?' 🌍':''}</div>
+      <div class="rl">${p.bestFriend&&p.alive?'Best Friend · ':''}${p.nemesis&&p.alive?'Nemesis · ':''}${p.rel}${p.fam&&p.alive?` · Age ${p.age}`:!p.alive?' · ✝ deceased':''}${(typeof emLongDistance==='function'&&emLongDistance(p)&&p.alive)?` · <span style="color:var(--warn)">${typeof countryFlag==='function'?countryFlag(p.countryOf):'🌍'} abroad</span>`:''}</div>
       ${p.alive?`<div class="rl" style="color:${col};font-weight:700">${relStatus(p)}</div>
       <div class="relbars">${pbar('Relationship',p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}</div>`:''}
     </div></div>`;
@@ -9173,7 +9255,15 @@ function quitAddiction(){ closeModal();
   }
 }
 function doctorCheckup(){ closeModal(); const cost=rng(80,300); if(!spend(cost))return; chg('health',rng(2,6));
-  resultModal('Doctor','Check-up','🩺',[`The doctor runs the usual tests (${cur()}${cost}).`,`You're told to rest and hydrate. A little health restored.`],()=>seeDoctor()); }
+  const scene=pick([`The doctor runs ${S.age>=60?'the full battery — bloods, heart, the works':'the usual tests'} (${cur()}${cost}).`,`Cold stethoscope, blood pressure cuff, the little hammer on the knee (${cur()}${cost}).`,`You read the eye chart, breathe deep, say "ahh" (${cur()}${cost}).`]);
+  const notes=[];
+  if(S.age>=55) notes.push(`"At your age, these visits are how you stay ahead of trouble. Keep coming."`);
+  if((S.fitness||50)<35) notes.push(`The doctor eyes the chart, then you: "Your fitness is… let's say 'untapped potential.' Move more."`);
+  if(has('smoker')&&!has('got_clean')) notes.push(`They hear your lungs and pause. "Still smoking? Every year you quit earlier counts double."`);
+  if(S.mind&&S.mind.stress>=60) notes.push(`Your blood pressure tells on you. "Whatever's stressing you — it's not staying in your head. It's in your arteries now."`);
+  if((S.fitness||50)>=75&&S.age>=30) notes.push(`They double-check your resting heart rate, impressed. "Whatever you're doing — keep doing it."`);
+  const verdict=notes.length?pick(notes):pick([`"Clean bill of health. Rest, hydrate, and don't Google your symptoms."`,`"Everything looks good. See you next year — sooner if anything changes."`,`"Boring results. In medicine, boring is beautiful."`]);
+  resultModal('Doctor',S.age>=65?'Senior Check-up':'Check-up','🩺',[scene,verdict,'A little health restored.'],()=>seeDoctor()); }
 function treatSTDs(){ closeModal();
   const untreated=(S.stds||[]).filter(s=>!s.treated); if(!untreated.length){ toast('Nothing to treat.'); return; }
   const cost=untreated.length*rng(200,600); if(!spend(cost))return;
@@ -9269,8 +9359,8 @@ function doClub(venue){ if(!onceYear('nightclub','went clubbing')){ closeModal()
   const roll=rng(0,100); let title,icon,line,tags;
   if(roll<40){ chg('happy',rng(5,10)); gainFame(rng(0,2)); addStress(-rng(2,6)); title='Best Night Out 🪩'; icon='🪩'; line=`You danced till close at <b>${venue}</b> — an unforgettable night with the crowd.`; tags=[['good','Great night out']]; }
   else if(roll<58){ chg('happy',rng(3,6)); title='Made a Connection 💋'; icon='💋'; line=`You clicked with someone at <b>${venue}</b> and swapped numbers. Who knows where it leads.`; tags=[['good','Met someone clubbing']]; if(S.age>=18 && rng(0,100)<45 && typeof hookupTonight==='function'){ /* leave to player's romance choices — flavor only */ } }
-  else if(roll<74){ chg('happy',rng(1,4)); title='A Fun Night'; icon='🍸'; line=`A solid night at <b>${venue}</b> — a few drinks, a few laughs.`; tags=[['flag','A night out']]; }
-  else if(roll<88){ chg('health',-rng(3,7)); chg('happy',-rng(1,3)); setFlag('hungover'); title='Overdid It 🥴'; icon='🥴'; line=`You had way too much at <b>${venue}</b>. Tomorrow's hangover will be legendary.`; tags=[['bad','Overdid it']]; }
+  else if(roll<74){ chg('happy',rng(1,4)); title='A Fun Night'; icon='🍸'; const beat=pick([`the DJ played your song twice and you pretended it was a coincidence`,`you spent half the night in the smoking area having a surprisingly deep conversation with a stranger`,`${(S.fame||0)>20?'someone recognized you and bought your table a round':'the bartender remembered your order — you\'re a regular now'}`,`you defended your spot on the dance floor like territory`,`the group photo from 1am is blurry, joyful, and already a group-chat icon`]); line=`A solid night at <b>${venue}</b> — ${beat}.`; tags=[['flag','A night out']]; }
+  else if(roll<88){ chg('health',-rng(3,7)); chg('happy',-rng(1,3)); setFlag('hungover'); title='Overdid It 🥴'; icon='🥴'; const damage=pick([`You closed the bar, serenaded a taxi, and negotiated with your front door for ten minutes`,`There's a traffic cone in your room and no memory of the acquisition`,`You told three strangers you loved them and gave one your number`,`Your last text reads "im basicly a DJ" sent to ${S.age>=30?'your boss':'your mother'}`]); line=`You had WAY too much at <b>${venue}</b>. ${damage}. Tomorrow's hangover will be legendary.`; tags=[['bad','Overdid it']]; }
   else { const loss=S.money>0?Math.round(Math.min(S.money*0.15,rng(80,1200))):0; if(loss>0)money(-loss); chg('happy',-rng(3,7)); karma(0); title='Trouble at the Club 🚨'; icon='🚨'; line=`It went sideways at <b>${venue}</b> — ${loss>0?`your wallet vanished (${cur()}${loss.toLocaleString()} gone)`:`you got tossed by security`}.`; tags=[['bad','Club trouble']]; }
   pushLog(`🪩 ${line.replace(/<[^>]+>/g,m=>m)}`,tags); resultModal('Nightlife',title,icon,[line,`Cover: ${cur()}${cover.toLocaleString()}.`],()=>setTab('life')); }
 /* ---- 💅 SALON & SPA — pamper yourself for looks/happiness. Deterministic. ---- */
@@ -9290,8 +9380,16 @@ function doSpa(k){ const s=SPA_SERVICES.find(x=>x.k===k); if(!s)return; if(!spen
   const cost=Math.round(rng(s.cost[0],s.cost[1])*priceMult()); if(!spend(cost))return;
   chg('looks',rng(s.looks[0],s.looks[1])); chg('happy',rng(s.happy[0],s.happy[1])); if(s.stress) addStress(-rng(6,14));
   let extra=''; if(s.risk && rng(0,100)<12){ chg('looks',-rng(1,3)); chg('health',-1); extra=' — but you overdid it and got a burn. 🔥'; }
+  const SPA_FLAVOR={
+    barber:[`The chair leans back, the hot towel lands, and the world's problems wait outside.`,`"Just a trim" becomes a full consultation. You leave a slightly better-looking person.`,`The clippers hum, the barber talks football, and the lineup comes out SHARP.`],
+    dye:[`A new colour, a new you — you catch your reflection in every shop window on the walk home.`,`The stylist holds up the mirror and you make the face. The good face.`,`Bold choice. The group chat will have opinions. You love it anyway.`],
+    massage:[`Elbows find knots you didn't know you were carrying. You leave two inches taller.`,`Somewhere around minute twenty, your shoulders finally come down from around your ears.`,`You drool a little on the face cradle. It was worth it.`],
+    nails:[`Fresh set, immaculate. You spend the rest of the day gesturing more than necessary.`,`The tiny brush, the steady hand, the little fan — art you get to wear.`,`You and the manicurist solve everyone's problems while the topcoat dries.`],
+    tan:[`Bronzed. You walk out glowing like you've been "summering" somewhere.`,`A healthy colour — the kind people ask about. "Oh, this? Nothing."`],
+    wax:[`Ripping-off-the-band-aid noises were made. Smooth results though.`,`You practice your poker face. You lose. Smooth as marble now, either way.`],
+  };
   pushLog(`${s.icon} I treated myself to ${s.name.toLowerCase()} (${cur()}${cost.toLocaleString()}).`,[['good',s.name]]);
-  resultModal('Salon & Spa',`${s.icon} ${s.name}`,s.icon,[`You got the ${s.name.toLowerCase()} treatment — feeling fresh.${extra}`,`Cost: ${cur()}${cost.toLocaleString()}.`],()=>salonSpa()); }
+  resultModal('Salon & Spa',`${s.icon} ${s.name}`,s.icon,[`${pick(SPA_FLAVOR[s.k]||[`You got the ${s.name.toLowerCase()} treatment — feeling fresh.`])}${extra}`,`Cost: ${cur()}${cost.toLocaleString()}.`],()=>salonSpa()); }
 /* ---- Emigrate — kids ask parents (usually no); 18+ move freely ---- */
 /* 🌍 EMIGRATION helpers — backfill state on old saves; who's long-distance; country label. */
 const EMIG_CFG={ culture:true, asylum:true, diaspora:true };   // optional-feature flags (all on per design)
@@ -9518,7 +9616,7 @@ function playSlots(bet){ closeModal(); if(!spend(bet))return;
   if(mult>=12) reels=['7️⃣','7️⃣','7️⃣']; else if(mult>0){ const s=pick(SYM); reels=(mult>=4)?[s,s,s]:[s,s,pick(SYM)]; } else reels=[pick(SYM),pick(SYM),pick(SYM)];
   const win=bet*mult; if(win>0) money(win);
   gambleResult(mult>=50?'JACKPOT! 🎉':mult>0?'Winner':'No Luck', mult>0?'🎰':'😞',
-    [`[ ${reels.join(' | ')} ]`, mult>=50?`<b>7-7-7 — JACKPOT!</b> 🎰🎉`:mult>0?`You won <b>${cur()}${win.toLocaleString()}</b> (${mult}×)!`:`The reels don't line up.`], win-bet);
+    [`[ ${reels.join(' | ')} ]`, mult>=50?`<b>7-7-7 — JACKPOT!</b> 🎰🎉 Sirens, lights, a small crowd — your machine is FAMOUS for a full minute.`:mult>0?`You won <b>${cur()}${win.toLocaleString()}</b> (${mult}×)!`:pick([`So close — the third reel teases, hangs… and betrays you.`,`The machine plays a cheerful jingle about your loss, which feels personal.`,`Nothing. The retiree two stools down hits a bonus round and doesn't even smile.`,`The reels don't line up. The machine's lights keep partying without you.`])], win-bet);
 }
 function bjCard(){ return pick([2,3,4,5,6,7,8,9,10,10,10,10,11]); }
 function bjTotal(h){ let t=h.reduce((a,c)=>a+c,0), aces=h.filter(c=>c===11).length; while(t>21&&aces>0){t-=10;aces--;} return t; }
@@ -9566,7 +9664,7 @@ function spinRoulette(bet,type){ closeModal(); if(!spend(bet))return;
   if(win>0) money(win);
   const face = spin===0?'🟢 0':`${color==='red'?'🔴':'⚫'} ${spin}`;
   gambleResult(win>0?'Winner! 🎡':'House Wins', win>0?'🎡':'😞',
-    [`The ball drops on <b>${face}</b>.`, type==='number'?`Your number was <b>${myNum}</b>.`:`You backed <b>${type}</b>.`, win>0?`You win <b>${cur()}${win.toLocaleString()}</b>!`:`Not your spin.`], win-bet);
+    [`The ball rattles, hops twice, and drops on <b>${face}</b>.`, type==='number'?`Your number was <b>${myNum}</b>.`:`You backed <b>${type}</b>.`, win>0?`You win <b>${cur()}${win.toLocaleString()}</b>! The croupier slides the chips over with zero emotion. You have PLENTY for both of you.`:pick([`Not your spin. The croupier rakes your chips away like it's nothing. It was not nothing.`,`Not your spin. The man next to you says "should've gone ${type==='red'?'black':'red'}" — thanks, professor.`,`Not your spin. You watch your chips join the house's pile, where they will be very happy without you.`])], win-bet);
 }
 const HORSES=[{n:'Thunderbolt',odds:2},{n:'Lucky Lady',odds:3},{n:'Dark Horse',odds:5},{n:'Long Shot',odds:12}];
 function horseBet(bet){ closeModal();
@@ -9580,14 +9678,14 @@ function runRace(bet,idx){ closeModal(); if(!spend(bet))return;
   if(win>0) money(win);
   const winner = won?h.n:pick(HORSES.filter((x,i)=>i!==idx)).n;
   gambleResult(won?'🏆 Your Horse Won!':'You Lost', won?'🐎':'😞',
-    [`<b>${winner}</b> takes the race.`, won?`Your pick <b>${h.n}</b> came through at ${h.odds}:1 — you win <b>${cur()}${win.toLocaleString()}</b>!`:`Your horse <b>${h.n}</b> didn't place.`], win-bet);
+    [`They're off! ${won?`<b>${h.n}</b> sits third at the turn, finds a gap on the rail — and SURGES.`:pick([`<b>${h.n}</b> breaks beautifully… then develops a sudden interest in jogging.`,`<b>${h.n}</b> leads for six glorious seconds. You will remember those seconds.`,`<b>${h.n}</b> runs like the bet was a group project they didn't agree to.`])} <b>${winner}</b> takes the race.`, won?`Your pick came through at ${h.odds}:1 — you win <b>${cur()}${win.toLocaleString()}</b>! You keep the ticket stub as a trophy.`:`Your horse <b>${h.n}</b> didn't place. You tear the ticket with dignity. Mostly.`], win-bet);
 }
 function scratchTicket(){ closeModal(); if(S.age<18){toast('🔞 18 and up.');return;} if(!spend(10))return;
   const r=rng(0,1000); let prize=0;
   if(r<1) prize=10000; else if(r<15) prize=500; else if(r<70) prize=50; else if(r<200) prize=20;
   if(prize>0) money(prize);
   gambleResult(prize>0?'🎟️ A Winner!':'🎟️ No Win', prize>=10000?'🎉':prize>0?'💵':'🗑️',
-    [prize>=10000?`<b>GRAND PRIZE — ${cur()}${prize.toLocaleString()}!</b> 🎉`:prize>0?`You scratched off <b>${cur()}${prize.toLocaleString()}</b>!`:`Nothing under the foil. Maybe next time.`], prize-10);
+    [prize>=10000?`<b>GRAND PRIZE — ${cur()}${prize.toLocaleString()}!</b> 🎉 You check it five times. Then a sixth. It's real. IT'S REAL.`:prize>0?`You scratch with a lucky coin and there it is — <b>${cur()}${prize.toLocaleString()}</b>! Not life-changing, but VERY mood-changing.`:pick([`Two matching symbols… and a third that ruins everything. Nothing under the foil.`,`You scratch it slowly for suspense. The suspense was the only prize.`,`Nothing. You now own a small gray rectangle of disappointment.`,`Nothing under the foil. The clerk gives you the nod of shared defeat.`])], prize-10);
 }
 /* ---- Lottery — buy quick-pick tickets; one annual draw with a ROLLING jackpot ---- */
 const LOTTO_BASE=3000000;
@@ -11118,10 +11216,10 @@ function askPromotion(){
   const chance=10 + (S.jobPerf||50)/4 + S.stats.smarts/9 - j.level*5 - pester*14;
   if(rng(0,100) < chance){
     promote();
-    resultModal('Job','You Got the Promotion!','📈',[`You walked into the boss's office and made your case — and it worked.`,`You're now <b>${jobTitle(j)}</b> · ${cur()}${j.salary.toLocaleString()}/yr.`],()=>setTab('job'));
+    resultModal('Job','You Got the Promotion!','📈',[pick([`You walked in with your numbers, your case, and your best shirt — and walked out with the job.`,`You barely finish the pitch before the boss slides a new contract across the desk. "Took you long enough to ask."`,`The boss listens, leans back, checks something on the screen, and shrugs: "Fine. You've earned it."`]),`You're now <b>${jobTitle(j)}</b> · ${cur()}${j.salary.toLocaleString()}/yr.`],()=>setTab('job'));
   } else {
     j.promo=clamp((j.promo||0)+rng(3,9),0,99);   // even a "no" nudges you closer
-    let line=`Not this time — the boss says to keep it up.`, tags=[['flag','Asked for a raise']];
+    let line=pick([`"Not this quarter." The boss taps a folder meaningfully. "But keep this up and we'll talk."`,`The boss hears you out, nods… and books a "follow-up conversation" that both of you know is a stall. Still — the seed is planted.`,`"Budget's frozen." (The boss's new car is visible from the office window.) But your name is in the conversation now.`]), tags=[['flag','Asked for a raise']];
     if(pester>=2){ S.jobPerf=clamp((S.jobPerf||50)-rng(4,11)); line=`The boss is getting tired of you asking — it's hurting how they see you.`; tags=[['bad','Boss annoyed']]; }
     pushLog(`I asked the boss for a promotion. ${pester>=2?'They were not impressed. 😬':'Not yet — but I planted the seed.'}`,tags);
     resultModal('Job','Asked the Boss','💼',[line,statBar('Promotion Progress',j.promo)],()=>setTab('job'));
