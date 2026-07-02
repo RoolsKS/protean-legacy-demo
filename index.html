@@ -4625,6 +4625,7 @@ function ageUp(){
   kidsCareYear();                                                     // 👶🎓 nanny + private-school tuition for your minor kids (deterministic)
   partnersYear();                                                     // 💘 juggling multiple partners costs money, spark & peace (deterministic)
   friendshipYear();                                                   // 🤝 a best friend gives steady yearly mood support (deterministic)
+  nemesisYear();                                                      // 😈 a living nemesis occasionally needles you (deterministic, gated)
   clubsYear();                                                        // 🎽 school clubs/teams accrue years & performance (deterministic)
   sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
   staffYear();                                                        // 🧑‍✈️ household staff salaries + their yearly perks (deterministic)
@@ -8743,6 +8744,11 @@ function makeBestFriend(id){ const p=S.people[id]; if(!p||!p.alive||p.bestFriend
 function friendshipYear(){ if(!S||!S.alive)return; const bffs=Object.values(S.people).filter(p=>p.alive&&p.bestFriend); if(!bffs.length)return;
   addMood(rng(1,3)); for(const p of bffs){ p.affinity=clamp(p.affinity+rng(0,1)); }   // a best friend is steady support & their bond resists decay
   if(rng(0,100)<12){ const p=bffs[rng(0,bffs.length-1)]; addMood(rng(2,5)); chg('happy',rng(1,3)); pushLog(`🤝 My best friend ${p.name} was there for me this year.`,[['good','A friend in your corner']]); } }
+/* 😈 a living nemesis occasionally needles you (deterministic, gated so it never spams) */
+function nemesisYear(){ if(!S||!S.alive)return; const foes=Object.values(S.people).filter(p=>p.alive&&p.nemesis); if(!foes.length)return;
+  if(rng(0,100)<12){ const p=foes[rng(0,foes.length-1)]; const jab=pick(['took a public shot at you','spread a rumor about you','undercut you in front of others','openly celebrated your latest setback','wouldn\'t let an old grudge die','beat you to something you wanted']);
+    addStress(rng(2,6)); chg('happy',-rng(1,3)); p.affinity=clamp(p.affinity-rng(0,2));
+    pushLog(`😈 My nemesis ${p.name} ${jab} this year.`,[['bad',`${p.name} strikes`]]); } }
 /* 😈 NEMESIS — mark a bitter enemy (affinity<30) as a personal rival, then reconcile or escalate. Modalpick leaves → no logAct. */
 function makeNemesis(id){ const p=S.people[id]; if(!p||!p.alive||p.nemesis)return;
   p.nemesis=true; setFlag('has_nemesis'); addStress(rng(3,8)); driftPers('boldness',1);
