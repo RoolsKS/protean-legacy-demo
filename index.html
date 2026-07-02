@@ -2205,6 +2205,9 @@ function lifeRecord(){
     bestFriend: has('has_best_friend'), hadNemesis: has('has_nemesis'),
     abroad: !!(S.emigration && S.emigration.currentCountry && S.emigration.bornCountry && S.emigration.currentCountry!==S.emigration.bornCountry),
     naturalized: has('naturalized'), migratedGens: (function(){ const cc=new Set((S.emigration&&S.emigration.countryHistory||[]).map(h=>h.country)); return cc.size; })(),
+    asylumAscent: has('sought_asylum') && has('naturalized'),
+    diasporaHeir: has('diaspora_heir'),
+    familyCountries: (function(){ const cc=new Set([S.country]); Object.values(S.people).forEach(p=>{ if(p.alive&&p.fam&&!p.pet) cc.add(p.countryOf||S.country); }); return cc.size; })(),
   };
 }
 const RIBBONS=[
@@ -2298,6 +2301,9 @@ const RIBBONS=[
   {id:'emigre', name:'Émigré', icon:'🌍', rarity:'rare', priority:6, desc:'Build real wealth in a country you weren\'t born in.', q:r=>Math.min(r.abroad?1:0, _frac(r.nwBase,5e5))},
   {id:'new_citizen', name:'New Citizen', icon:'🛂', rarity:'rare', priority:5, desc:'Become a naturalized citizen of a new country.', q:r=>r.naturalized?1:0},
   {id:'old_world_new_world', name:'Old World, New World', icon:'🧭', rarity:'legendary', priority:8, desc:'Carry the bloodline across three or more countries.', q:r=>_frac(r.migratedGens,3)},
+  {id:'asylum_ascent', name:'From Nothing', icon:'🕊️', rarity:'epic', priority:7, secret:true, desc:'Arrive with no papers — and die a citizen.', q:r=>r.asylumAscent?1:0},
+  {id:'world_family', name:'World Family', icon:'🌐', rarity:'epic', priority:6, desc:'A living family spread across three or more countries.', q:r=>_frac(r.familyCountries,3)},
+  {id:'two_worlds', name:'Child of Two Worlds', icon:'🌗', rarity:'rare', priority:5, secret:true, desc:'Continue the dynasty from the far side of a family split.', q:r=>r.diasporaHeir?1:0},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
@@ -5527,7 +5533,10 @@ function lifeReview(){ if(!S)return;
     const txt=(l.html||'').replace(/<[^>]+>/g,'').trim(); const snip=txt.length>92?txt.slice(0,90)+'…':txt;
     return `<div style="display:flex;gap:8px;padding:4px 1px;border-bottom:1px solid var(--line)"><span style="color:var(--dim);min-width:44px;font-size:11.5px">Age ${l.age}</span><span style="flex:1;font-size:12px"><b style="color:${col}">${t[1]}</b> <span style="color:#aab4c2">${snip}</span></span></div>`;
   }).join('');
-  const body=`<div style="text-align:left">${head}
+  // 🌍 P4: the migration trail — where this life (and the bloodline before it) has lived
+  const _trail=(S.emigration&&S.emigration.countryHistory||[]);
+  const trailHtml=_trail.length>1?`<div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-bottom:8px;font-size:12px;line-height:1.7"><span style="color:var(--dim)">🌍 Migration trail</span><br>${_trail.map(h=>`${countryFlag(h.country)} ${countryName(h.country)}${(h.born||h.ageArrived===0)?' <span style="color:var(--dim)">(born)</span>':` <span style="color:var(--dim)">(age ${h.ageArrived})</span>`}`).join(' <span style="color:var(--dim)">→</span> ')}</div>`:'';
+  const body=`<div style="text-align:left">${head}${trailHtml}
     <div class="genlabel" style="margin:2px 0 4px">Highlights ${trimmed>0?`<span>showing last ${CAP} of ${notable.length}</span>`:`<span>${notable.length} moments</span>`}</div>
     ${notable.length?`<div>${rows}</div>`:`<p style="color:var(--dim);font-size:12px">A quiet life, with few dramatic turns.</p>`}
     ${dr&&dr.ids.length?`<div style="margin-top:8px;line-height:1.9">${dr.ids.map(ribbonDef).filter(Boolean).map(rb=>`<span class="tag echo">${rb.icon} ${rb.name}</span>`).join(' ')}</div>`:''}</div>`;
@@ -5603,10 +5612,21 @@ function continueAsHeir(id){
   S.money=inheritance; S.peakMoney=Math.max(S.peakMoney||0,inheritance);
   S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.founderPeak=0; S._agentEarnings=0; S.endurance=-1; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
   S.rentOwed=0; S.rentMult=1; S.autopayRent=true; S.karma=0; S.landlord=null;
-  // 🌍 the heir is born in the family's current country as a citizen, but inherits the dynasty's migration trail (left-behind relatives stay long-distance = emergent diaspora)
+  // 🌍 P4 DIASPORA SPLIT — an heir who grew up ABROAD continues the dynasty from THEIR country;
+  // the family re-sorts around them: relatives in the heir's country are near, everyone else is now the long-distance side.
+  let _diaspora=false;
+  { const _oldC=S.country;
+    if(heir.coLocated===false && heir.countryOf && COUNTRIES[heir.countryOf]){ _diaspora=true;
+      S.country=heir.countryOf; S.city=(COUNTRIES[S.country].cities||[])[0]||S.city; S.countryPop=countryPop(S.country);
+      { const csl=COUNTRIES[S.country].cities||[]; if(csl.length<=1) S.cityPop=S.countryPop; else S.cityPop=Math.max(20000,Math.round(S.countryPop*0.10)); } }
+    for(const p of Object.values(S.people)){ if(p.pet){ p.coLocated=true; p.countryOf=S.country; continue; } if(!p.fam) continue;
+      if(p.countryOf==null) p.countryOf=_oldC;
+      p.coLocated = (p.countryOf===S.country); } }
+  // the heir is born in (their) current country as a citizen, but inherits the dynasty's migration trail (left-behind relatives stay long-distance = emergent diaspora)
   { const _h=(S.emigration&&S.emigration.countryHistory)?S.emigration.countryHistory.slice(-12):[]; _h.push({country:S.country, ageArrived:0, gen:S.legacyGen||1, born:true});
     S.emigration={ bornCountry:S.country, currentCountry:S.country, countryHistory:_h, residencyStatus:'citizen', yearsInCurrentCountry:0, naturalizationProgress:100, cultureAdaptation:100 }; }
   S.scheduled=[]; S.fired={}; S.flags={}; S.passport=false; S.signature='';
+  if(_diaspora) setFlag('diaspora_heir');   // (after the flag wipe) this generation grew up on the other side of the family's split
   S.ledger=_inheritedFacts;   // THE LEDGER carries: the bloodline's deeds (scandals, honors) follow the heir at reduced weight
   S.feuds=_inheritedFeuds;    // BLOOD FEUDS carry: the heir inherits the family's living enemies
   S.investments={stocks:0,spec:0,cost:0};   // ECONOMY: estate inherited as cash; worldYear & priceIndex CARRY (the century rolls on)
@@ -5933,7 +5953,7 @@ function renderAssets(){ const v=document.getElementById('assetsView'); if(!v||!
   const a=S.assets||{properties:[],vehicles:[],belongings:[]};
   if(a.properties.length){ h+=`<div class="genlabel">🏠 Properties</div>`;
     h+=a.properties.map((p,i)=>`<div class="platrow" onclick="ownedProperty(${i})"><div class="picon" style="background:#222b37">${p.icon}</div>
-      <div class="pinfo"><div class="pn">${p.type}${p.primary?' · 🏡 home':''}</div><div class="pf">${p.br}br/${p.ba}ba · worth ${fcm(p.value)}</div>
+      <div class="pinfo"><div class="pn">${p.type}${p.primary?' · 🏡 home':''}${(p.country&&p.country!==S.country)?` · <span style="color:var(--warn)">${countryFlag(p.country)} abroad</span>`:''}</div><div class="pf">${p.br}br/${p.ba}ba · worth ${fcm(p.value)}</div>
         <div class="relbars">${pbar('Condition',p.condition)}</div></div><span class="parrow">›</span></div>`).join(''); }
   if(a.vehicles.length){ h+=`<div class="genlabel">🚗 Vehicles</div>`;
     h+=a.vehicles.map(vh=>`<div class="platrow"><div class="picon" style="background:#222b37">${vh.icon}</div>
@@ -9788,6 +9808,7 @@ function emigrateCore(country, opts, city, oldCountry){ opts=opts||{}; emInit();
   if(EMIG_CFG.culture) e.cultureAdaptation=clamp(28+Math.round(S.stats.smarts/6),8,68);
   e.countryHistory.push({country, ageArrived:S.age, gen:S.legacyGen||1});
   setFlag('emigrant'); if(country!==e.bornCountry) setFlag('lives_abroad');
+  (S.assets&&S.assets.properties||[]).forEach(pr=>{ if(!pr.country) pr.country=oldCountry; });   // 🌍 P4: homes you own stay behind — held abroad
   addStress(rng(4,10)); if(typeof haptics!=='undefined'&&haptics.heavy) try{ haptics.heavy(); }catch(_){}
   return {oldCountry, city:S.city, left, ldCount};
 }
