@@ -2080,7 +2080,7 @@ function lifeRecord(){
     hobbyMasterCount: Object.values(S.hobbies||{}).filter(h=>h.level>=100).length,
     hobbyWins: Object.values(S.hobbies||{}).reduce((a,h)=>a+(h.compWins||0),0),
     endurance: (S.endurance!=null?S.endurance:-1),
-    bestFriend: has('has_best_friend'),
+    bestFriend: has('has_best_friend'), hadNemesis: has('has_nemesis'),
   };
 }
 const RIBBONS=[
@@ -2169,6 +2169,7 @@ const RIBBONS=[
   {id:'ironlegs', name:'Ironlegs', icon:'🦿', rarity:'legendary', priority:8, desc:'Conquer an ultramarathon.', q:r=>r.endurance>=4?1:0},
   // 🤝 Bonds
   {id:'kindred', name:'Kindred Spirit', icon:'🤝', rarity:'rare', priority:5, desc:'Forge a lifelong best friendship.', q:r=>r.bestFriend?1:0},
+  {id:'archnemesis', name:'Archnemesis', icon:'😈', rarity:'rare', priority:4, secret:true, desc:'Name a sworn nemesis.', q:r=>r.hadNemesis?1:0},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
@@ -8096,6 +8097,10 @@ function openPerson(id){
     {label:'💬 Conversation', fn:()=>personAction(id,'talk')},
   ];
   if(!p.romantic && !p.bestFriend && (p.affinity||0)>=80) ch.push({label:'🤝 Become Best Friends', alt:true, fn:()=>makeBestFriend(id)});
+  if(!p.romantic){
+    if(p.nemesis){ ch.push({label:'🕊️ Bury the Hatchet', alt:true, fn:()=>nemesisAct(id,'reconcile')}); ch.push({label:'🔥 Escalate the Feud', alt:true, fn:()=>nemesisAct(id,'escalate')}); }
+    else if((p.affinity||50)<30) ch.push({label:'😠 Make Them Your Nemesis', alt:true, fn:()=>makeNemesis(id)});
+  }
   const married = p.rel==='Husband'||p.rel==='Wife';
   if(p.romantic){                                   // your partner / spouse — romance options
     ch.push({label:'💘 Date Night', alt:true, fn:()=>personAction(id,'datenight')});
@@ -8134,7 +8139,7 @@ function openPerson(id){
   const moments = km.length? `<br><b style="color:var(--text)">Defining moments</b>`+km.map(m=>`<br>${MOMENT_EMO[m.type]||'•'} <i>“${m.description}”</i> <span style="font-size:11px">(age ${m.ageAtEvent})</span>`).join('') : '';
   const summ = p.summary? `<br><span style="font-size:12px">📖 <i>${p.summary}</i></span>` : '';
   const detail=`<div style="text-align:left;font-size:13px;color:var(--dim);line-height:1.6">
-    ${p.rel}${p.fam?` · Age ${p.age}`:''} · <b style="color:${col}">${relStatus(p)}</b> · ${TRAIT_EMO[tr]||'🙂'} <b style="color:var(--text)">${tr.charAt(0).toUpperCase()+tr.slice(1)}</b>${p.bestFriend?` · <b style="color:var(--good)">🤝 Best Friend</b>`:''}${p.tricks&&p.tricks.length?`<br>🎓 Knows ${p.tricks.length} trick${p.tricks.length>1?'s':''}`:''}
+    ${p.rel}${p.fam?` · Age ${p.age}`:''} · <b style="color:${col}">${relStatus(p)}</b> · ${TRAIT_EMO[tr]||'🙂'} <b style="color:var(--text)">${tr.charAt(0).toUpperCase()+tr.slice(1)}</b>${p.bestFriend?` · <b style="color:var(--good)">🤝 Best Friend</b>`:''}${p.nemesis?` · <b style="color:var(--bad)">😈 Nemesis</b>`:''}${p.tricks&&p.tricks.length?`<br>🎓 Knows ${p.tricks.length} trick${p.tricks.length>1?'s':''}`:''}
     ${occ?`<br>💼 ${occ}`:''}${est!=null?`<br>💰 ~${fcm(est)} est. net worth${p.affinity<60?' <span style="font-size:11px">(likely more — get closer)</span>':''}`:''}
     ${p.custody&&(p.age||0)<18?`<br>🧑‍⚖️ Custody: <b style="color:var(--text)">${p.custody==='you'?'lives with you':p.custody==='ex'?'lives with '+(p.coParentName||'your ex'):p.custody==='foster'?'in foster care':'joint custody'}</b>`:''}
     ${p.adopted?`<br>💛 <b style="color:var(--text)">Adopted</b> into the family`:''}${p.privateSchool?`<br>🎓 <b style="color:var(--text)">Private school</b>${p.eduInvest?` · ${p.eduInvest}yr`:''}`:''}${p.nanny?`<br>👶 <b style="color:var(--text)">Nanny</b> in the home`:''}
@@ -8726,6 +8731,29 @@ function makeBestFriend(id){ const p=S.people[id]; if(!p||!p.alive||p.bestFriend
 function friendshipYear(){ if(!S||!S.alive)return; const bffs=Object.values(S.people).filter(p=>p.alive&&p.bestFriend); if(!bffs.length)return;
   addMood(rng(1,3)); for(const p of bffs){ p.affinity=clamp(p.affinity+rng(0,1)); }   // a best friend is steady support & their bond resists decay
   if(rng(0,100)<12){ const p=bffs[rng(0,bffs.length-1)]; addMood(rng(2,5)); chg('happy',rng(1,3)); pushLog(`🤝 My best friend ${p.name} was there for me this year.`,[['good','A friend in your corner']]); } }
+/* 😈 NEMESIS — mark a bitter enemy (affinity<30) as a personal rival, then reconcile or escalate. Modalpick leaves → no logAct. */
+function makeNemesis(id){ const p=S.people[id]; if(!p||!p.alive||p.nemesis)return;
+  p.nemesis=true; setFlag('has_nemesis'); addStress(rng(3,8)); driftPers('boldness',1);
+  if(typeof keyMoment==='function') keyMoment(p,'conflict',-20,`Declared ${S.name}'s nemesis.`);
+  pushLog(`😠 ${p.name} is now my <b>sworn nemesis</b>.`,[['bad',`Nemesis: ${p.name}`]]);
+  resultModal('Nemesis', p.name, '😈', [`You mark <b>${p.name}</b> as your nemesis. Every slight will be remembered.`], ()=>openPerson(id)); }
+function nemesisAct(id,kind){ const p=S.people[id]; if(!p||!p.alive||!p.nemesis)return;
+  if(kind==='reconcile'){ const win=rng(0,100) < 40 + (p.trust||0)/4 + S.stats.smarts/8;
+    if(win){ p.nemesis=false; p.affinity=clamp(p.affinity+rng(10,22)); p.trust=clamp((p.trust||30)+rng(5,12)); karma(3); chg('happy',rng(2,5)); addStress(-rng(3,8));
+      if(typeof keyMoment==='function') keyMoment(p,'reconciliation',18,`Made peace with ${S.name} after years of rivalry.`);
+      pushLog(`🕊️ ${p.name} and I finally <b>buried the hatchet</b>.`,[['good',`Made peace with ${p.name}`]]);
+      resultModal('Nemesis','Peace at Last 🕊️','🕊️',[`After all the bad blood, you and <b>${p.name}</b> reconcile. The rivalry is over.`],()=>openPerson(id)); }
+    else { p.affinity=clamp(p.affinity-rng(2,8)); addStress(rng(2,6));
+      pushLog(`🕊️ I tried to make peace with ${p.name}, but they weren't having it.`,[['flag','Reconciliation rebuffed']]);
+      resultModal('Nemesis','Rebuffed 😠','😠',[`You extend an olive branch, but <b>${p.name}</b> snaps it in two. The feud burns on.`],()=>openPerson(id)); } }
+  else { p.affinity=clamp(p.affinity-rng(6,15)); karma(-3); addStress(rng(2,7)); driftPers('warmth',-1);
+    if(typeof spawnFeud==='function' && rng(0,100)<40) spawnFeud(p.name, `Your bitter rivalry with ${p.name}`, rng(20,40), p.id);
+    const roll=rng(0,100); let line;
+    if(roll<20){ chg('happy',-rng(3,8)); line=`It blows up in your face — ${p.name} humiliates you publicly.`; }
+    else if(roll<45){ gainFame(rng(0,2)); line=`You land a blow in the feud — everyone's talking about it.`; }
+    else line=`You feed the feud. The bad blood deepens.`;
+    pushLog(`🔥 I escalated my feud with ${p.name}. ${line}`,[['bad',`Feud with ${p.name}`]]);
+    resultModal('Nemesis','The Feud Deepens 🔥','🔥',[line],()=>openPerson(id)); } }
 // every living connection has an occupation/responsibility — assigned once, then stable
 function npcOcc(p){
   if(p.pet || !p.alive) return '';
@@ -8758,8 +8786,8 @@ function personCard(p){
   const col=pbColor(p.affinity);
   return `<div class="person ${p.alive?'':'dead'}" onclick="openPerson('${p.id}')" style="cursor:pointer">
     <div class="avatar" style="background:linear-gradient(135deg,${col},#3a4658)">${p.name[0]}</div>
-    <div class="meta"><div class="nm">${p.name}${p.bestFriend&&p.alive?' 🤝':''}${p.tricks&&p.tricks.length>=3?' 🎓':''}</div>
-      <div class="rl">${p.bestFriend&&p.alive?'Best Friend · ':''}${p.rel}${p.fam&&p.alive?` · Age ${p.age}`:!p.alive?' · ✝ deceased':''}</div>
+    <div class="meta"><div class="nm">${p.name}${p.bestFriend&&p.alive?' 🤝':''}${p.nemesis&&p.alive?' 😈':''}${p.tricks&&p.tricks.length>=3?' 🎓':''}</div>
+      <div class="rl">${p.bestFriend&&p.alive?'Best Friend · ':''}${p.nemesis&&p.alive?'Nemesis · ':''}${p.rel}${p.fam&&p.alive?` · Age ${p.age}`:!p.alive?' · ✝ deceased':''}</div>
       ${p.alive?`<div class="rl" style="color:${col};font-weight:700">${relStatus(p)}</div>
       <div class="relbars">${pbar('Relationship',p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}</div>`:''}
     </div></div>`;
