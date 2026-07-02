@@ -2083,6 +2083,8 @@ function lifeRecord(){
     hobbyWins: Object.values(S.hobbies||{}).reduce((a,h)=>a+(h.compWins||0),0),
     endurance: (S.endurance!=null?S.endurance:-1),
     bestFriend: has('has_best_friend'), hadNemesis: has('has_nemesis'),
+    abroad: !!(S.emigration && S.emigration.currentCountry && S.emigration.bornCountry && S.emigration.currentCountry!==S.emigration.bornCountry),
+    naturalized: has('naturalized'), migratedGens: (function(){ const cc=new Set((S.emigration&&S.emigration.countryHistory||[]).map(h=>h.country)); return cc.size; })(),
   };
 }
 const RIBBONS=[
@@ -2172,6 +2174,10 @@ const RIBBONS=[
   // 🤝 Bonds
   {id:'kindred', name:'Kindred Spirit', icon:'🤝', rarity:'rare', priority:5, desc:'Forge a lifelong best friendship.', q:r=>r.bestFriend?1:0},
   {id:'archnemesis', name:'Archnemesis', icon:'😈', rarity:'rare', priority:4, secret:true, desc:'Name a sworn nemesis.', q:r=>r.hadNemesis?1:0},
+  // 🌍 Emigration
+  {id:'emigre', name:'Émigré', icon:'🌍', rarity:'rare', priority:6, desc:'Build real wealth in a country you weren\'t born in.', q:r=>Math.min(r.abroad?1:0, _frac(r.nwBase,5e5))},
+  {id:'new_citizen', name:'New Citizen', icon:'🛂', rarity:'rare', priority:5, desc:'Become a naturalized citizen of a new country.', q:r=>r.naturalized?1:0},
+  {id:'old_world_new_world', name:'Old World, New World', icon:'🧭', rarity:'legendary', priority:8, desc:'Carry the bloodline across three or more countries.', q:r=>_frac(r.migratedGens,3)},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
@@ -4191,6 +4197,67 @@ const EVENTS = [
       {label:'Let them go peacefully', tip:'End the suffering', apply:()=>{ pet.alive=false; chg('happy',-rng(5,11)); addStress(rng(4,10)); karma(1); return {text:`You can't bear to see ${pet.name} suffer, so you choose a gentle goodbye. The kindest, hardest call a pet owner makes.`,tags:[['flag',`Said goodbye to ${pet.name}`]]}; }},
     ]};}},
 
+/* ═══════════ 🌍 IMMIGRANT LIFE — beats for a life lived far from home ═══════════ */
+/* Homesickness — the ache for the old country */
+{ id:'em_homesick', once:false, weight:14, when:S=>has('lives_abroad') && S.emigration && (S.emigration.cultureAdaptation||100)<72 && (S.age-(S._lastEmH||-99)>=3),
+  build:S=>{ S._lastEmH=S.age; const home=countryName(S.emigration.bornCountry); return {yr:`Age ${S.age}`, title:'🏠 Homesick',
+    text:`Some nights the ache for <b>${home}</b> is almost physical — the food, the language, the faces you grew up with. How do you cope?`,
+    choices:[
+      {label:'Seek out others from home', tip:'Find your community', apply:()=>{ const e=emInit(); e.cultureAdaptation=clamp((e.cultureAdaptation||50)-rng(0,3),0,100); addMood(rng(3,7)); chg('happy',rng(2,5)); karma(1);
+        return {text:`You find a corner of the city that smells like home — a shop, a café, familiar voices. The ache eases.`,tags:[['good','Found a piece of home']]}; }},
+      {label:'Throw yourself into the new culture', tip:'Adapt & move forward', apply:()=>{ const e=emInit(); e.cultureAdaptation=clamp((e.cultureAdaptation||50)+rng(6,12),0,100); chg('smarts',1); addStress(rng(1,4));
+        return {text:`You stop looking backward and dive into your new home — the language, the customs, the rhythm. It's hard, but you belong a little more each day.`,tags:[['good','Embraced the new country']]}; }},
+      {label:'Sit with the sadness', tip:'Let it wash over you', apply:()=>{ chg('happy',-rng(2,5)); addStress(rng(2,6)); addMood(-rng(2,5));
+        return {text:`You let the homesickness in and mourn the life you left. It's heavy — but grief is part of the road you chose.`,tags:[['flag','Homesick']]}; }},
+    ]};}},
+/* Culture / language shock — early years abroad */
+{ id:'em_cultureshock', once:false, weight:13, when:S=>has('lives_abroad') && S.emigration && (S.emigration.yearsInCurrentCountry||99)<=5 && (S.age-(S._lastEmC||-99)>=2),
+  build:S=>{ S._lastEmC=S.age; const here=countryName(S.emigration.currentCountry); const mishap=pick(['badly mangle a common phrase and everyone laughs','miss an unspoken custom and cause offence','get lost because you can\'t read the signs','order something completely wrong at a restaurant','misunderstand a joke and reply seriously']); return {yr:`Age ${S.age}`, title:'🗣️ Lost in Translation',
+    text:`In <b>${here}</b>, you ${mishap}. The culture gap is real. How do you handle it?`,
+    choices:[
+      {label:'Laugh at yourself', tip:'Roll with it', apply:()=>{ const e=emInit(); e.cultureAdaptation=clamp((e.cultureAdaptation||50)+rng(3,7),0,100); chg('happy',rng(1,4)); driftPers('warmth',1);
+        return {text:`You laugh along with everyone else. Mistakes are how you learn — and people warm to someone who can laugh at themselves.`,tags:[['good','Took it in stride']]}; }},
+      {label:'Double down on learning the language', tip:'Study hard', apply:()=>{ const e=emInit(); e.cultureAdaptation=clamp((e.cultureAdaptation||50)+rng(8,15),0,100); chg('smarts',rng(1,3)); addStress(rng(1,3)); driftPers('discipline',1);
+        return {text:`You throw yourself into language classes and apps. Fluency is a grind, but every word is a door opening.`,tags:[['good','Studying the language']]}; }},
+      {label:'Get defensive about it', tip:'Blame the locals', apply:()=>{ const e=emInit(); e.cultureAdaptation=clamp((e.cultureAdaptation||50)-rng(2,6),0,100); karma(-1); addStress(rng(2,5));
+        return {text:`You grumble that they should adapt to you, not the other way around. It doesn't make integrating any easier.`,tags:[['bad','Resisted adapting']]}; }},
+    ]};}},
+/* A relative back home falls ill — the emigrant's dilemma */
+{ id:'em_relative_ill', once:false, weight:13, when:S=>has('lives_abroad') && Object.values(S.people).some(p=>p.alive&&p.fam&&p.coLocated===false) && (S.age-(S._lastEmR||-99)>=4),
+  build:S=>{ S._lastEmR=S.age; const kin=Object.values(S.people).filter(p=>p.alive&&p.fam&&p.coLocated===false); const r=kin[rng(0,kin.length-1)]; const home=countryName(r.countryOf||S.emigration.bornCountry); return {yr:`Age ${S.age}`, title:'📞 Bad News From Home',
+    text:`A phone call in the night: your ${r.rel.toLowerCase()}, <b>${r.name}</b>, has fallen seriously ill back in ${home}. You're an ocean away. What do you do?`,
+    choices:[
+      {label:'Drop everything and fly back', tip:'Be there in person', apply:()=>{ const cost=Math.round(rng(1500,9000)*priceMult()); if(S.money>0)money(-Math.min(cost,S.money)); rel(r.id,+rng(10,20),+rng(6,12),`You crossed the world to be at their bedside.`); addStress(rng(3,8)); karma(4);
+        return {text:`You book the first flight and rush to ${r.name}'s side. Whatever the outcome, you were <b>there</b> — and they'll never forget it. (${cur()}${cost.toLocaleString()})`,tags:[['good',`Flew home for ${r.name}`]]}; }},
+      {label:'Send money and call every day', tip:'Support from afar', apply:()=>{ const help=Math.round(rng(500,5000)*priceMult()); if(S.money>0)money(-Math.min(help,S.money)); rel(r.id,+rng(4,9),+rng(2,5),`You supported them through illness from abroad.`); karma(3); addStress(rng(2,6));
+        return {text:`You can't be there, but you send what you can and call every single day. ${r.name} feels your love across the distance — even if you wish you could hold their hand.`,tags:[['good',`Supported ${r.name} from afar`]]}; }},
+      {label:'You just can\'t make it work', tip:'The hardest part of leaving', apply:()=>{ rel(r.id,-rng(2,6),-rng(1,3),`You couldn't be there when they were ill.`); chg('happy',-rng(4,9)); addStress(rng(5,12)); addTrauma&&addTrauma('grief',rng(10,20),`being too far away when ${r.name} needed you`); setFlag('immigrant_guilt');
+        return {text:`Between money, work, and distance, you simply can't get back. The guilt of the emigrant sits heavy — this is the price no one warns you about.`,tags:[['bad','Too far away']]}; }},
+    ]};}},
+/* Finding the diaspora community */
+{ id:'em_community', once:true, weight:14, when:S=>has('lives_abroad') && S.emigration && (S.emigration.yearsInCurrentCountry||0)>=1,
+  build:S=>{ const home=countryName(S.emigration.bornCountry); return {yr:`Age ${S.age}`, title:'🫂 Your People, Far From Home',
+    text:`You discover a whole community of fellow <b>${home}</b> émigrés in your new city — a festival, a place of worship, a weekly gathering. Do you join?`,
+    choices:[
+      {label:'Embrace the community', tip:'Belonging in a new land', apply:()=>{ setFlag('found_community'); chg('happy',rng(4,9)); addMood(rng(4,8)); karma(2); const e=emInit(); e.cultureAdaptation=clamp((e.cultureAdaptation||50)+rng(2,6),0,100);
+        const g=rng(0,1)?'m':'f'; const id='diaspora_'+Object.keys(S.people).length; S.people[id]=person(id, nm(g)+' '+pick(LAST), 'Friend', rng(55,70), rng(45,62), {gender:g, gen:0, age:S.age+rng(-8,8)}); S.people[id].coLocated=true; S.people[id].countryOf=S.country;
+        return {text:`You throw yourself into the community and find a second family far from home — old traditions, new friends, and the comfort of not having to explain yourself.`,tags:[['good','Found your people']]}; }},
+      {label:'Keep to yourself', tip:'Forge your own path', apply:()=>{ const e=emInit(); e.cultureAdaptation=clamp((e.cultureAdaptation||50)+rng(1,4),0,100); driftPers('discipline',1);
+        return {text:`You decide to stand on your own two feet and integrate fully into your new country. A lonelier road, but your own.`,tags:[['flag','Went it alone']]}; }},
+    ]};}},
+/* Sending money home — the remittance */
+{ id:'em_remittance', once:false, weight:12, when:S=>has('lives_abroad') && (S.money||0)>3000 && Object.values(S.people).some(p=>p.alive&&p.fam&&p.coLocated===false) && (S.age-(S._lastEmM||-99)>=3),
+  build:S=>{ S._lastEmM=S.age; const kin=Object.values(S.people).filter(p=>p.alive&&p.fam&&p.coLocated===false); const r=kin[rng(0,kin.length-1)]; return {yr:`Age ${S.age}`, title:'💸 Sending Money Home',
+    text:`Your family back home is struggling, and you've built a better life abroad. Do you send money home to <b>${r.name}</b> and the others?`,
+    choices:[
+      {label:'Send generously', tip:'They sacrificed for you', apply:()=>{ const amt=Math.round(Math.min(S.money*0.15, rng(2000,20000))); money(-amt); kin.forEach(k=>rel(k.id,+rng(3,7),+rng(2,4),`You sent money home to support them.`)); karma(5); chg('happy',rng(1,4)); setFlag('breadwinner_abroad');
+        return {text:`You wire <b>${cur()}${amt.toLocaleString()}</b> home. It changes lives back there — a new roof, school fees, medicine. This is why you left.`,tags:[['good',`Sent ${cur()}${amt.toLocaleString()} home`]]}; }},
+      {label:'Send a modest amount', tip:'Help, but stay stable', apply:()=>{ const amt=Math.round(Math.min(S.money*0.05, rng(500,4000))); money(-amt); rel(r.id,+rng(1,4),+rng(1,3),`You sent a little money home.`); karma(2);
+        return {text:`You send <b>${cur()}${amt.toLocaleString()}</b> — enough to help, without stretching yourself thin.`,tags:[['good','Sent a little home']]}; }},
+      {label:'You need it for yourself right now', tip:'Build your own footing first', apply:()=>{ kin.forEach(k=>rel(k.id,-rng(1,4),0,`You kept your money for yourself this time.`)); addStress(rng(1,4));
+        return {text:`You keep the money to secure your own footing first. It's practical — but you feel the weight of expectation back home.`,tags:[['flag','Kept it this time']]}; }},
+    ]};}},
+
 /* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
 { id:'award_nom', once:false, weight:14,
   when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
@@ -5444,7 +5511,10 @@ function render(){
   const _livingPpl=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used)).length;
   const _bffN=Object.values(S.people).filter(p=>p.alive&&p.bestFriend).length;
   const _nemN=Object.values(S.people).filter(p=>p.alive&&p.nemesis).length;
-  const _summary=`<div class="card profile" style="padding:9px 12px;margin-bottom:8px"><div class="pf" style="font-size:12.5px">👥 <b>${_livingPpl}</b> living relationship${_livingPpl===1?'':'s'}${_bffN?` · 🤝 <b>${_bffN}</b> best friend${_bffN>1?'s':''}`:''}${_nemN?` · 😈 <b>${_nemN}</b> ${_nemN>1?'nemeses':'nemesis'}`:''}</div></div>`;
+  const _ldN=Object.values(S.people).filter(p=>p.alive&&!p.pet&&p.coLocated===false).length;
+  const _em=S.emigration; const _resLbl={immigrant:'🛂 Immigrant',permanentResident:'🪪 Permanent resident',undocumented:'⚠️ Undocumented',citizen:''}[(_em&&_em.residencyStatus)||'citizen'];
+  const _resLine=(_em && _em.currentCountry && _em.currentCountry!==_em.bornCountry) ? `<div class="pf" style="font-size:11.5px;color:var(--dim);margin-top:3px">${countryFlag(_em.currentCountry)} Living in ${countryName(_em.currentCountry)}${_resLbl?` · ${_resLbl}`:` · citizen`}${_em.residencyStatus!=='citizen'?` · naturalization ${_em.naturalizationProgress||0}%`:''} · born in ${countryFlag(_em.bornCountry)} ${countryName(_em.bornCountry)}</div>` : '';
+  const _summary=`<div class="card profile" style="padding:9px 12px;margin-bottom:8px"><div class="pf" style="font-size:12.5px">👥 <b>${_livingPpl}</b> living relationship${_livingPpl===1?'':'s'}${_bffN?` · 🤝 <b>${_bffN}</b> best friend${_bffN>1?'s':''}`:''}${_nemN?` · 😈 <b>${_nemN}</b> ${_nemN>1?'nemeses':'nemesis'}`:''}${_ldN?` · 🌍 <b>${_ldN}</b> long-distance`:''}</div>${_resLine}</div>`;
   const _allBtn=_livingPpl>=2 ? hubCard('⏱️','Spend Time With All','Invest in every relationship at once',"spendTimeAll()") : '';
   document.getElementById('peopleView').innerHTML=hubBack('people')+_summary+_allBtn+ph;
   renderCareer();
@@ -8176,8 +8246,8 @@ function openPerson(id){
 }
 function spendTimeAll(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
   logAct('call',{fn:'spendTimeAll'});
-  const ppl=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used));   // everyone interactable (pets/avoiding-boss excluded)
-  if(ppl.length<2){ resultModal('Relationships','Nobody Around','🤷',[`There's no one to spend time with right now.`],()=>setTab('people')); return; }
+  const ppl=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used)&&p.coLocated!==false);   // in-person only — long-distance folk can't be visited (pets/avoiding-boss excluded too)
+  if(ppl.length<2){ resultModal('Relationships','Nobody Around','🤷',[`There's no one nearby to spend time with right now.${Object.values(S.people).some(x=>x.alive&&x.coLocated===false)?' (Your loved ones abroad are only a call — or a reunion — away.)':''}`],()=>setTab('people')); return; }
   let invested=0, refused=0;
   ppl.forEach(p=>{ const willing = rng(0,100) < clamp(66 + (p.affinity-50)*0.5, 22, 96);   // the closer they are, the likelier they're up for it
     if(willing){ rel(p.id, +rng(3,6), +rng(1,3), 'Spent quality time together.'); invested++; }
@@ -9254,6 +9324,8 @@ function emigrationYear(){ if(!S||!S.alive) return; const e=emInit();
   if(EMIG_CFG.culture && (e.cultureAdaptation||0)<100) e.cultureAdaptation=clamp((e.cultureAdaptation||0)+rng(3,8),0,100);
   // long-distance ties strain and decay faster without in-person contact
   for(const p of Object.values(S.people)){ if(p.alive && !p.pet && p.coLocated===false){ p.affinity=clamp((p.affinity||50)-rng(1,4)); if(p.trust!=null) p.trust=clamp(p.trust-rng(0,2)); } }
+  // 🏠 homesickness — far from home, poorly adapted, with family abroad, the spirit aches
+  if(EMIG_CFG.culture && e.currentCountry!==e.bornCountry && (e.cultureAdaptation||100)<45 && Object.values(S.people).some(p=>p.alive&&p.fam&&p.coLocated===false) && rng(0,100)<25){ chg('happy',-rng(1,3)); addMood(-rng(1,3)); }
 }
 /* 🌍 REUNION — bridge the distance in person, flavored as international travel (air or, in old eras, a long voyage). */
 function reunionMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
