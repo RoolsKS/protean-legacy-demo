@@ -8868,24 +8868,48 @@ function spendTimeAll(){ if(!S){toast('Start a life first.');return;} if(isLocke
   logAct('call',{fn:'spendTimeAll'});
   const ppl=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used)&&p.coLocated!==false);   // in-person only — long-distance folk can't be visited (pets/avoiding-boss excluded too)
   if(ppl.length<2){ resultModal('Relationships','Nobody Around','🤷',[`There's no one nearby to spend time with right now.${Object.values(S.people).some(x=>x.alive&&x.coLocated===false)?' (Your loved ones abroad are only a call — or a reunion — away.)':''}`],()=>setTab('people')); return; }
-  let invested=0, refused=0;
+  // per-person flavor: a specific shared moment for the willing, a specific reason for those who beg off
+  const WARM=[ n=>`baked a disaster of a cake with ${n}`, n=>`got lost in old photos with ${n}`, n=>`took ${n} on a long, aimless drive`, n=>`stayed up too late talking with ${n}`,
+    n=>`beat ${n} at cards (they'd dispute that)`, n=>`walked the whole neighborhood with ${n}`, n=>`cooked ${n}'s favorite meal together`, n=>`sat on the porch with ${n} till the streetlights came on`,
+    n=>`fell down a shared rabbit hole of memories with ${n}`, n=>`laughed until it hurt with ${n}`, n=>`fixed something around the house with ${n}`, n=>`shared a quiet coffee with ${n} that said more than words` ];
+  const COOL=[ n=>`${n} was buried in work and could only wave`, n=>`${n} said "maybe next week" for the third time`, n=>`${n} was in a mood and you gave them space`, n=>`${n} was out the moment you called`,
+    n=>`${n} kept it to a polite five minutes`, n=>`${n} had somewhere else to be`, n=>`${n} wasn't picking up`, n=>`${n} just wanted to be left alone today` ];
+  const warmHits=[], coolHits=[]; let invested=0, refused=0;
   ppl.forEach(p=>{ const willing = rng(0,100) < clamp(66 + (p.affinity-50)*0.5, 22, 96);   // the closer they are, the likelier they're up for it
-    if(willing){ rel(p.id, +rng(3,6), +rng(1,3), 'Spent quality time together.'); invested++; }
-    else { rel(p.id, -1, 0); refused++; } });
+    const fn=p.name.split(' ')[0];
+    if(willing){ rel(p.id, +rng(3,6), +rng(1,3), 'Spent quality time together.'); invested++; if(warmHits.length<3) warmHits.push(pick(WARM)(fn)); }
+    else { rel(p.id, -1, 0); refused++; if(coolHits.length<2) coolHits.push(pick(COOL)(fn)); } });
   chg('happy', clamp(Math.round(invested/3),1,8));
-  pushLog(`⏱️ I made the rounds — invested time in <b>${invested}</b> relationship${invested===1?'':'s'}${refused?`, but ${refused} ${refused===1?"wasn't":"weren't"} up for it`:''}.`,[['good',`Spent time · ${invested}`]]);
-  resultModal('Relationships','Quality Time ⏱️','⏱️',[`You invested time in <b>${invested}</b> relationship${invested===1?'':'s'}.`, refused?`<b>${refused}</b> ${refused===1?"wasn't":"weren't"} in the mood — you can't win them all.`:`Everyone was glad to see you. 💛`],()=>setTab('people')); }
+  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  const warmLine = warmHits.length ? cap(warmHits.join(', ')) + (invested>warmHits.length?`, and made time for ${invested-warmHits.length} more`:'') + '.' : '';
+  const coolLine = coolHits.length ? cap(coolHits.join('; ')) + (refused>coolHits.length?`, and ${refused-coolHits.length} other${refused-coolHits.length===1?'':'s'} slipped away too`:'') + '.'
+    : (refused?`${refused} ${refused===1?"wasn't":"weren't"} up for it.`:'');
+  pushLog(`⏱️ I made the rounds. ${warmLine}${coolLine?' '+coolLine:''}`,[['good',`Spent time · ${invested}`]]);
+  resultModal('Relationships','Quality Time ⏱️','⏱️',[
+    invested?warmLine:`You reached out to everyone nearby.`,
+    refused?coolLine:(invested?`Not a soul turned you away — a good day for the family. 💛`:''),
+    invested>=Math.max(2,Math.round(ppl.length*0.7))?`A day well spent — the whole house feels warmer for it.`:''
+  ].filter(Boolean),()=>setTab('people')); }
 function personAction(id,action){
   const p=S.people[id]; if(!p||!p.alive)return;
   const before=p.affinity, warm=p.affinity>=45;
   let lines=[];
   if(action==='spend'){ rel(id,+6,+4,'Spent quality time together.'); chg('happy',2);
-    const act=pick(['went for a long walk','cooked a meal together','sat on the porch for hours','watched old films','wandered the city','played board games all afternoon']);
-    lines=[`You ${act} with ${p.name}.`, warm?`They relaxed and really opened up — you both lost track of time. You felt closer than ever. 💛`:`It was a quiet, slightly awkward afternoon, but you made an effort.`]; }
+    const rel_l=(p.rel||'').toLowerCase();
+    const act=pick(['went for a long, rambling walk','cooked a chaotic meal together','sat on the porch until the streetlights came on','marathoned old films with too much popcorn','wandered the city with no destination',
+      'played board games and argued over the rules','tackled a jigsaw puzzle that fought back','baked something that did not survive the oven','browsed a flea market for hours','got ice cream and people-watched',
+      'washed the car and started a water fight','planted things in the garden','fell into an all-day video-game session','drove out to watch the sunset','built a blanket fort just because','sorted through a shoebox of old photos']);
+    const warmEnd=pick([`They relaxed and really opened up — you both lost track of time. 💛`,`Somewhere in the afternoon, the small talk fell away and the real talk began. You felt closer than ever.`,`They laughed that laugh you don't hear often enough. A good, unhurried day.`,`No phones, no clocks, just the two of you. You'll both remember this one.`,`They said "we should do this more" — and for once, meant it.`,`Halfway through they went quiet, then told you something they'd never told anyone. 💛`]);
+    const coolEnd=pick([`It was a quiet, slightly awkward afternoon — but you showed up, and that counts.`,`They were a little guarded, checking their phone more than you'd like. Still, a start.`,`Not every visit is magic. This one was… fine. You made the effort.`,`They warmed up by the end, if only a little. Rome wasn't built in a day.`]);
+    lines=[`You ${act} with ${p.name}${/friend|classmate/.test(rel_l)?'':`, your ${rel_l}`}.`, warm?warmEnd:coolEnd]; }
   else if(action==='talk'){ rel(id,+3,+2,'Had a good chat.');
-    const topic=pick(['old times','their childhood','your future plans','family gossip','the state of the world','a show you both love','their work','life, the universe, and everything']);
-    const react=warm?pick(['hung on every word','laughed the whole time','shared something personal','really listened']):pick(['kept it pretty short','seemed a little distant','was clearly somewhere else']);
-    lines=[`You and ${p.name} got talking about ${topic}. They ${react}.`, warm?`You walked away feeling understood — and so did they. 😊`:`It was fine, but neither of you felt much of a spark.`]; }
+    const topic=pick(['old times','their childhood','your wildest future plans','the family gossip','the sorry state of the world','a show you both can\'t shut up about','how work\'s really going','life, the universe, and everything',
+      'the one that got away','money and how there\'s never enough','who in the family owes who an apology','the trip you keep saying you\'ll take','their regrets','the good old days that maybe weren\'t','what keeps them up at night','a dream they\'ve never said out loud']);
+    const warmReact=pick(['hung on every word','laughed until they wheezed','let their guard all the way down','told you a secret and swore you to it','finished your sentences','got misty-eyed and didn\'t hide it','argued with you happily for an hour','pulled their chair closer as it got real']);
+    const coolReact=pick(['kept it to clipped one-word answers','clearly had one foot out the door','changed the subject twice','stayed polite but far away','checked the time more than once','gave you the version they give everyone']);
+    const warmEnd=pick([`You walked away feeling understood — and so did they. 😊`,`Two hours vanished. Neither of you noticed.`,`Some conversations rewire a relationship. This was one.`,`You know each other a little better now, and that's the whole point.`]);
+    const coolEnd=pick([`It was fine — the words were there, the spark wasn't.`,`You talked. You're not sure they listened. Maybe next time.`,`Pleasant enough, but you left feeling you'd talked at them, not with them.`]);
+    lines=[`You and ${p.name} got into it about ${topic}. They ${warm?warmReact:coolReact}.`, warm?warmEnd:coolEnd]; }
   else if(action==='compliment'){ const ok=p.affinity>30; rel(id, ok?4:-2, ok?2:-1);
     lines = ok?[`You told ${p.name} how much they mean to you.`,`They lit up — it clearly landed, and they felt appreciated. 😊`]:[`You laid the praise on thick with ${p.name}.`,`They found it hollow and brushed it off. You felt a bit foolish. 😬`]; }
   else if(action==='gift'){ const cost=rng(50,500); if(!spend(cost))return; rel(id,+8,+5,'You gave them a gift.');
