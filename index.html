@@ -1253,6 +1253,8 @@ function startLife(opts){
   S.honorific = null;          // earned epithet shown on the profile/gravestone (per-life cosmetic)
   applyEraTheme(S.era);
   // Build a full, living family tree (grandparents → cousins → siblings)
+  // your typed surname IS the family's surname — the whole paternal line must carry it (captured in birthOpts → replay-safe)
+  S._customSurname = opts.name ? String(opts.name).trim().split(/\s+/).pop() : null;
   // 👑 FAMILY WEALTH — the origin shapes the WHOLE family (parents' careers, family wealth, the neighborhood),
   // so it must be locked in BEFORE the family tree is built. Captured in birthOpts → replays deterministically.
   S.origin=opts.origin||'normal';
@@ -1464,7 +1466,7 @@ function famName(g, side){ const last = side==='maternal' ? (S.maidenName||S.sur
   const mid = rand()<0.3 ? ' '+nm(g) : '';
   return nm(g)+mid+' '+last; }
 function buildFamily(forceGender){
-  const last=pick(LAST); S.surname=last;
+  const last=(S._customSurname&&S._customSurname.length>1)?S._customSurname:pick(LAST); S.surname=last;
   S.maidenName=pick(LAST.filter(l=>l!==last))||last;   // the mother's side of the family keeps her maiden name
   S.gender=forceGender||(rand()<.5?'m':'f');
   S.name=nm(S.gender)+' '+last;
