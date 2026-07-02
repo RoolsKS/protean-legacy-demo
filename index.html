@@ -5183,9 +5183,15 @@ function lifeReview(){ if(!S)return;
   const nw=Math.max(netWorth(), S.peakMoney||0);
   const kids=Object.values(S.people||{}).filter(p=>p.gen>=1).length;
   const career=(typeof activeSpecialCareer==='function'&&activeSpecialCareer()) ? activeSpecialCareer().name : (S.job?jobTitle(S.job):(has('graduated_college')?'Graduate':'—'));
+  // notable-life highlights drawn from the newer systems
+  const hi=[];
+  if(has('founder')) hi.push(`🚀 Founder${S.business&&S.business.founded?` of ${S.business.name}`:''}`);
+  if((S.endurance!=null?S.endurance:-1)>=0 && typeof ENDURANCE!=='undefined') hi.push(`🏃 ${ENDURANCE[S.endurance].name} finisher`);
+  { const bf=Object.values(S.people||{}).find(p=>p.bestFriend); if(bf) hi.push(`🤝 Best friend: ${bf.name}`); else if(has('has_best_friend')) hi.push(`🤝 Had a lifelong best friend`); }
+  { const hb=Object.keys(S.hobbies||{}).filter(k=>typeof hobbyDef==='function'&&hobbyDef(k)); const top=hb.sort((a,b)=>S.hobbies[b].level-S.hobbies[a].level)[0]; if(top && S.hobbies[top].level>=25) hi.push(`${hobbyDef(top).icon} ${hobbyTier(S.hobbies[top].level)} ${hobbyDef(top).name}`); }
   const head=`<div style="background:var(--card2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;line-height:1.7">
     <b>${S.name}</b> · lived to <b>${S.age}</b> · Gen ${S.legacyGen||1}<br>
-    <span style="color:var(--dim)">Peak worth</span> ${fcm(nw)} · <span style="color:var(--dim)">Fame</span> ${Math.max(S.fame||0,S.peakFame||0)} · <span style="color:var(--dim)">Karma</span> ${S.karma||0} · <span style="color:var(--dim)">Children</span> ${kids}${career&&career!=='—'?`<br><span style="color:var(--dim)">Best known as</span> ${career}`:''}</div>`;
+    <span style="color:var(--dim)">Peak worth</span> ${fcm(nw)} · <span style="color:var(--dim)">Fame</span> ${Math.max(S.fame||0,S.peakFame||0)} · <span style="color:var(--dim)">Karma</span> ${S.karma||0} · <span style="color:var(--dim)">Children</span> ${kids}${career&&career!=='—'?`<br><span style="color:var(--dim)">Best known as</span> ${career}`:''}${hi.length?`<br><span style="color:var(--dim)">Also</span> ${hi.join(' · ')}`:''}</div>`;
   const CAP=64; const shown=notable.slice(-CAP); const trimmed=notable.length-shown.length;
   const rows=shown.map(l=>{ const t=l.tags.find(x=>['good','bad','echo'].includes(x[0])); const col=t[0]==='good'?'var(--good)':t[0]==='bad'?'var(--bad)':'var(--gold,#f5c451)';
     const txt=(l.html||'').replace(/<[^>]+>/g,'').trim(); const snip=txt.length>92?txt.slice(0,90)+'…':txt;
