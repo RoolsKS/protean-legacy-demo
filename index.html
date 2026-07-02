@@ -4435,6 +4435,59 @@ const EVENTS = [
         return {text:`You keep the money to secure your own footing first. It's practical — but you feel the weight of expectation back home.`,tags:[['flag','Kept it this time']]}; }},
     ]};}},
 
+/* --- 🌍 EMIGRATION P2: FOREIGN OPPORTUNITY OFFERS — the world comes knocking. Accepting emigrates
+   via emigrateCore (modal-free); the sponsor handles the paperwork (passport granted if missing). --- */
+{ id:'em_offer_college', once:true, weight:16,
+  when:S=>S.age>=17&&S.age<=19 && (S.grades||0)>=65 && S.eduLevel==='high',
+  build:S=>{ const pool=Object.keys(COUNTRIES).filter(c=>c!==S.country&&(COUNTRIES[c].edu||0)>=80); const dest=pool.length?pick(pool):pick(Object.keys(COUNTRIES).filter(c=>c!==S.country)); const d=COUNTRIES[dest]; const grant=rng(8000,20000);
+    return {yr:`Age ${S.age}`, title:'🎓 A Letter From Abroad',
+    text:`A thick envelope, foreign stamps. A university in <b>${d.name}</b> ${d.flag} has seen your grades — they're offering a <b>full international scholarship</b>: tuition covered, a stipend of <b>${cur()}${grant.toLocaleString()}</b>, visa sponsored. It means an ocean between you and everyone you know.`,
+    choices:[
+      {label:`✈️ Accept — study in ${d.name}`, tip:'Leave it all behind for the chance of a lifetime', apply:()=>{
+        if(!passportValid()){ S.passport=true; S.passportExpires=S.age+10; }
+        const core=emigrateCore(dest,{}); money(grant); chg('smarts',rng(3,6)); chg('happy',rng(4,9)); setFlag('foreign_scholarship');
+        return {text:`You land in ${core.city}, ${d.name} ${d.flag} with two suitcases and a stipend. Lecture halls in a language of opportunity, a dorm room with a view of somewhere new — and ${core.ldCount?`${core.ldCount} loved one${core.ldCount>1?'s':''} an ocean away`:'a clean horizon'}. The scholarship kid made it out.`,
+          tags:[['good',`Scholarship in ${d.name}`],['flag','Emigrated'],['good',`+${cur()}${grant.toLocaleString()}`]]}; }},
+      {label:'Ask them to defer a year', tip:'Keep the door open', apply:()=>{ chg('smarts',1); setFlag('deferred_abroad');
+        return {text:`You write back asking to defer. They agree — the offer stands, but life has a way of filling a year. The envelope goes in a drawer you'll think about often.`,tags:[['flag','Deferred the offer']]}; }},
+      {label:'Decline — your life is here', apply:()=>{ chg('happy',-rng(1,4)); Object.values(S.people).filter(p=>p.alive&&p.fam&&p.gen<0).slice(0,2).forEach(p=>rel(p.id,+rng(2,5),+rng(1,3),'You chose to stay close to family.'));
+        return {text:`You decline. Your family exhales; your teachers sigh. Some doors you close so others stay open — you'll never fully know what was behind this one.`,tags:[['flag','Stayed home']]}; }},
+    ]};}},
+{ id:'em_offer_scout', once:true, weight:16,
+  when:S=>S.age>=15&&S.age<=18 && typeof schoolAthlete==='function' && !!schoolAthlete(),
+  build:S=>{ const sa=schoolAthlete(); const pool=Object.keys(COUNTRIES).filter(c=>c!==S.country); const dest=pick(pool); const d=COUNTRIES[dest];
+    return {yr:`Age ${S.age}`, title:'🧢 A Scout in the Stands',
+    text:`After the match, a stranger in a club jacket introduces himself — a <b>scout from ${d.name}</b> ${d.flag}. Their academy wants you: full boarding, elite coaching, a real shot at going pro. Your ${sa.label} numbers made it across an ocean before you did.`,
+    choices:[
+      {label:`✈️ Sign with the academy in ${d.name}`, tip:'Chase it', apply:()=>{
+        if(!passportValid()){ S.passport=true; S.passportExpires=S.age+10; }
+        const core=emigrateCore(dest,{keepClub:true}); const prof=sa.prof;
+        if(prof){ if(prof.scoutInterest!=null)prof.scoutInterest=clamp(prof.scoutInterest+rng(12,22),0,100); if(prof.draftStock!=null)prof.draftStock=clamp(prof.draftStock+rng(10,20),0,100); if(prof.nilOfferVal)prof.nilOfferVal=Math.round(prof.nilOfferVal*1.4); }
+        chg('happy',rng(4,9)); setFlag('foreign_academy'); if(typeof addSelfWorth==='function')addSelfWorth(4);
+        return {text:`You sign. Dawn flights, a bunk in ${core.city}, drills in a new language — and coaching that rebuilds your game from the studs up. Scouts watch the academy sides every week now. ${core.ldCount?`Home is ${core.ldCount} phone call${core.ldCount>1?'s':''} away.`:''}`,
+          tags:[['good',`Academy in ${d.name}`],['flag','Emigrated'],['good','Pro pathway boosted']]}; }},
+      {label:'Ask him to watch you one more season', tip:'Prove it at home first', apply:()=>{ const prof=sa.prof; if(prof&&prof.scoutInterest!=null)prof.scoutInterest=clamp(prof.scoutInterest+rng(4,9),0,100); setFlag('scout_watching');
+        return {text:`"One more season, then." He leaves a card. Every match now has one extra pair of eyes in the stands — pressure, or fuel, depending on the day.`,tags:[['flag','Scout is watching'],['good','Scout interest up']]}; }},
+      {label:'Decline — too far, too soon', apply:()=>{ chg('happy',-rng(0,3));
+        return {text:`You shake his hand and say no. He nods like he's heard it a hundred times. On the bus home, you stare out the window and replay the conversation twice.`,tags:[['flag','Stayed home']]}; }},
+    ]};}},
+{ id:'em_offer_job', once:false, weight:13,
+  when:S=>S.age>=22&&S.age<=52 && S.job && !S.job.owner && (S.job.years||0)>=2 && (S.jobPerf||50)>=60 && (S.age-(S._lastEmJob||-99)>=6),
+  build:S=>{ S._lastEmJob=S.age; const pool=Object.keys(COUNTRIES).filter(c=>c!==S.country&&(COUNTRIES[c].edu||0)>=70); const dest=pool.length?pick(pool):pick(Object.keys(COUNTRIES).filter(c=>c!==S.country)); const d=COUNTRIES[dest]; const bump=rng(30,60);
+    return {yr:`Age ${S.age}`, title:'💼 The Overseas Posting',
+    text:`Your boss closes the door. "${S.name.split(' ')[0]}, the ${d.name} ${d.flag} office asked for you by name." The posting: same role, <b>+${bump}% salary</b>, relocation paid, visa sponsored. It's the opportunity — and it's ${d.name}, not here.`,
+    choices:[
+      {label:`✈️ Take the posting in ${d.name}`, tip:'Career leap — ocean included', apply:()=>{
+        if(!passportValid()){ S.passport=true; S.passportExpires=S.age+10; }
+        const core=emigrateCore(dest,{keepJob:true}); S.job.salary=Math.round(S.job.salary*(1+bump/100)); S.jobPerf=clamp((S.jobPerf||50)+rng(3,8)); chg('happy',rng(3,8)); setFlag('expat_posting');
+        return {text:`Relocation crates, a corporate apartment in ${core.city}, and a new badge that opens doors in ${d.name} ${d.flag}. Your salary now reads <b>${cur()}${S.job.salary.toLocaleString()}/yr</b>. ${core.ldCount?`${core.ldCount} loved one${core.ldCount>1?'s are':' is'} suddenly a video call away.`:''} The expat life begins.`,
+          tags:[['good',`Posted to ${d.name}`],['flag','Emigrated'],['good',`Salary +${bump}%`]]}; }},
+      {label:'Negotiate: same raise, stay here', tip:'Leverage without the luggage', apply:()=>{ if(rng(0,100)<35){ S.job.salary=Math.round(S.job.salary*(1+bump/200)); return {text:`You counter: the raise, minus the relocation. The boss haggles, then splits the difference — <b>+${Math.round(bump/2)}%</b> to stay. The ${d.name} office finds someone else; you find a better payslip.`,tags:[['good',`Salary +${Math.round(bump/2)}%`],['flag','Stayed home']]}; }
+        addStress(rng(2,6)); return {text:`You counter. The boss's smile cools: "The offer is the posting." It goes to a colleague — who now outranks you on paper. You'll wonder about ${d.name} at every stand-up.`,tags:[['bad','Gambit failed'],['flag','Stayed home']]}; }},
+      {label:'Decline — roots matter more', apply:()=>{ const sp=S.spouse&&S.people[S.spouse]; if(sp&&sp.alive)rel(sp.id,+rng(2,6),+rng(2,4),'You turned down a posting abroad to stay together.'); chg('happy',rng(0,2));
+        return {text:`You pass. ${(S.spouse&&S.people[S.spouse]&&S.people[S.spouse].alive)?`${S.people[S.spouse].name} squeezes your hand a little tighter that night.`:'Home keeps its claim on you.'} Careers have many rungs; some are just on this side of the water.`,tags:[['flag','Stayed home']]}; }},
+    ]};}},
+
 /* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
 { id:'award_nom', once:false, weight:14,
   when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
@@ -9675,6 +9728,21 @@ function doMove(country, sameCountry, opts){ opts=opts||{}; closeModal(); emInit
     resultModal('Emigrate','New Home','✈️',[`You relocated to <b>${city}, ${COUNTRIES[country].name}</b> ${COUNTRIES[country].flag}!`,`A fresh start in a new place.`],()=>setTab('life')); return;
   }
   // ===== EMIGRATION — leave it all behind =====
+  const core=emigrateCore(country, opts, city, oldCountry);
+  const leftTxt = core.left.length? ` I left behind ${core.left.join(' and ')}.`:''; const ldTxt = core.ldCount? ` ${core.ldCount} loved one${core.ldCount>1?'s are':' is'} now an ocean away.`:'';
+  pushLog(`✈️ I emigrated to <b>${city}, ${COUNTRIES[country].name}</b> ${COUNTRIES[country].flag} (${cur()}${cost.toLocaleString()}).${leftTxt}${ldTxt}`,[['flag',`Emigrated to ${COUNTRIES[country].name}`]]);
+  emArrival(country, core.oldCountry, cost, core.left, core.ldCount);
+}
+/* The modal-free emigration state change — shared by doMove (UI path) and OFFER events (which must not
+   open modals from apply()). Handles job/team leave-behind, long-distance flips, residency reset & trail.
+   NOTE: does NOT pushLog, spend, or open modals — callers own presentation & cost. */
+function emigrateCore(country, opts, city, oldCountry){ opts=opts||{}; emInit();
+  if(oldCountry==null) oldCountry=S.country;   // must be captured BEFORE S.country changes (doMove passes its own)
+  if(city==null){ const cs=COUNTRIES[country].cities; city=cs[0];
+    S.country=country; S.city=city; S.countryPop=countryPop(country);
+    { const csl=COUNTRIES[country].cities||[]; const ci=csl.indexOf(city); if(csl.length<=1) S.cityPop=S.countryPop; else { const share=ci<=0?0.10:ci===1?0.06:0.04; S.cityPop=Math.max(20000,Math.round(S.countryPop*share*(0.7+rand()*0.6))); } }
+    if(S.age>=18) setFlag('moved_out');
+  }
   const left=[];
   if(S.job && !opts.keepJob){ if(!S.job.owner) clearCoworkers(); S.job=null; left.push('your job'); }
   if(S.schoolSport && S.schoolSport.onTeam && !opts.keepClub){ S.schoolSport.onTeam=false; S.schoolSport.squadStatus='notOnTeam'; left.push('your school team'); }
@@ -9689,9 +9757,7 @@ function doMove(country, sameCountry, opts){ opts=opts||{}; closeModal(); emInit
   e.countryHistory.push({country, ageArrived:S.age, gen:S.legacyGen||1});
   setFlag('emigrant'); if(country!==e.bornCountry) setFlag('lives_abroad');
   addStress(rng(4,10)); if(typeof haptics!=='undefined'&&haptics.heavy) try{ haptics.heavy(); }catch(_){}
-  const leftTxt = left.length? ` I left behind ${left.join(' and ')}.`:''; const ldTxt = ldCount? ` ${ldCount} loved one${ldCount>1?'s are':' is'} now an ocean away.`:'';
-  pushLog(`✈️ I emigrated to <b>${city}, ${COUNTRIES[country].name}</b> ${COUNTRIES[country].flag} (${cur()}${cost.toLocaleString()}).${leftTxt}${ldTxt}`,[['flag',`Emigrated to ${COUNTRIES[country].name}`]]);
-  emArrival(country, oldCountry, cost, left, ldCount);
+  return {oldCountry, city:S.city, left, ldCount};
 }
 /* ---- Trips — motels to private villas across the world, rent a car, ball out ---- */
 function passportValid(){ return !!S.passport && (S.passportExpires==null || S.age<=S.passportExpires); }   // a valid (unexpired) passport
