@@ -2198,6 +2198,18 @@ function _eulogy(r, earned, headline){
   if(fact) s+=` History records: ${fact.note}`;
   const hi = r.nwBase>=1e6?'a fortune amassed' : r.fame>=70?'a name on every tongue' : r.karma>=55?'a kind heart' : r.crimeScore>=40?'a fearsome reputation' : r.kids>=3?'a houseful of children' : r.edu>=3?'a brilliant mind' : 'a quiet, ordinary grace';
   s+=` What endured: ${hi}.`;
+  // a personal flourish from the newer chapters of a life (deterministic — chosen by priority, no RNG)
+  const bf=Object.values(S.people||{}).find(p=>p.bestFriend); const bffName=bf?bf.name.split(' ')[0]:(r.bestFriend?'a dear friend':null);
+  const personal = (has('founder')&&S.business&&S.business.founded) ? `They built <b>${S.business.name}</b> from nothing.`
+    : r.founder ? `They founded a company to call their own.`
+    : r.endurance>=4 ? `They conquered an ultramarathon on foot.`
+    : r.endurance>=3 ? `They ran a full marathon.`
+    : bffName ? `Through it all, ${bffName} stood by their side.`
+    : r.hobbyMasterCount>=2 ? `A true renaissance soul, master of many crafts.`
+    : r.hobbyMaster ? `They mastered their craft.`
+    : r.hadNemesis ? `They carried a bitter rivalry to the very end.`
+    : '';
+  if(personal) s+=` ${personal}`;
   if(earned.length>1) s+=` ${earned.length} ribbons earned in one lifetime.`;
   return s;
 }
