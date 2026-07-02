@@ -8063,11 +8063,14 @@ function openPerson(id){
     return;
   }
   if(p.pet){
-    openModal({banner:'Pet', title:`${p.name} the ${p.rel}`, text:`<div class="relbars">${barRow('🐾 Bond',p.affinity,100)}</div>`, closable:true,
+    const tricks=p.tricks||[], canLearn=tricks.length<PET_TRICKS.length;
+    openModal({banner:'Pet', title:`${p.name} the ${p.rel}`, text:`<div class="relbars">${barRow('🐾 Bond',p.affinity,100)}</div>${tricks.length?`<div class="pf" style="margin-top:6px">🎓 Knows ${tricks.length} trick${tricks.length>1?'s':''}: ${tricks.join(', ')}</div>`:''}`, closable:true,
       choices:[
         {label:'🐾 Play', fn:()=>petAction(id,'play')},
         {label:'🍖 Feed', fn:()=>petAction(id,'feed')},
         {label:'🤗 Cuddle', alt:true, fn:()=>petAction(id,'cuddle')},
+        ...(canLearn?[{label:'🎓 Teach a Trick', alt:true, fn:()=>petTrick(id)}]:[]),
+        ...(tricks.length>=3?[{label:'🎪 Show Off Tricks', alt:true, fn:()=>petShow(id)}]:[]),
       ]});
     return;
   }
@@ -8676,6 +8679,26 @@ function petAction(id,a){
   pushLog(`I spent time with my ${p.rel.toLowerCase()} ${p.name}.`,[['rel',`${p.name} · ${p.affinity}`]]);
   resultModal('Pet', p.name, '🐾', [msg], ()=>setTab('people'));
 }
+/* 🎓 PET TRICKS — teach & show off. Success scales with the bond. Modalpick leaves → no logAct (openPerson logs the opener). */
+const PET_TRICKS=['Sit','Shake','Roll Over','Play Dead','Fetch','Spin','High Five','Speak','Dance','Jump Through a Hoop'];
+function petTrick(id){ const p=S.people[id]; if(!p||!p.alive||!p.pet)return;
+  const known=p.tricks||[], left=PET_TRICKS.filter(t=>!known.includes(t));
+  if(!left.length){ toast(`${p.name} already knows every trick! 🌟`); openPerson(id); return; }
+  const trick=left[rng(0,left.length-1)], succ=clamp(35 + p.affinity/2 + rng(-15,20), 5, 96);
+  if(rng(0,100)<succ){ p.tricks=known.concat([trick]); p.affinity=clamp(p.affinity+rng(2,5)); chg('happy',rng(1,4));
+    pushLog(`🎓 I taught ${p.name} to <b>${trick.toLowerCase()}</b>!`,[['good',`${p.name}: ${trick}`]]);
+    resultModal('Pet', `${p.name} learned ${trick}! 🎓`, '🐾', [`After patient practice, ${p.name} nailed <b>${trick}</b>. Good ${p.rel.toLowerCase()}! Tricks known: <b>${p.tricks.length}</b>.`], ()=>openPerson(id)); }
+  else { p.affinity=clamp(p.affinity+1);
+    resultModal('Pet', 'Almost! 🐾', '🐾', [`${p.name} didn't quite get <b>${trick}</b> this time — but you bonded over trying. Keep at it.`], ()=>openPerson(id)); } }
+function petShow(id){ const p=S.people[id]; if(!p||!p.alive||!p.pet)return;
+  const n=(p.tricks||[]).length; if(n<3){ toast('Teach a few more tricks first.'); openPerson(id); return; }
+  chg('happy',rng(2,6)); p.affinity=clamp(p.affinity+rng(1,3));
+  if(rng(0,100) < 6 + n*2 + (S.sm&&S.sm.joined?8:0)){ gainFame(rng(1,4)); setFlag('pet_star'); let extra='';
+    if(S.sm&&S.sm.joined){ const f=rng(500,8000); for(const pl of Object.values(S.sm.platforms)){ if(pl.joined) pl.followers=(pl.followers||0)+Math.round(f/3); } extra=' and a wave of new followers'; }
+    pushLog(`🎪 ${p.name}'s trick show went viral${extra}! 🌟`,[['good',`${p.name} the star`]]);
+    resultModal('Pet', `${p.name} Steals the Show! 🌟`, '🐾', [`${p.name} ran through all ${n} tricks flawlessly and the crowd went wild${extra}!`], ()=>openPerson(id)); }
+  else { pushLog(`🎪 ${p.name} showed off ${n} tricks for the neighbours. 🐾`,[['flag',`${p.name} performed`]]);
+    resultModal('Pet', `Good ${p.rel}! 🐾`, '🐾', [`${p.name} proudly performed all ${n} tricks. Pure joy.`], ()=>openPerson(id)); } }
 // every living connection has an occupation/responsibility — assigned once, then stable
 function npcOcc(p){
   if(p.pet || !p.alive) return '';
