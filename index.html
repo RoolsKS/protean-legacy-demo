@@ -1214,6 +1214,8 @@ function startLife(opts){
   if(opts.name) S.name=opts.name;
   S.country=opts.country||'us';
   S.city=opts.city||COUNTRIES[S.country].cities[0];
+  // 🌍 EMIGRATION — where you were born, where you live now, the family's migration trail, and your standing in it
+  S.emigration={ bornCountry:S.country, currentCountry:S.country, countryHistory:[{country:S.country, ageArrived:0, gen:1}], residencyStatus:'citizen', yearsInCurrentCountry:0, naturalizationProgress:100, cultureAdaptation:100 };
   { const Cc=COUNTRIES[S.country]; const hs=rng(0,100)+(Cc.col-50)/2-(Cc.crime-50)/2;
     S.hood = hs>72?'an affluent':hs>48?'a comfortable':hs>26?'a modest':'a rough'; }
   // populations — the world, your country, your city (shapes competition & reach)
@@ -4626,6 +4628,7 @@ function ageUp(){
   partnersYear();                                                     // 💘 juggling multiple partners costs money, spark & peace (deterministic)
   friendshipYear();                                                   // 🤝 a best friend gives steady yearly mood support (deterministic)
   nemesisYear();                                                      // 😈 a living nemesis occasionally needles you (deterministic, gated)
+  emigrationYear();                                                   // 🌍 residency/naturalization, culture adaptation, long-distance decay (deterministic)
   clubsYear();                                                        // 🎽 school clubs/teams accrue years & performance (deterministic)
   sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
   staffYear();                                                        // 🧑‍✈️ household staff salaries + their yearly perks (deterministic)
@@ -5287,6 +5290,9 @@ function continueAsHeir(id){
   S.money=inheritance; S.peakMoney=Math.max(S.peakMoney||0,inheritance);
   S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.founderPeak=0; S._agentEarnings=0; S.endurance=-1; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
   S.rentOwed=0; S.rentMult=1; S.autopayRent=true; S.karma=0; S.landlord=null;
+  // 🌍 the heir is born in the family's current country as a citizen, but inherits the dynasty's migration trail (left-behind relatives stay long-distance = emergent diaspora)
+  { const _h=(S.emigration&&S.emigration.countryHistory)?S.emigration.countryHistory.slice(-12):[]; _h.push({country:S.country, ageArrived:0, gen:S.legacyGen||1, born:true});
+    S.emigration={ bornCountry:S.country, currentCountry:S.country, countryHistory:_h, residencyStatus:'citizen', yearsInCurrentCountry:0, naturalizationProgress:100, cultureAdaptation:100 }; }
   S.scheduled=[]; S.fired={}; S.flags={}; S.passport=false; S.signature='';
   S.ledger=_inheritedFacts;   // THE LEDGER carries: the bloodline's deeds (scandals, honors) follow the heir at reduced weight
   S.feuds=_inheritedFeuds;    // BLOOD FEUDS carry: the heir inherits the family's living enemies
@@ -7918,7 +7924,8 @@ function activityEntries(){
   add(S.age>=18,'fertility','🍼','Fertility Clinic','IVF or a surrogate — start a family (18+)', "fertilityMenu()");
   if(S.age>=18){ const ns=S.staff?Object.keys(S.staff).length:0; add(true,'staff','🧑‍✈️','Household Staff', ns?`${ns} on payroll · driver, chef, guard & more`:'Hire a driver, chef, butler, bodyguard…', "staffMenu()"); }
   if(S.age>=18){ const sc=Object.values(S.people).filter(p=>p.alive&&p.sugar).length; add(true,'sugar','🍯','Sugar Dating', sc?`${sc} arrangement${sc>1?'s':''} · get spoiled or spoil someone`:'Get spoiled — or spoil someone (18+)', "sugarMenu()"); }
-  add(true,'emigrate','🌍','Emigrate', S.age<18?'Ask your parents to move (good luck)':'Move to a new country or city', "emigrate()");
+  add(true,'emigrate','🌍','Emigrate', S.age<18?'Ask your parents to move (good luck)':(S.emigration&&S.emigration.residencyStatus&&S.emigration.residencyStatus!=='citizen'?`Move again · ${({immigrant:'🛂 immigrant',undocumented:'⚠️ undocumented',permanentResident:'🪪 PR'})[S.emigration.residencyStatus]||''} in ${countryName(S.country)}`:'Move to a new country or city'), "emigrate()");
+  add(Object.values(S.people).some(p=>p.alive&&!p.pet&&p.coLocated===false),'reunion','🌍','Reunite Abroad','Fly in loved ones from overseas — or visit them', "reunionMenu()");
   add(true,'licenses','🚗','Licenses', `${licenseSummary()}`, "setTab('licenses')");
   add(true,'passport','🛂','Passport', passportValid()?`✅ Valid until age ${S.passportExpires}`:(S.passport?'⚠️ Expired — renew it':(S.passportApp&&S.passportApp.stage==='processing'?(S.age>=S.passportApp.readyAge?'📨 Ready — come collect it!':'⏳ Application processing…'):'Apply: photo → office → wait → collect')), "applyPassport()");
   add(S.age>=18,'politics','🏛️','Politics', S.office&&S.office.inOffice?`${S.office.title} · ${S.office.approval}% approval`:'Run for office & climb the ladder', "politics()");
@@ -8108,10 +8115,12 @@ function openPerson(id){
       ]});
     return;
   }
-  const ch=[
-    {label:'⏱️ Spend Time', fn:()=>personAction(id,'spend')},
-    {label:'💬 Conversation', fn:()=>personAction(id,'talk')},
-  ];
+  const _ld=emLongDistance(p);
+  const ch=[];
+  if(_ld){ ch.push({label:`🌍 Lives in ${countryFlag(p.countryOf)} ${countryName(p.countryOf)}`, fn:()=>toast('They live abroad — call, message or send things, or reunite in person (Activities → Emigrate).')});
+           ch.push({label:'📞 Call / Video', fn:()=>personAction(id,'talk')}); }
+  else { ch.push({label:'⏱️ Spend Time', fn:()=>personAction(id,'spend')});
+         ch.push({label:'💬 Conversation', fn:()=>personAction(id,'talk')}); }
   if(!p.romantic && !p.bestFriend && (p.affinity||0)>=80) ch.push({label:'🤝 Become Best Friends', alt:true, fn:()=>makeBestFriend(id)});
   if(!p.romantic){
     if(p.nemesis){ ch.push({label:'🕊️ Bury the Hatchet', alt:true, fn:()=>nemesisAct(id,'reconcile')}); ch.push({label:'🔥 Escalate the Feud', alt:true, fn:()=>nemesisAct(id,'escalate')}); }
@@ -8119,17 +8128,17 @@ function openPerson(id){
   }
   const married = p.rel==='Husband'||p.rel==='Wife';
   if(p.romantic){                                   // your partner / spouse — romance options
-    ch.push({label:'💘 Date Night', alt:true, fn:()=>personAction(id,'datenight')});
-    if(S.age>=16) ch.push({label:'🔥 Get Intimate', alt:true, fn:()=>partnerIntimate(id)});
+    if(!_ld) ch.push({label:'💘 Date Night', alt:true, fn:()=>personAction(id,'datenight')});
+    if(S.age>=16 && !_ld) ch.push({label:'🔥 Get Intimate', alt:true, fn:()=>partnerIntimate(id)});
     if(!married && p.affinity>=78 && S.age>=18) ch.push({label:'💍 Propose', alt:true, fn:()=>proposeMarriage(id)});
-    if((married||p.affinity>=60) && S.age>=18) ch.push({label:'👶 Try for a Baby', alt:true, fn:()=>tryForBaby(id)});
+    if((married||p.affinity>=60) && S.age>=18 && !_ld) ch.push({label:'👶 Try for a Baby', alt:true, fn:()=>tryForBaby(id)});
     if(married && (p.spark||50)<55) ch.push({label:'🛋️ Marriage Counseling', alt:true, fn:()=>marriageCounseling(id)});
     if(married && (p.marriedYears||0)>=10 && (p.spark||50)>=55) ch.push({label:'💞 Renew Vows', alt:true, fn:()=>renewVows(id)});
     ch.push({label:married?'💔 Divorce':'💔 Break Up', alt:true, fn:()=>endRelationship(id)});
   }
   if(p.fam && p.gen>=1 && !p.romantic){             // your child — raise them
-    if(p.age<18) ch.push({label:'🧒 Raise Them', alt:true, fn:()=>parentingMenu(id)});   // shape who they'll become
-    if(p.age<18) ch.push({label:'🎂 Celebrate Birthday', alt:true, fn:()=>personAction(id,'birthday')});
+    if(p.age<18 && !_ld) ch.push({label:'🧒 Raise Them', alt:true, fn:()=>parentingMenu(id)});   // shape who they'll become
+    if(p.age<18 && !_ld) ch.push({label:'🎂 Celebrate Birthday', alt:true, fn:()=>personAction(id,'birthday')});
     if(p.custody!=='ex' && p.custody!=='foster'){   // you can only arrange care/schooling for a child in your care
       if(p.age<=5) ch.push({label: p.nanny?'👶 Nanny: on — dismiss':'👶 Hire a Nanny', alt:true, fn:()=> p.nanny?dismissNanny(id):hireNanny(id)});
       if(p.age>=5 && p.age<18) ch.push({label: p.privateSchool?'🎓 Private School: enrolled':'🎓 Enroll in Private School', alt:true, fn:()=>togglePrivateSchool(id)});
@@ -9214,6 +9223,65 @@ function doSpa(k){ const s=SPA_SERVICES.find(x=>x.k===k); if(!s)return; if(!spen
   pushLog(`${s.icon} I treated myself to ${s.name.toLowerCase()} (${cur()}${cost.toLocaleString()}).`,[['good',s.name]]);
   resultModal('Salon & Spa',`${s.icon} ${s.name}`,s.icon,[`You got the ${s.name.toLowerCase()} treatment — feeling fresh.${extra}`,`Cost: ${cur()}${cost.toLocaleString()}.`],()=>salonSpa()); }
 /* ---- Emigrate — kids ask parents (usually no); 18+ move freely ---- */
+/* 🌍 EMIGRATION helpers — backfill state on old saves; who's long-distance; country label. */
+const EMIG_CFG={ culture:true, asylum:true, diaspora:true };   // optional-feature flags (all on per design)
+function emInit(){ if(!S.emigration){ S.emigration={ bornCountry:S.country, currentCountry:S.country, countryHistory:[{country:S.country, ageArrived:Math.max(0,S.age||0), gen:S.legacyGen||1}], residencyStatus:'citizen', yearsInCurrentCountry:S.age||0, naturalizationProgress:100, cultureAdaptation:100 }; }
+  const e=S.emigration; if(e.cultureAdaptation==null)e.cultureAdaptation=100; if(e.currentCountry==null)e.currentCountry=S.country; return e; }
+function emLongDistance(p){ return !!(p && p.coLocated===false); }   // an NPC who lives in another country now
+function countryName(code){ return (COUNTRIES[code]&&COUNTRIES[code].name)||code; }
+function countryFlag(code){ return (COUNTRIES[code]&&COUNTRIES[code].flag)||'🌍'; }
+// who moves with you when you emigrate: your spouse + minor kids in your care + pets. Everyone else is left behind (long-distance).
+function emMovesWithYou(p){ if(!p||!p.alive)return false; if(p.pet)return true; if(p.id===S.spouse)return true;
+  if(p.fam && p.gen>=1 && (p.age==null||p.age<18) && p.custody!=='ex' && p.custody!=='foster')return true; return false; }
+function emTravelMode(){ try{ if(worldRules.cap && worldRules.cap('airTravel')) return 'air'; }catch(e){} const y=(typeof currentEra==='function'&&currentEra())?currentEra().year:2000; return (y!=null&&y<1900)?'ship':'air'; }
+// local deterministic arrival / culture-shock scene (no online AI — replay-safe)
+function emArrival(country, oldCountry, cost, left, ldCount){
+  const flav=pick([`New signs, new sounds, a new language on every corner.`,`The food, the faces, the rhythm of the streets — everything is different here.`,`Customs was a blur; now you're standing in ${countryName(country)}, bags in hand and a whole life ahead.`,`Jet-lagged and wide-eyed, you step out into ${countryName(country)} for the first time as a resident.`,`A fresh start in a country that isn't yours — not yet.`]);
+  const lines=[`You've emigrated to <b>${countryName(country)}</b> ${countryFlag(country)} — cost <b>${cur()}${cost.toLocaleString()}</b>.`, flav];
+  if(left.length) lines.push(`📦 You left behind ${left.join(' and ')}.`);
+  if(ldCount) lines.push(`💔 ${ldCount} loved one${ldCount>1?'s':''} you left behind ${ldCount>1?'are':'is'} now <b>long-distance</b> — call, message, or fly them in to stay close.`);
+  if(EMIG_CFG.culture) lines.push(`🗣️ Culture & language take time — your <b>adaptation</b> starts low and grows over the years.`);
+  resultModal('Emigrated', `${countryFlag(country)} ${countryName(country)}`, '✈️', lines, ()=>setTab('life')); }
+/* 🌍 yearly emigration tick — residency/naturalization progress, culture adaptation, and long-distance relationship decay (deterministic) */
+function emigrationYear(){ if(!S||!S.alive) return; const e=emInit();
+  e.yearsInCurrentCountry=(e.yearsInCurrentCountry||0)+1;
+  if(e.residencyStatus==='immigrant'){
+    e.naturalizationProgress=clamp((e.naturalizationProgress||0)+rng(6,11)+(EMIG_CFG.culture?Math.round((e.cultureAdaptation||50)/25):3),0,100);
+    if(e.naturalizationProgress>=100){ e.residencyStatus='citizen'; setFlag('naturalized'); pushLog(`🛂 After ${e.yearsInCurrentCountry} years, I became a <b>citizen of ${countryName(e.currentCountry)}</b> ${countryFlag(e.currentCountry)}.`,[['good',`Citizen of ${countryName(e.currentCountry)}`]]); }
+  } else if(e.residencyStatus==='undocumented'){
+    if(e.yearsInCurrentCountry>=4 && rng(0,100)<38){ e.residencyStatus='immigrant'; e.naturalizationProgress=clamp((e.naturalizationProgress||0)+rng(3,8),0,100); pushLog(`🛂 My status in ${countryName(e.currentCountry)} was regularized — I'm a legal <b>immigrant</b> now.`,[['good','Status regularized']]); }
+  }
+  if(EMIG_CFG.culture && (e.cultureAdaptation||0)<100) e.cultureAdaptation=clamp((e.cultureAdaptation||0)+rng(3,8),0,100);
+  // long-distance ties strain and decay faster without in-person contact
+  for(const p of Object.values(S.people)){ if(p.alive && !p.pet && p.coLocated===false){ p.affinity=clamp((p.affinity||50)-rng(1,4)); if(p.trust!=null) p.trust=clamp(p.trust-rng(0,2)); } }
+}
+/* 🌍 REUNION — bridge the distance in person, flavored as international travel (air or, in old eras, a long voyage). */
+function reunionMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  const ld=Object.values(S.people).filter(p=>p.alive&&!p.pet&&p.coLocated===false);
+  if(!ld.length){ toast('You have no long-distance loved ones to reunite with.'); setTab('activities'); return; }
+  logAct('call',{fn:'reunionMenu'});
+  const mode=emTravelMode();
+  openModal({banner:'Reunion', title:'🌍 Reunite Across Borders', icon:'✈️', closable:true,
+    text:`<b>${ld.length}</b> loved one${ld.length>1?'s':''} of yours ${ld.length>1?'live':'lives'} abroad. Bridge the distance in person${mode==='ship'?' — a long, costly voyage in this era':''}.`,
+    choices:[
+      {label:'🎉 Fly them in for a reunion', tip:'They travel to you', alt:true, fn:()=>doReunion('here')},
+      {label:'✈️ Visit the old country', tip:'You travel to them', alt:true, fn:()=>doReunion('there')},
+      {label:'‹ Back', fn:()=>{ closeModal(); setTab('activities'); }},
+    ]});
+}
+function doReunion(dir){ closeModal(); const mode=emTravelMode();   // modalpick leaf → no logAct
+  const ld=Object.values(S.people).filter(p=>p.alive&&!p.pet&&p.coLocated===false); if(!ld.length){ setTab('activities'); return; }
+  const per=mode==='air'?rng(600,3000):rng(3000,12000); const cost=Math.round(Math.min(ld.length,6)*per*priceMult());
+  if(!spend(cost)) return;
+  for(const p of ld){ p.affinity=clamp((p.affinity||50)+rng(8,18)); if(p.trust!=null)p.trust=clamp(p.trust+rng(3,8)); if(typeof keyMoment==='function') keyMoment(p,'reconciliation',12,`Reunited in person after time apart.`); }
+  chg('happy',rng(4,9)); addMood(rng(3,7)); addStress(-rng(2,6)); setFlag('cross_border_reunion');
+  const who=ld.length>1?'they':ld[0].name, fromC=countryName(ld[0].countryOf);
+  const scene = mode==='ship'
+    ? (dir==='here'? `After weeks at sea, ${who} arrive by ship — weary, seasick, and overjoyed to see you.` : `You endure the long voyage back to ${fromC} and step ashore into a flood of familiar faces.`)
+    : (dir==='here'? `${ld.length>1?'They':ld[0].name} land at the airport, jet-lagged and grinning, having flown in from ${fromC}. The reunion is everything.` : `You fly back to ${fromC} — customs, jet lag, and then the door opens and everyone's there.`);
+  pushLog(`✈️ ${dir==='here'?'I flew my loved ones in':'I traveled back to the old country'} for a reunion (${cur()}${cost.toLocaleString()}).`,[['good','Reunion across borders']]);
+  resultModal('Reunion', dir==='here'?'They Flew In 🛬':'Homecoming ✈️', mode==='ship'?'⛵':'✈️', [scene, `Time together rekindled your bonds. Cost: <b>${cur()}${cost.toLocaleString()}</b>.`], ()=>setTab('life'));
+}
 function emigrate(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
   logAct('call',{fn:'emigrate'});
   if(S.age<18){
@@ -9225,18 +9293,39 @@ function emigrate(){ if(!S){toast('Start a life first.');return;} if(isLocked())
   const choices=[{label:`🏙️ New city in ${COUNTRIES[S.country].name}`, fn:()=>doMove(S.country,true)}];
   sample.forEach(c=>choices.push({label:`${COUNTRIES[c].flag} ${COUNTRIES[c].name}`, alt:true, fn:()=>doMove(c,false)}));
   openModal({banner:'Emigrate', title:'✈️ Move Where?', icon:'✈️', closable:true,
-    text:`Relocating costs money (a lot more overseas). Your relationships stay, but you start fresh — new job market, new rent, new faces.`, choices});
+    text:`Moving <b>overseas</b> means <b>leaving it all behind</b> — your job and school team end, and everyone who doesn't move with you (your spouse & kids come along) becomes <b>long-distance</b>. You'll start over as an immigrant and slowly earn citizenship. A move within your country keeps everyone close.`, choices});
 }
-function doMove(country, sameCountry){ closeModal();
-  if(!sameCountry && !passportValid()){ resultModal('Border','No Passport','🛂',[`You can't emigrate to <b>${COUNTRIES[country].name}</b> without a <b>passport</b>.`,`Apply for one in Activities → Go Out (Events) first.`],()=>setTab('life')); return; }
-  const cost = sameCountry? rng(1500,8000) : rng(8000,45000);
-  if(!spend(cost))return;
+function doMove(country, sameCountry, opts){ opts=opts||{}; closeModal(); emInit();   // modalpick-reached (or offer-accept) → no logAct
+  if(!sameCountry && !opts.asylum && !passportValid()){ resultModal('Border','No Passport','🛂',[`You can't emigrate to <b>${COUNTRIES[country].name}</b> without a <b>passport</b>.`,`Apply for one in Activities → Go Out (Events) first.`],()=>setTab('life')); return; }
+  const cost = opts.free?0 : (sameCountry? rng(1500,8000) : rng(8000,45000));
+  if(cost>0 && !spend(cost))return;
+  const oldCountry=S.country;
   const cs=COUNTRIES[country].cities; const city=sameCountry?(pick(cs.filter(c=>c!==S.city))||S.city):cs[0];
   S.country=country; S.city=city; S.countryPop=countryPop(country);
   { const csl=COUNTRIES[country].cities||[]; const ci=csl.indexOf(city); if(csl.length<=1) S.cityPop=S.countryPop; else { const share=ci<=0?0.10:ci===1?0.06:0.04; S.cityPop=Math.max(20000,Math.round(S.countryPop*share*(0.7+rand()*0.6))); } }
   if(S.age>=18) setFlag('moved_out');
-  pushLog(`I packed up and moved to <b>${city}, ${COUNTRIES[country].name}</b> ${COUNTRIES[country].flag} (${cur()}${cost.toLocaleString()}).`,[['flag',`Moved to ${COUNTRIES[country].name}`]]);
-  resultModal('Emigrate','New Home','✈️',[`You relocated to <b>${city}, ${COUNTRIES[country].name}</b> ${COUNTRIES[country].flag}!`,`A fresh start in a new place.`],()=>setTab('life'));
+  if(sameCountry){   // an in-country move — no residency change, everyone stays co-located
+    pushLog(`I packed up and moved to <b>${city}, ${COUNTRIES[country].name}</b> ${COUNTRIES[country].flag} (${cur()}${cost.toLocaleString()}).`,[['flag',`Moved to ${city}`]]);
+    resultModal('Emigrate','New Home','✈️',[`You relocated to <b>${city}, ${COUNTRIES[country].name}</b> ${COUNTRIES[country].flag}!`,`A fresh start in a new place.`],()=>setTab('life')); return;
+  }
+  // ===== EMIGRATION — leave it all behind =====
+  const left=[];
+  if(S.job && !opts.keepJob){ if(!S.job.owner) clearCoworkers(); S.job=null; left.push('your job'); }
+  if(S.schoolSport && S.schoolSport.onTeam && !opts.keepClub){ S.schoolSport.onTeam=false; S.schoolSport.squadStatus='notOnTeam'; left.push('your school team'); }
+  // long-distance: everyone who doesn't move with you now lives abroad (in-person actions disabled + faster decay)
+  let ldCount=0;
+  for(const p of Object.values(S.people)){ if(!p.alive) continue;
+    if(emMovesWithYou(p)){ p.coLocated=true; p.countryOf=country; }
+    else { if(p.coLocated!==false) ldCount++; p.coLocated=false; p.countryOf=p.countryOf||oldCountry; } }
+  // residency + the family's migration trail
+  const e=S.emigration; e.currentCountry=country; e.residencyStatus= opts.asylum?'undocumented':'immigrant'; e.yearsInCurrentCountry=0; e.naturalizationProgress=0;
+  if(EMIG_CFG.culture) e.cultureAdaptation=clamp(28+Math.round(S.stats.smarts/6),8,68);
+  e.countryHistory.push({country, ageArrived:S.age, gen:S.legacyGen||1});
+  setFlag('emigrant'); if(country!==e.bornCountry) setFlag('lives_abroad');
+  addStress(rng(4,10)); if(typeof haptics!=='undefined'&&haptics.heavy) try{ haptics.heavy(); }catch(_){}
+  const leftTxt = left.length? ` I left behind ${left.join(' and ')}.`:''; const ldTxt = ldCount? ` ${ldCount} loved one${ldCount>1?'s are':' is'} now an ocean away.`:'';
+  pushLog(`✈️ I emigrated to <b>${city}, ${COUNTRIES[country].name}</b> ${COUNTRIES[country].flag} (${cur()}${cost.toLocaleString()}).${leftTxt}${ldTxt}`,[['flag',`Emigrated to ${COUNTRIES[country].name}`]]);
+  emArrival(country, oldCountry, cost, left, ldCount);
 }
 /* ---- Trips — motels to private villas across the world, rent a car, ball out ---- */
 function passportValid(){ return !!S.passport && (S.passportExpires==null || S.age<=S.passportExpires); }   // a valid (unexpired) passport
