@@ -2076,6 +2076,9 @@ function lifeRecord(){
     whistleblower: has('whistleblower'), gotClean: has('got_clean'), greekPresident: has('greek_president'),
     volunteered: has('volunteer'), breachedContract: has('breached_contract'), endedHazing: has('ended_hazing'),
     founder: has('founder'), founderPeak: S.founderPeak||0,
+    hobbyMaster: Object.values(S.hobbies||{}).some(h=>h.level>=100),
+    hobbyMasterCount: Object.values(S.hobbies||{}).filter(h=>h.level>=100).length,
+    hobbyWins: Object.values(S.hobbies||{}).reduce((a,h)=>a+(h.compWins||0),0),
   };
 }
 const RIBBONS=[
@@ -2155,6 +2158,10 @@ const RIBBONS=[
   {id:'founder', name:'Founder', icon:'🚀', rarity:'rare', priority:6, desc:'Found your own company from scratch.', q:r=>r.founder?1:0},
   {id:'startup_mogul', name:'Startup Mogul', icon:'🦄', rarity:'legendary', priority:9, desc:'Grow a company you founded to a 5M+ valuation.', q:r=>Math.min(r.founder?1:0,_frac(r.founderPeak,5e6))},
   {id:'self_made_founder', name:'Self-Made Founder', icon:'💎', rarity:'legendary', priority:10, combo:true, desc:'Born with nothing, built a company worth millions.', q:r=>Math.min(r.founder?1:0, r.bornRich?0:1, _frac(r.founderPeak,2e6))},
+  // 🎨 Passions
+  {id:'virtuoso', name:'Virtuoso', icon:'🎼', rarity:'rare', priority:6, desc:'Master a hobby (reach 100%).', q:r=>r.hobbyMaster?1:0},
+  {id:'grand_champion', name:'Grand Champion', icon:'🏆', rarity:'epic', priority:8, desc:'Win 5 hobby competitions in a life.', q:r=>_frac(r.hobbyWins,5)},
+  {id:'renaissance_master', name:'Renaissance Master', icon:'🎭', rarity:'legendary', priority:9, combo:true, desc:'Master two or more different passions.', q:r=>_frac(r.hobbyMasterCount,2)},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
