@@ -10625,7 +10625,10 @@ let _replayModal=null;   // during replay, the currently-"open" activity modal, 
 function openModal(cfg){
   if(S && S._replaying){ _replayModal = cfg._ev ? null : cfg; return; }   // headless: capture for tape-driven resolution, no DOM
   // Header bar: circular ✕ on the left when closable (else a spacer), centered title — matches the sub-page headers.
-  const _ttl=`${cfg.icon?cfg.icon+' ':''}${cfg.title||cfg.banner||''}`;
+  const _t=cfg.title||cfg.banner||'';
+  let _ic=cfg.icon||'';   // ONE emoji per header: if the title already carries an emoji, drop the icon
+  try{ if(_ic && /\p{Extended_Pictographic}/u.test(_t)) _ic=''; }catch(e){ if(_ic && /[←-⯿️\uD83C-\uDBFF]/.test(_t)) _ic=''; }
+  const _ttl=`${_ic?_ic+' ':''}${_t}`;
   document.getElementById('modalBanner').innerHTML=`${cfg.closable?`<button class="mh-btn" onclick="closeModal()" aria-label="Close">✕</button>`:`<span class="mh-spacer"></span>`}<div class="mh-title">${_ttl}</div>`;
   document.getElementById('modalBody').innerHTML=`<div class="mtext">${cfg.text||''}</div>`;
   const ch=document.getElementById('modalChoices');
