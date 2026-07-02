@@ -1253,6 +1253,15 @@ function startLife(opts){
   S.honorific = null;          // earned epithet shown on the profile/gravestone (per-life cosmetic)
   applyEraTheme(S.era);
   // Build a full, living family tree (grandparents → cousins → siblings)
+  // 👑 FAMILY WEALTH — the origin shapes the WHOLE family (parents' careers, family wealth, the neighborhood),
+  // so it must be locked in BEFORE the family tree is built. Captured in birthOpts → replays deterministically.
+  S.origin=opts.origin||'normal';
+  if(S.origin==='rich_kid'){ S.money+=500000; setFlag('born_rich'); }
+  else if(S.origin==='royal'){ S.money+=200000; setFlag('royal'); S.fame=Math.max(S.fame||0,rng(10,25)); }
+  else if(S.origin==='adopted'){ setFlag('adopted'); }
+  else if(S.origin==='famous_kid'){ setFlag('famous_family'); S.fame=Math.max(S.fame||0,rng(15,35)); }
+  else if(S.origin==='middle'){ S.money+=15000; setFlag('middle_class'); }
+  else if(S.origin==='poor'){ setFlag('born_poor'); }
   buildFamily(opts.gender);
   // GENETICS — your parents carry genomes; you inherit a roll of theirs, which nudges your starting stats
   { const mom=P('mom'), dad=P('dad');
@@ -1267,7 +1276,12 @@ function startLife(opts){
   // 🌍 EMIGRATION — where you were born, where you live now, the family's migration trail, and your standing in it
   S.emigration={ bornCountry:S.country, currentCountry:S.country, countryHistory:[{country:S.country, ageArrived:0, gen:1}], residencyStatus:'citizen', yearsInCurrentCountry:0, naturalizationProgress:100, cultureAdaptation:100 };
   { const Cc=COUNTRIES[S.country]; const hs=rng(0,100)+(Cc.col-50)/2-(Cc.crime-50)/2;
-    S.hood = hs>72?'an affluent':hs>48?'a comfortable':hs>26?'a modest':'a rough'; }
+    S.hood = hs>72?'an affluent':hs>48?'a comfortable':hs>26?'a modest':'a rough';
+    // 👑 the family's wealth decides the neighborhood — a janitor's kid doesn't grow up behind gates
+    if(S.origin==='rich_kid'||S.origin==='royal') S.hood='an affluent';
+    else if(S.origin==='famous_kid') S.hood=hs>30?'an affluent':'a comfortable';
+    else if(S.origin==='middle') S.hood=hs>40?'a comfortable':'a modest';
+    else if(S.origin==='poor') S.hood='a rough'; }
   // populations — the world, your country, your city (shapes competition & reach)
   S.countryPop=countryPop(S.country);
   { const cs=COUNTRIES[S.country].cities||[]; const ci=cs.indexOf(S.city);
@@ -1275,14 +1289,8 @@ function startLife(opts){
     else { const share=ci<=0?0.10:ci===1?0.06:ci===2?0.04:0.025;
       S.cityPop=Math.max(20000, Math.round(S.countryPop*share*(0.7+rand()*0.6))); } }
   if(opts.talent && opts.talent!=='none') applyTalent(opts.talent);
-  if(opts.rich){ S.money=1000000; S.peakMoney=1000000; }
-  S.signature=opts.signature||''; S.origin=opts.origin||'normal';
-  if(S.origin==='rich_kid'){ S.money+=500000; setFlag('born_rich'); }
-  else if(S.origin==='royal'){ S.money+=200000; setFlag('royal'); }
-  else if(S.origin==='adopted'){ setFlag('adopted'); }
-  else if(S.origin==='famous_kid'){ setFlag('famous_family'); }
-  else if(S.origin==='middle'){ S.money+=15000; setFlag('middle_class'); }
-  else if(S.origin==='poor'){ setFlag('born_poor'); }
+  if(opts.rich){ S.money=Math.max(S.money,1000000); }
+  S.signature=opts.signature||'';
   S.peakMoney=Math.max(S.peakMoney||0,S.money);
   // how much your parents can spend — sets which schools they can afford
   S.parentWealth=Math.round((has('born_rich')||has('royal')?rng(2e6,2.5e7):has('famous_family')?rng(6e5,6e6):has('born_poor')?rng(2e3,3e4):has('middle_class')?rng(9e4,3.2e5):rng(2e4,4e5))*(0.5+(COUNTRIES[S.country].col||50)/120));
@@ -1449,7 +1457,22 @@ function buildFamily(forceGender){
   const dadAge=rng(26,40), momAge=rng(24,38);
   addRel('dad', nm('m'),'Father','m',-1,'paternal',dadAge,78);
   addRel('mom', nm('f'),'Mother','f',-1,'maternal',momAge,82);
-  P('dad').job=pick(JOBS); P('mom').job=pick(JOBS);
+  // 👑 FAMILY WEALTH — the origin decides what your parents do for a living
+  { const tier=S.origin||'normal';
+    const POOR=['day laborer','dishwasher','night cleaner','scrap collector','farmhand','laundry worker','street vendor'];
+    const MIDDLE=['teacher','nurse','accountant','electrician','store manager','paramedic','civil servant','dental hygienist','real estate agent'];
+    const RICH=['surgeon','corporate lawyer','investment banker','tech executive','property developer','private-equity partner','hedge fund manager','plastic surgeon'];
+    const FAME_M=['movie star','star athlete','famous director','rock star','TV host'];
+    const FAME_F=['movie star','pop icon','supermodel','TV host','celebrated actress'];
+    const ROYAL_M=['duke','prince','count','royal patriarch'];
+    const ROYAL_F=['duchess','princess','countess','royal matriarch'];
+    const jobFor=g=> tier==='poor'?pick(POOR)
+      : tier==='middle'?pick(MIDDLE)
+      : tier==='rich_kid'?pick(RICH)
+      : tier==='famous_kid'?(g==='f'?pick(FAME_F):pick(FAME_M))
+      : tier==='royal'?(g==='f'?pick(ROYAL_F):pick(ROYAL_M))
+      : pick(JOBS);
+    P('dad').job=jobFor('m'); P('mom').job=jobFor('f'); }
 
   // 4 grandparents — some may already have passed before you were born
   gp('pgf','m','Paternal Grandfather','paternal',dadAge+rng(24,34));
@@ -1465,8 +1488,10 @@ function buildFamily(forceGender){
   for(let i=0;i<sibs;i++){ const g=rand()<.5?'m':'f';
     addRel('sib'+i, nm(g), g==='m'?'Brother':'Sister', g,0,null,rng(1,12),rng(55,80)); }
   // a grown relative might be quietly loaded — they'll appear on the World's Richest list
+  // 👑 FAMILY WEALTH — the whole clan's fortunes scale with the origin (drives inheritances, school money, estimates)
   { const bChance=isPremium()?0.12:0.03;   // premium: far more likely to have a billionaire relative
-    for(const p of Object.values(S.people)) if(p.fam) p.wealth=(p.age>25 && rand()<bChance)?rng(50,300)*1e9:rng(0,500)*1e3; }
+    const W={poor:[0,9], normal:[0,500], adopted:[0,500], middle:[80,900], famous_kid:[800,15000], rich_kid:[2000,30000], royal:[5000,80000]}[S.origin||'normal']||[0,500];
+    for(const p of Object.values(S.people)) if(p.fam) p.wealth=(p.age>25 && rand()<bChance)?rng(50,300)*1e9:rng(W[0],W[1])*1e3; }
   if(rand()<0.55) buildPet();   // many families have a pet
 }
 const PET_TYPES=[
@@ -2458,6 +2483,18 @@ function warFamilyToll(){ const sh=worldShockAt(); if(!sh||sh.shock.k!=='war')re
 /* ---- Birth narrative & flavor ---- */
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const JOBS=['teacher','nurse','accountant','chef','mechanic','flight attendant','police officer','shop owner','engineer','barista','electrician','janitor','lawyer','farmer','bus driver','artist','travel agent'];
+/* 👑 FAMILY WEALTH: yearly pocket money while you're a kid at home — rich parents fund a rich childhood. */
+function allowanceYear(){ if(!S || S.age<5 || S.age>17) return;
+  const mom=P('mom'), dad=P('dad'); if(!((mom&&mom.alive)||(dad&&dad.alive))) return;   // no parents around, no pocket money
+  let lo=0, hi=0;
+  if(has('born_rich')||has('royal')){ lo=1200; hi=6000; }
+  else if(has('famous_family')){ lo=600; hi=3000; }
+  else if(has('middle_class')){ lo=60; hi=350; }
+  else if(has('born_poor')){ return; }
+  else { lo=10; hi=120; }
+  const amt=Math.round(rng(lo,hi)*priceMult()); if(amt<=0) return; money(amt);
+  if(S.age===5 || S.age%4===0) pushLog(`💵 Allowance and birthday money added up to <b>${cur()}${amt.toLocaleString()}</b> this year.`,[['flag','Allowance']]);
+}
 function zodiacSign(m,d){
   const cut=[20,19,21,20,21,21,23,23,23,23,22,22];
   const signs=['Capricorn','Aquarius','Pisces','Aries','Taurus','Gemini','Cancer','Leo','Virgo','Libra','Scorpio','Sagittarius','Capricorn'];
@@ -2476,11 +2513,11 @@ function birthNarrative(){
     t+=`<br>I have ${sibs.length>1?'older siblings: ':'an older '+sibs[0].rel.toLowerCase()+' named '}${list}.`; }
   t+=`<br>I grew up in ${S.hood} part of ${S.city} — ${c.climate} climate.`;
   if(S.origin==='adopted') t+=`<br>I was adopted as a baby into a loving home. 🏠`;
-  else if(S.origin==='royal') t+=`<br>I was born into <b>ROYALTY</b> — palaces and titles await. 👑`;
-  else if(S.origin==='rich_kid') t+=`<br>I was born into serious <b>wealth</b>. 💰`;
-  else if(S.origin==='famous_kid') t+=`<br>My family is <b>famous</b> — the spotlight found me early. 🌟`;
+  else if(S.origin==='royal') t+=`<br>I was born into <b>ROYALTY</b> — palaces, staff and titles await. A trust of <b>${fcm(S.money)}</b> already sits in my name. 👑`;
+  else if(S.origin==='rich_kid') t+=`<br>I was born into serious <b>wealth</b> — a <b>trust fund of ${fcm(S.money)}</b> waits in my name. 💰`;
+  else if(S.origin==='famous_kid') t+=`<br>My family is <b>famous</b> — paparazzi outside the nursery, the spotlight found me early. 🌟`;
   else if(S.origin==='poor') t+=`<br>We had <b>next to nothing</b> — I was born into hard poverty. 🪫`;
-  else if(S.origin==='middle') t+=`<br>We were comfortable — a solid <b>middle-class</b> home. 🏡`;
+  else if(S.origin==='middle') t+=`<br>We were comfortable — a solid <b>middle-class</b> home, with <b>${fcm(S.money)}</b> put aside for my start. 🏡`;
   const pet=Object.values(S.people).find(p=>p.pet&&p.alive);
   if(pet) t+=`<br>We have a family ${pet.rel.toLowerCase()} named ${pet.name}.`;
   if(S.signature) t+=`<br><i>“${S.signature}”</i>`;
@@ -4951,6 +4988,7 @@ function ageUp(){
   friendshipYear();                                                   // 🤝 a best friend gives steady yearly mood support (deterministic)
   nemesisYear();                                                      // 😈 a living nemesis occasionally needles you (deterministic, gated)
   emigrationYear();                                                   // 🌍 residency/naturalization, culture adaptation, long-distance decay (deterministic)
+  allowanceYear();                                                    // 👑 pocket money scaled to the family's wealth (deterministic)
   clubsYear();                                                        // 🎽 school clubs/teams accrue years & performance (deterministic)
   sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
   staffYear();                                                        // 🧑‍✈️ household staff salaries + their yearly perks (deterministic)
