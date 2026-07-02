@@ -1256,11 +1256,11 @@ function startLife(opts){
   // 👑 FAMILY WEALTH — the origin shapes the WHOLE family (parents' careers, family wealth, the neighborhood),
   // so it must be locked in BEFORE the family tree is built. Captured in birthOpts → replays deterministically.
   S.origin=opts.origin||'normal';
-  if(S.origin==='rich_kid'){ S.money+=500000; setFlag('born_rich'); }
-  else if(S.origin==='royal'){ S.money+=200000; setFlag('royal'); S.fame=Math.max(S.fame||0,rng(10,25)); }
+  if(S.origin==='rich_kid'){ S.money+=rng(250000,900000); setFlag('born_rich'); }
+  else if(S.origin==='royal'){ S.money+=rng(120000,450000); setFlag('royal'); S.fame=Math.max(S.fame||0,rng(10,25)); }
   else if(S.origin==='adopted'){ setFlag('adopted'); }
   else if(S.origin==='famous_kid'){ setFlag('famous_family'); S.fame=Math.max(S.fame||0,rng(15,35)); }
-  else if(S.origin==='middle'){ S.money+=15000; setFlag('middle_class'); }
+  else if(S.origin==='middle'){ S.money+=rng(8000,28000); setFlag('middle_class'); }
   else if(S.origin==='poor'){ setFlag('born_poor'); }
   buildFamily(opts.gender);
   // GENETICS — your parents carry genomes; you inherit a roll of theirs, which nudges your starting stats
@@ -1282,6 +1282,15 @@ function startLife(opts){
     else if(S.origin==='famous_kid') S.hood=hs>30?'an affluent':'a comfortable';
     else if(S.origin==='middle') S.hood=hs>40?'a comfortable':'a modest';
     else if(S.origin==='poor') S.hood='a rough'; }
+  // 👑 ROYALTY-IN-EXILE — the family's CROWN belongs to another country. Your grandfather reigns there;
+  // your parent (a prince/princess) stepped away from court to raise you abroad. The palace has not forgotten.
+  if(S.origin==='royal'){
+    const monarchies=Object.keys(COUNTRIES).filter(c=>c!==S.country && /monarch|king|emperor|sultan|emir/i.test(COUNTRIES[c].gov||''));
+    const pool=monarchies.length?monarchies:Object.keys(COUNTRIES).filter(c=>c!==S.country);
+    S.royal={ crownCountry:pool[rng(0,pool.length-1)], throne:'grandparent', returned:0, fled:0, found:0, summonsAt:0 };
+    if(P('pgf')){ P('pgf').alive=true; P('pgf').job='reigning monarch'; P('pgf').memory=P('pgf').memory.filter(m=>!/Passed before/.test(m.note)); }
+    if(P('pgm')){ P('pgm').job='queen consort'; }
+  } else S.royal=null;
   // populations — the world, your country, your city (shapes competition & reach)
   S.countryPop=countryPop(S.country);
   { const cs=COUNTRIES[S.country].cities||[]; const ci=cs.indexOf(S.city);
@@ -1470,8 +1479,8 @@ function buildFamily(forceGender){
     const RICH=['surgeon','corporate lawyer','investment banker','tech executive','property developer','private-equity partner','hedge fund manager','plastic surgeon'];
     const FAME_M=['movie star','star athlete','famous director','rock star','TV host'];
     const FAME_F=['movie star','pop icon','supermodel','TV host','celebrated actress'];
-    const ROYAL_M=['duke','prince','count','royal patriarch'];
-    const ROYAL_F=['duchess','princess','countess','royal matriarch'];
+    const ROYAL_M=['prince','archduke','royal duke'];   // parents are NEVER the monarch — the crown sits with a grandparent
+    const ROYAL_F=['princess','duchess','marchioness'];
     const jobFor=g=> tier==='poor'?pick(POOR)
       : tier==='middle'?pick(MIDDLE)
       : tier==='rich_kid'?pick(RICH)
@@ -2240,6 +2249,8 @@ function lifeRecord(){
     abroad: !!(S.emigration && S.emigration.currentCountry && S.emigration.bornCountry && S.emigration.currentCountry!==S.emigration.bornCountry),
     naturalized: has('naturalized'), migratedGens: (function(){ const cc=new Set((S.emigration&&S.emigration.countryHistory||[]).map(h=>h.country)); return cc.size; })(),
     asylumAscent: has('sought_asylum') && has('naturalized'),
+    crowned: has('crowned_monarch'),
+    royalHiddenYears: (S.royal&&S.royal.fled)?(((S.royal.found||S.age)-S.royal.fled)):0,
     diasporaHeir: has('diaspora_heir'),
     familyCountries: (function(){ const cc=new Set([S.country]); Object.values(S.people).forEach(p=>{ if(p.alive&&p.fam&&!p.pet) cc.add(p.countryOf||S.country); }); return cc.size; })(),
   };
@@ -2338,6 +2349,8 @@ const RIBBONS=[
   {id:'asylum_ascent', name:'From Nothing', icon:'🕊️', rarity:'epic', priority:7, secret:true, desc:'Arrive with no papers — and die a citizen.', q:r=>r.asylumAscent?1:0},
   {id:'world_family', name:'World Family', icon:'🌐', rarity:'epic', priority:6, desc:'A living family spread across three or more countries.', q:r=>_frac(r.familyCountries,3)},
   {id:'two_worlds', name:'Child of Two Worlds', icon:'🌗', rarity:'rare', priority:5, secret:true, desc:'Continue the dynasty from the far side of a family split.', q:r=>r.diasporaHeir?1:0},
+  {id:'crowned', name:'Crowned', icon:'👑', rarity:'legendary', priority:9, desc:'Take the throne of your family\'s kingdom.', q:r=>r.crowned?1:0},
+  {id:'ghost_of_crown', name:'Ghost of the Crown', icon:'🕯️', rarity:'epic', priority:6, secret:true, desc:'Evade the palace\'s hunters for five years.', q:r=>_frac(r.royalHiddenYears,5)},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
@@ -2501,6 +2514,51 @@ function allowanceYear(){ if(!S || S.age<5 || S.age>17) return;
   const amt=Math.round(rng(lo,hi)*priceMult()); if(amt<=0) return; money(amt);
   if(S.age===5 || S.age%4===0) pushLog(`💵 Allowance and birthday money added up to <b>${cur()}${amt.toLocaleString()}</b> this year.`,[['flag','Allowance']]);
 }
+/* 👑 ROYALTY-IN-EXILE — the yearly royal engine (deterministic, feed-only):
+   · RUNAWAY HUNT: flee the summons and the palace sends protection officers, private investigators and
+     press after you. The odds of being found rise every year — the palace always wins eventually.
+   · SUCCESSION: the monarch grandfather dies → your parent takes the throne (you become heir apparent);
+     your parent dies → the crown passes to YOU if you're an adult AT court, else to a regent (crown lost).
+   · A royal purse pays adults who are at court and in good standing. */
+function royaltyYear(){ if(!S || !S.royal) return; const R=S.royal; emInit();
+  const cn=countryName(R.crownCountry), cf=countryFlag(R.crownCountry);
+  // — the hunt for a runaway royal —
+  if(R.fled && !R.found){
+    const yrs=S.age-R.fled;
+    if(rng(0,100) < Math.min(15+yrs*13, 85)){
+      R.found=S.age;
+      emigrateCore(R.crownCountry,{});
+      S.emigration.residencyStatus='citizen'; S.emigration.naturalizationProgress=100;   // royal blood — you ARE a national there
+      for(const p of Object.values(S.people)){ if(!p.alive||p.pet) continue; if(p.fam && (p.rel==='Mother'||p.rel==='Father'||/Brother|Sister/.test(p.rel))){ p.coLocated=true; p.countryOf=R.crownCountry; } }
+      addStress(rng(10,20)); if(typeof addTrauma==='function')addTrauma('control',rng(10,20),'being hunted down and returned to the palace');
+      if(P('dad')&&P('dad').alive)rel('dad',-rng(6,14),-rng(4,10),'He sent the guards that brought you back.');
+      if(P('mom')&&P('mom').alive)rel('mom',-rng(3,9),-rng(2,6),'She let them take you.');
+      setFlag('dragged_to_court'); gainFame(rng(2,6));
+      pushLog(`🚨 They found me. ${pick(['Two men in grey suits were waiting outside school.','A "family friend" I\'d never met knew my coffee order and my address.','The kind new neighbor turned out to be palace security.'])} Royal protection officers escorted me "home" to <b>${cn}</b> ${cf}. The papers called it a joyful family reunion. It wasn't.`,[['bad','Found and returned'],['echo','The palace always wins']]);
+    } else if(rng(0,100)<40){
+      pushLog(`👁️ ${pick(['A stranger photographed me at the bus stop, then vanished.','Someone asked my teacher about "the transfer student with the accent."','A private investigator\'s card was tucked under our door.','The evening news ran ANOTHER segment: "Where is the runaway royal?"','I changed my hair. The man at the corner still looked twice.'])} The palace is still searching.`,[['flag','Still hiding']]);
+    }
+  }
+  // — succession —
+  const gpm=P('pgf');
+  if(R.throne==='grandparent' && gpm && !gpm.alive){ R.throne='parent';
+    if(P('dad')&&P('dad').alive) P('dad').job='reigning monarch';
+    setFlag('heir_apparent'); gainFame(rng(4,9));
+    pushLog(`👑 My grandfather's reign has ended — and <b>my father now wears the crown of ${cn}</b> ${cf}. That puts ME in the direct line of succession. Everything just got heavier.`,[['echo','Heir apparent']]);
+  }
+  else if(R.throne==='parent' && P('dad') && !P('dad').alive){
+    if(S.age>=18 && S.emigration.currentCountry===R.crownCountry && !has('dragged_to_court_disowned')){
+      R.throne='you'; setFlag('crowned_monarch'); gainFame(rng(15,30)); const gift=Math.round(rng(500000,2000000)*priceMult()); money(gift);
+      pushLog(`👑 <b>The crown of ${cn} has passed to ME.</b> ${cf} Bells, cannons, a coronation — and the royal treasury (${cur()}${gift.toLocaleString()}) at my back. The kid from ${S.emigration.bornCountry!==R.crownCountry?countryName(S.emigration.bornCountry):'the palace nursery'} now reigns.`,[['good','CROWNED 👑'],['echo','A dynasty fulfilled']]);
+    } else { R.throne='regent'; setFlag('crown_lost');
+      pushLog(`👑 My father's crown passed to a <b>regent</b> — I was ${S.age<18?'too young':'too far from court'} to take it. The throne of ${cn} slips from our branch of the family. The court will remember whose head it should have sat on.`,[['bad','The crown slipped away'],['echo','A throne lost']]); }
+  }
+  // — the royal purse —
+  if(S.age>=18 && !has('crown_lost') && (!R.fled||R.found) && S.emigration.currentCountry===R.crownCountry && (R.throne==='grandparent'||R.throne==='parent'||R.throne==='you')){
+    const st=Math.round(rng(20000,80000)*(R.throne==='you'?3:1)*priceMult()); money(st);
+    if(S.age%3===0) pushLog(`👑 The royal purse provided <b>${cur()}${st.toLocaleString()}</b> this year.`,[['good','Royal stipend']]);
+  }
+}
 function zodiacSign(m,d){
   const cut=[20,19,21,20,21,21,23,23,23,23,22,22];
   const signs=['Capricorn','Aquarius','Pisces','Aries','Taurus','Gemini','Cancer','Leo','Virgo','Libra','Scorpio','Sagittarius','Capricorn'];
@@ -2519,7 +2577,7 @@ function birthNarrative(){
     t+=`<br>I have ${sibs.length>1?'older siblings: ':'an older '+sibs[0].rel.toLowerCase()+' named '}${list}.`; }
   t+=`<br>I grew up in ${S.hood} part of ${S.city} — ${c.climate} climate.`;
   if(S.origin==='adopted') t+=`<br>I was adopted as a baby into a loving home. 🏠`;
-  else if(S.origin==='royal') t+=`<br>I was born into <b>ROYALTY</b> — palaces, staff and titles await. A trust of <b>${fcm(S.money)}</b> already sits in my name. 👑`;
+  else if(S.origin==='royal') t+=`<br>I was born <b>ROYAL</b> — but not here. The crown of <b>${S.royal?countryName(S.royal.crownCountry):'a distant kingdom'}</b> ${S.royal?countryFlag(S.royal.crownCountry):''} sits with my grandfather. My ${P('dad')?'father':'parent'} walked away from court to raise me in ${COUNTRIES[S.country].name} — "just for a few years," they say. A trust of <b>${fcm(S.money)}</b> waits in my name, and so does the palace. 👑`;
   else if(S.origin==='rich_kid') t+=`<br>I was born into serious <b>wealth</b> — a <b>trust fund of ${fcm(S.money)}</b> waits in my name. 💰`;
   else if(S.origin==='famous_kid') t+=`<br>My family is <b>famous</b> — paparazzi outside the nursery, the spotlight found me early. 🌟`;
   else if(S.origin==='poor') t+=`<br>We had <b>next to nothing</b> — I was born into hard poverty. 🪫`;
@@ -4540,6 +4598,68 @@ const EVENTS = [
         return {text:`You pass. ${(S.spouse&&S.people[S.spouse]&&S.people[S.spouse].alive)?`${S.people[S.spouse].name} squeezes your hand a little tighter that night.`:'Home keeps its claim on you.'} Careers have many rungs; some are just on this side of the water.`,tags:[['flag','Stayed home']]}; }},
     ]};}},
 
+/* --- 👑 ROYALTY-IN-EXILE: the palace calls the family home — comply, negotiate, or RUN --- */
+{ id:'roy_summons', once:false, weight:90,
+  when:S=>S.royal && !S.royal.returned && !S.royal.fled && S.age>=8 && S.age<=17 && S.emigration && S.emigration.currentCountry!==S.royal.crownCountry && (!S.royal.summonsAt || S.age>=S.royal.summonsAt),
+  build:S=>{ const R=S.royal; const cn=countryName(R.crownCountry), cf=countryFlag(R.crownCountry); const par=(P('dad')&&P('dad').alive)?P('dad'):P('mom');
+    return {yr:`Age ${S.age}`, title:'👑 The Summons',
+    text:`A courier in an immaculate suit delivers a letter sealed in wax. ${par?`<b>${par.name.split(' ')[0]}</b> reads it twice and goes very quiet.`:''} The palace of <b>${cn}</b> ${cf} has decided the family's "sabbatical" is over: your grandfather, <b>the King</b>, commands his bloodline home — all of it. Including you. The flights are already booked.`,
+    choices:[
+      {label:`✈️ Pack your things — go to ${cn}`, tip:'Palaces, tutors, titles… and walls', apply:()=>{
+        const core=emigrateCore(R.crownCountry,{}); S.emigration.residencyStatus='citizen'; S.emigration.naturalizationProgress=100; R.returned=S.age;
+        for(const p of Object.values(S.people)){ if(!p.alive||p.pet) continue; if(p.fam && (p.rel==='Mother'||p.rel==='Father'||/Brother|Sister/.test(p.rel))){ p.coLocated=true; p.countryOf=R.crownCountry; } }
+        setFlag('raised_at_court'); gainFame(rng(3,8)); chg('happy',-rng(0,4)); addStress(rng(3,8));
+        return {text:`Motorcade from the airport, cameras at the gates, a bedroom bigger than your old house. Court life begins: tutors, protocol, curtsies — and a grandfather on a throne who studies you like an heirloom. ${core.ldCount?`${core.ldCount} friend${core.ldCount>1?'s':''} from your old life are an ocean away now.`:''}`,
+          tags:[['flag',`Raised at court in ${cn}`],['echo','A royal childhood begins']]}; }},
+      {label:'Beg to finish school here first', tip:'Negotiate — the palace may allow a delay', when:S=>{ const p=(P('dad')&&P('dad').alive)?P('dad'):P('mom'); return p&&p.affinity>=55; }, apply:()=>{
+        if(rng(0,100)<55){ R.summonsAt=S.age+rng(2,3);
+          return {text:`${par?par.name.split(' ')[0]:'Your parent'} pleads your case down a crackling phone line to the palace. A pause that lasts a kingdom… then: "Until the end of schooling. No longer." You've bought yourself a few more normal years — the letter WILL come again.`,
+            tags:[['good','Summons delayed'],['echo','The palace will call again']]}; }
+        R.summonsAt=S.age+1; addStress(rng(3,7));
+        return {text:`The request is denied before it's finished. "The King does not negotiate with children." The household starts packing around you — you have until next year.`,
+          tags:[['bad','Denied'],['echo','Time is running out']]}; }},
+      {label:'🏃 Run away the night before the flight', tip:'They have guards, investigators and the press. They WILL look for you.', when:S=>S.age>=10, apply:()=>{
+        R.fled=S.age; setFlag('royal_runaway');
+        for(const p of Object.values(S.people)){ if(!p.alive||p.pet) continue; if(p.fam && (p.rel==='Mother'||p.rel==='Father'||/Brother|Sister/.test(p.rel))){ p.coLocated=false; p.countryOf=R.crownCountry; } }
+        if(P('dad'))rel('dad',-rng(8,16),-rng(6,12),'You ran the night the family flew to court.');
+        if(P('mom'))rel('mom',-rng(6,12),-rng(4,10),'You vanished rather than board the plane.');
+        addStress(rng(8,16)); chg('happy',rng(2,6)); gainFame(rng(1,4));
+        return {text:`You slip out a window with a backpack while the cars idle out front. By morning the family is airborne without you — and by evening, "<b>RUNAWAY ROYAL</b>" is a headline in two countries. Somewhere, a palace security office opens a file with your face in it. Stay ahead of them if you can.`,
+          tags:[['flag','Runaway royal 🏃'],['echo','The hunt begins'],['bad','Family left without you']]}; }},
+    ]};}},
+/* --- 👑 ROYALTY: tabloids find the exiled royal kid --- */
+{ id:'roy_press', once:false, weight:14,
+  when:S=>S.royal && !S.royal.returned && !S.royal.found && S.age>=6 && S.emigration && S.emigration.currentCountry!==S.royal.crownCountry && (S.age-(S._lastRoyP||-99)>=4),
+  build:S=>{ S._lastRoyP=S.age; const R=S.royal; const cn=countryName(R.crownCountry);
+    return {yr:`Age ${S.age}`, title:'📸 The Tabloids Found You',
+    text:`A photographer with a foreign accent has been parked outside for three days. "<b>The Secret ${S.gender==='f'?'Princess':'Prince'} of ${cn} — living like a commoner!</b>" is about to run, with or without you.`,
+    choices:[
+      {label:'Give them one charming photo', tip:'Control the story', apply:()=>{ gainFame(rng(3,7)); chg('happy',rng(1,4)); if(P('dad')&&P('dad').alive)rel('dad',-rng(1,4),0,'The palace prefers silence to charm.');
+        return {text:`You wave from the porch like you were born to it (you were). The photo is adorable, the headline is kind — and a palace press officer calls your parents within the hour to express "concern."`,tags:[['good','Won the front page'],['flag','The palace noticed']]}; }},
+      {label:'Say nothing — curtains closed', apply:()=>{ addStress(rng(2,6));
+        return {text:`The story runs anyway with a blurry long-lens shot of you taking out the trash. "ROYAL RUBBISH!" Not their best work. It blows over — mostly.`,tags:[['flag','Rode it out']]}; }},
+      {label:'Have the palace handle it', tip:'Invoke the machine', apply:()=>{ if(P('dad')&&P('dad').alive)rel('dad',+rng(2,5),+rng(1,4),'You let the family handle the press — like a royal would.');
+        return {text:`One phone call. The photographer is gone by dawn and the story dies in a drawer. It's the first time you've felt the family's reach — protective and a little frightening.`,tags:[['good','Story killed'],['echo','The family\'s reach is long']]}; }},
+    ]};}},
+/* --- 👑 ROYALTY: your first public duty at court --- */
+{ id:'roy_duty', once:true, weight:40,
+  when:S=>S.royal && (S.royal.returned||S.royal.found) && S.age>=10 && S.age<=25 && S.emigration && S.emigration.currentCountry===S.royal.crownCountry,
+  build:S=>{ const R=S.royal; const cn=countryName(R.crownCountry);
+    const duty=pick(['a children\'s hospital wing opening','a naval ship launching','the national flower show','a veterans\' parade','a new library dedication']);
+    return {yr:`Age ${S.age}`, title:'🎗️ Your First Royal Duty',
+    text:`The court has decided you're ready: <b>${duty}</b>, your first official engagement. A speech card sits in your gloved hand. Cameras from every paper in ${cn}. Your grandfather's advisors watch from the wings.`,
+    choices:[
+      {label:'Deliver it with grace', tip:'Looks + smarts carry the day', apply:()=>{ const ok=rng(0,100) < 40 + S.stats.looks/4 + S.stats.smarts/4; if(ok){ gainFame(rng(4,9)); chg('happy',rng(3,7)); setFlag('court_favorite'); if(typeof addSelfWorth==='function')addSelfWorth(4);
+          return {text:`You go off-script for one warm, perfect joke — the crowd laughs, the cameras flash, and a courtier whispers "natural." The papers crown you the family's new favorite by morning.`,tags:[['good','A star at court'],['echo','Court favorite']]}; }
+        addStress(rng(4,9)); chg('happy',-rng(2,5));
+        return {text:`You mispronounce the admiral's name, drop the speech card, and knight a startled pigeon with your gaze. The clip runs for a week. Grandfather is "not angry, just disappointed" — which is worse.`,tags:[['bad','A royal fumble']]}; }},
+      {label:'Do the minimum, wave, leave', apply:()=>{ chg('happy',rng(0,2)); return {text:`Smile, wave, ribbon, scissors, car. Textbook and forgettable — exactly how you wanted it. The court notes your "efficiency."`,tags:[['flag','Duty done']]}; }},
+      {label:'Use the platform — speak up for something real', tip:'Bold — palaces hate surprises', when:S=>S.age>=14, apply:()=>{ if(rng(0,100)<50){ gainFame(rng(6,12)); karma(4); setFlag('people_s_royal');
+          return {text:`You set down the card and talk about the kids in that hospital by name. The advisors freeze; the country falls in love. "THE PEOPLE'S ${S.gender==='f'?'PRINCESS':'PRINCE'}" runs on every front page.`,tags:[['good','The people\'s royal 💛'],['echo','A voice, not just a title']]}; }
+        addStress(rng(5,10)); if(P('dad')&&P('dad').alive)rel('dad',-rng(3,8),-rng(2,5),'You went off-script on your first duty.');
+        return {text:`You improvise a speech about causes the crown "should" fund. The silence from the wings is arctic. Your calendar of engagements is suddenly, mysteriously empty for a year.`,tags:[['bad','Off message'],['flag','Benched by the court']]}; }},
+    ]};}},
+
 /* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
 { id:'award_nom', once:false, weight:14,
   when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
@@ -4995,6 +5115,7 @@ function ageUp(){
   nemesisYear();                                                      // 😈 a living nemesis occasionally needles you (deterministic, gated)
   emigrationYear();                                                   // 🌍 residency/naturalization, culture adaptation, long-distance decay (deterministic)
   allowanceYear();                                                    // 👑 pocket money scaled to the family's wealth (deterministic)
+  royaltyYear();                                                      // 👑 royal-in-exile: runaway hunt, succession, stipend (deterministic)
   clubsYear();                                                        // 🎽 school clubs/teams accrue years & performance (deterministic)
   sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
   staffYear();                                                        // 🧑‍✈️ household staff salaries + their yearly perks (deterministic)
