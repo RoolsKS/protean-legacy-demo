@@ -2080,6 +2080,7 @@ function lifeRecord(){
     hobbyMasterCount: Object.values(S.hobbies||{}).filter(h=>h.level>=100).length,
     hobbyWins: Object.values(S.hobbies||{}).reduce((a,h)=>a+(h.compWins||0),0),
     endurance: (S.endurance!=null?S.endurance:-1),
+    bestFriend: has('has_best_friend'),
   };
 }
 const RIBBONS=[
@@ -2166,6 +2167,8 @@ const RIBBONS=[
   // 🏃 Endurance
   {id:'marathoner', name:'Marathoner', icon:'🏅', rarity:'rare', priority:6, desc:'Finish a full marathon.', q:r=>r.endurance>=3?1:0},
   {id:'ironlegs', name:'Ironlegs', icon:'🦿', rarity:'legendary', priority:8, desc:'Conquer an ultramarathon.', q:r=>r.endurance>=4?1:0},
+  // 🤝 Bonds
+  {id:'kindred', name:'Kindred Spirit', icon:'🤝', rarity:'rare', priority:5, desc:'Forge a lifelong best friendship.', q:r=>r.bestFriend?1:0},
 ];
 function ribbonDef(id){ return RIBBONS.find(x=>x.id===id); }
 function _ribRecordVal(track,r){ return ({maxNetWorth:r.nwBase, maxAge:r.age, maxChildren:r.kids, maxFame:r.fame, maxGen:r.gen, maxTrophies:r.soccerTrophies})[track]||0; }
@@ -4608,6 +4611,7 @@ function ageUp(){
   childSupportYear();                                                 // 👨‍👧 post-divorce custody: pay/receive child support each year (deterministic)
   kidsCareYear();                                                     // 👶🎓 nanny + private-school tuition for your minor kids (deterministic)
   partnersYear();                                                     // 💘 juggling multiple partners costs money, spark & peace (deterministic)
+  friendshipYear();                                                   // 🤝 a best friend gives steady yearly mood support (deterministic)
   clubsYear();                                                        // 🎽 school clubs/teams accrue years & performance (deterministic)
   sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
   staffYear();                                                        // 🧑‍✈️ household staff salaries + their yearly perks (deterministic)
@@ -8078,6 +8082,7 @@ function openPerson(id){
     {label:'⏱️ Spend Time', fn:()=>personAction(id,'spend')},
     {label:'💬 Conversation', fn:()=>personAction(id,'talk')},
   ];
+  if(!p.romantic && !p.bestFriend && (p.affinity||0)>=80) ch.push({label:'🤝 Become Best Friends', alt:true, fn:()=>makeBestFriend(id)});
   const married = p.rel==='Husband'||p.rel==='Wife';
   if(p.romantic){                                   // your partner / spouse — romance options
     ch.push({label:'💘 Date Night', alt:true, fn:()=>personAction(id,'datenight')});
@@ -8699,6 +8704,15 @@ function petShow(id){ const p=S.people[id]; if(!p||!p.alive||!p.pet)return;
     resultModal('Pet', `${p.name} Steals the Show! 🌟`, '🐾', [`${p.name} ran through all ${n} tricks flawlessly and the crowd went wild${extra}!`], ()=>openPerson(id)); }
   else { pushLog(`🎪 ${p.name} showed off ${n} tricks for the neighbours. 🐾`,[['flag',`${p.name} performed`]]);
     resultModal('Pet', `Good ${p.rel}! 🐾`, '🐾', [`${p.name} proudly performed all ${n} tricks. Pure joy.`], ()=>openPerson(id)); } }
+/* 🤝 BEST FRIENDS — cement a close bond (affinity≥80) into a lifelong friendship. Steady yearly support. Modalpick leaf → no logAct. */
+function makeBestFriend(id){ const p=S.people[id]; if(!p||!p.alive||p.bestFriend||(p.affinity||0)<80)return;
+  p.bestFriend=true; p.trust=clamp((p.trust||50)+rng(4,10)); chg('happy',rng(4,9)); addMood(rng(3,7)); setFlag('has_best_friend');
+  if(typeof keyMoment==='function') keyMoment(p,'milestone',20,`Became best friends with ${S.name}.`);
+  pushLog(`🤝 ${p.name} and I became <b>best friends</b>.`,[['good',`Best friends with ${p.name}`]]);
+  resultModal('Best Friends', p.name, '🤝', [`You and <b>${p.name}</b> are now best friends — the kind of bond that lasts a lifetime.`], ()=>openPerson(id)); }
+function friendshipYear(){ if(!S||!S.alive)return; const bffs=Object.values(S.people).filter(p=>p.alive&&p.bestFriend); if(!bffs.length)return;
+  addMood(rng(1,3)); for(const p of bffs){ p.affinity=clamp(p.affinity+rng(0,1)); }   // a best friend is steady support & their bond resists decay
+  if(rng(0,100)<12){ const p=bffs[rng(0,bffs.length-1)]; addMood(rng(2,5)); chg('happy',rng(1,3)); pushLog(`🤝 My best friend ${p.name} was there for me this year.`,[['good','A friend in your corner']]); } }
 // every living connection has an occupation/responsibility — assigned once, then stable
 function npcOcc(p){
   if(p.pet || !p.alive) return '';
