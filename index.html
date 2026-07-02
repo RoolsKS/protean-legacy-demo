@@ -1294,6 +1294,9 @@ function startLife(opts){
         built:rng(1200,1900), rooms:rng(120,775), staff:rng(80,420), acres:rng(40,900), value:rng(80,900)*1e6 } };
     if(P('pgf')){ P('pgf').alive=true; P('pgf').job='reigning monarch'; P('pgf').memory=P('pgf').memory.filter(m=>!/Passed before/.test(m.note)); }
     if(P('pgm')){ P('pgm').job='queen consort'; }
+    // the royal side of the family LIVES AT COURT — an ocean away (long-distance until you visit or return)
+    for(const p of Object.values(S.people)){ if(!p.alive||p.pet) continue;
+      if(p.fam && p.side==='paternal' && p.rel!=='Father'){ p.coLocated=false; p.countryOf=S.royal.crownCountry; } }
   } else S.royal=null;
   // populations — the world, your country, your city (shapes competition & reach)
   S.countryPop=countryPop(S.country);
@@ -10042,9 +10045,11 @@ function emigrateCore(country, opts, city, oldCountry){ opts=opts||{}; emInit();
   if(S.job && !opts.keepJob){ if(!S.job.owner) clearCoworkers(); S.job=null; left.push('your job'); }
   if(S.schoolSport && S.schoolSport.onTeam && !opts.keepClub){ S.schoolSport.onTeam=false; S.schoolSport.squadStatus='notOnTeam'; left.push('your school team'); }
   // long-distance: everyone who doesn't move with you now lives abroad (in-person actions disabled + faster decay)
+  // — and anyone who ALREADY LIVES in the destination is reunited with you (moving home brings family close again)
   let ldCount=0;
   for(const p of Object.values(S.people)){ if(!p.alive) continue;
     if(emMovesWithYou(p)){ p.coLocated=true; p.countryOf=country; }
+    else if(p.countryOf===country){ p.coLocated=true; }
     else { if(p.coLocated!==false) ldCount++; p.coLocated=false; p.countryOf=p.countryOf||oldCountry; } }
   // residency + the family's migration trail
   const e=S.emigration; e.currentCountry=country; e.residencyStatus= opts.asylum?'undocumented':'immigrant'; e.yearsInCurrentCountry=0; e.naturalizationProgress=0;
