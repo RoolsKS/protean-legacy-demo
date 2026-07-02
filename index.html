@@ -927,7 +927,7 @@ function setLang(code){ if(!LANGS.some(l=>l.c===code)) code='en'; LANG=code;
 }
 function languageMenu(){ if(typeof closeMenu==='function') closeMenu();
   openModal({banner:tr('word_language'), title:'🌐 '+tr('lang_title'), closable:true,
-    choices: LANGS.map(l=>({label:(l.c===LANG?'✓ ':'')+l.f+' '+l.n, alt:l.c!==LANG, fn:()=>{ closeModal(); setLang(l.c); }})) }); }
+    choices: LANGS.slice().sort((a,b)=>a.n.localeCompare(b.n)).map(l=>({label:(l.c===LANG?'✓ ':'')+l.f+' '+l.n, alt:l.c!==LANG, fn:()=>{ closeModal(); setLang(l.c); }})) }); }
 function initLang(){ let saved='en'; try{ saved=localStorage.getItem('protean_lang')||'en'; }catch(e){} setLang(saved); }
 
 /* ============================================================
@@ -5345,7 +5345,7 @@ function hobbiesMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked
     choices.push({label:`${h.icon} ${h.name} · ${hobbyTier(r.level)} (${r.level}%)${r.compWins?` · 🏆${r.compWins}`:''}`, fn:()=>practiceHobby(k)}); });
   // a couple of fresh hobbies to pick up — the ones you'd be best at (talent-suggested), then any
   const fresh=HOBBIES.filter(h=>!S.hobbies[h.k]).sort((a,b)=>hobbyAffinity(b)-hobbyAffinity(a));
-  fresh.slice(0,5).forEach(h=>{ const aff=hobbyAffinity(h); choices.push({label:`➕ Take up ${h.icon} ${h.name}${aff>1.5?' ✨ (a natural fit)':''}`, alt:true, fn:()=>practiceHobby(h.k)}); });
+  fresh.slice(0,5).sort((a,b)=>a.name.localeCompare(b.name)).forEach(h=>{ const aff=hobbyAffinity(h); choices.push({label:`➕ Take up ${h.icon} ${h.name}${aff>1.5?' ✨ (a natural fit)':''}`, alt:true, fn:()=>practiceHobby(h.k)}); });
   choices.push({label:'Back', alt:true, fn:()=>{ closeModal(); setTab('activities'); }});
   openModal({banner:'Passions', title:'🎨 Hobbies & Passions', icon:'🎨', closable:true,
     text:mine.length?`Practice a passion to grow your skill — and find some calm.`:`Pick something up. Hobbies relieve stress, can earn money, and mastering one becomes part of your legacy. Your <b>talents</b> (genes + temperament) make some come easier.`,
@@ -9619,6 +9619,7 @@ function takeTrip(){ if(!S){toast('Start a life first.');return;} if(isLocked())
   S._trip={};
   const codes=Object.keys(COUNTRIES); const sample=[]; const idx=[...codes.keys()];
   while(sample.length<5 && idx.length){ sample.push(codes[idx.splice(rng(0,idx.length-1),1)[0]]); }
+  sample.sort((a,b)=>{ const pa=COUNTRY_PINNED.indexOf(a), pb=COUNTRY_PINNED.indexOf(b); if(pa>=0||pb>=0) return (pa<0?9:pa)-(pb<0?9:pb); return COUNTRIES[a].name.localeCompare(COUNTRIES[b].name); });
   openModal({banner:'Vacation', title:'✈️ Take a Trip', icon:'✈️', closable:true, text:`Where to?${!passportValid()?'<br><span style="color:var(--dim);font-size:12px">🛂 Foreign trips need a passport.</span>':''}`,
     choices: sample.map(c=>({label:`${COUNTRIES[c].flag} ${COUNTRIES[c].name}${c!==S.country&&!passportValid()?' 🛂':''}`, alt:true, fn:()=>{
       if(c!==S.country && !passportValid()){ resultModal('Border','No Passport','🛂',[`<b>${COUNTRIES[c].name}</b> is overseas — you need a <b>passport</b>.`,`Apply for one in Activities → Go Out (Events), then try again.`],()=>setTab('life')); return; }
@@ -12093,7 +12094,7 @@ function gradFinale(){ closeModal();   // 6 — the cap toss
   resultModal('Graduation', 'Graduation Day', '🎓', lines, done);
 }
 function openCollegeChoice(){
-  const choices=MAJORS.map(m=>({label:`${m.icon} ${m.name}`, alt:true, fn:()=>enrollUni(m.k)}));
+  const choices=MAJORS.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(m=>({label:`${m.icon} ${m.name}`, alt:true, fn:()=>enrollUni(m.k)}));
   choices.push({label:'Skip it — start adult life', fn:()=>{ closeModal(); S.eduLevel='done'; pushLog(`I skipped university to start working.`,[['flag','No degree']]); setTab('life'); }});
   openModal({banner:'Education', title:'🎓 Apply to University', icon:'🎓', closable:false,
     text:`I've finished high school. <b>Pick a major</b> to enroll (tuition ${cur()}5,000–40,000) — a degree opens far better careers — or skip it and start working.`,
