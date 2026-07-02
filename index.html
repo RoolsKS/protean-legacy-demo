@@ -1449,14 +1449,20 @@ function person(id,name,rel,aff,trust,opts={}){
 function P(id){return S.people[id]}
 
 /* ---------- FAMILY TREE generation (the foundation) ---------- */
+/* Full names for blood relatives: paternal side carries the family surname, the maternal side keeps
+   the mother's maiden name — and about a third of the family gets a middle name. */
+function famName(g, side){ const last = side==='maternal' ? (S.maidenName||S.surname||pick(LAST)) : (S.surname||pick(LAST));
+  const mid = rand()<0.3 ? ' '+nm(g) : '';
+  return nm(g)+mid+' '+last; }
 function buildFamily(forceGender){
   const last=pick(LAST); S.surname=last;
+  S.maidenName=pick(LAST.filter(l=>l!==last))||last;   // the mother's side of the family keeps her maiden name
   S.gender=forceGender||(rand()<.5?'m':'f');
   S.name=nm(S.gender)+' '+last;
 
   const dadAge=rng(26,40), momAge=rng(24,38);
-  addRel('dad', nm('m'),'Father','m',-1,'paternal',dadAge,78);
-  addRel('mom', nm('f'),'Mother','f',-1,'maternal',momAge,82);
+  addRel('dad', famName('m','paternal'),'Father','m',-1,'paternal',dadAge,78);
+  addRel('mom', famName('f','paternal'),'Mother','f',-1,'maternal',momAge,82);   // married name; her family keeps the maiden name
   // 👑 FAMILY WEALTH — the origin decides what your parents do for a living
   { const tier=S.origin||'normal';
     const POOR=['day laborer','dishwasher','night cleaner','scrap collector','farmhand','laundry worker','street vendor'];
@@ -1486,7 +1492,7 @@ function buildFamily(forceGender){
   // older siblings
   const sibs=rng(0,2);
   for(let i=0;i<sibs;i++){ const g=rand()<.5?'m':'f';
-    addRel('sib'+i, nm(g), g==='m'?'Brother':'Sister', g,0,null,rng(1,12),rng(55,80)); }
+    addRel('sib'+i, famName(g,'paternal'), g==='m'?'Brother':'Sister', g,0,null,rng(1,12),rng(55,80)); }
   // a grown relative might be quietly loaded — they'll appear on the World's Richest list
   // 👑 FAMILY WEALTH — the whole clan's fortunes scale with the origin (drives inheritances, school money, estimates)
   { const bChance=isPremium()?0.12:0.03;   // premium: far more likely to have a billionaire relative
@@ -1509,16 +1515,16 @@ function addRel(id,name,rel,gender,gen,side,age,aff){
   S.people[id]=person(id,name,rel,aff,clamp(aff+rng(-10,10)),{gender,gen,side,age,fam:true});
 }
 function gp(id,gender,rel,side,age){
-  addRel(id,nm(gender),rel,gender,-2,side,age,rng(60,85));
+  addRel(id,famName(gender,side),rel,gender,-2,side,age,rng(60,85));
   if(rand()<(age-58)/40){ P(id).alive=false; P(id).memory.push({age:0,note:'Passed before you were born.'}); }
 }
 function auntsUncles(side,parentAge){
   const n=rng(0,2);
   for(let i=0;i<n;i++){ const g=rand()<.5?'m':'f'; const id=side[0]+'au'+i;
-    addRel(id,nm(g), g==='m'?'Uncle':'Aunt', g,-1,side,parentAge+rng(-6,8),rng(45,75));
+    addRel(id,famName(g,side), g==='m'?'Uncle':'Aunt', g,-1,side,parentAge+rng(-6,8),rng(45,75));
     const cz=rng(0,2);
     for(let c=0;c<cz;c++){ const cg=rand()<.5?'m':'f';
-      addRel(side[0]+'cz'+i+c, nm(cg),'Cousin',cg,0,side,rng(0,8),rng(40,70)); } }
+      addRel(side[0]+'cz'+i+c, famName(cg,side),'Cousin',cg,0,side,rng(0,8),rng(40,70)); } }
 }
 function livingKin(pred){ return Object.values(S.people).filter(p=>p.fam&&p.alive&&pred(p)); }
 
@@ -9438,7 +9444,7 @@ function conceiveChild(partnerName, lied){
 function babyBorn(otherParent){
   const g=rand()<.5?'m':'f';
   const id='kid'+(S.kidSeq=(S.kidSeq||0)+1);
-  const name=(nm(g)+' '+(S.surname||'')).trim();
+  const name=(nm(g)+(rand()<0.3?' '+nm(g):'')+' '+(S.surname||'')).trim();
   S.people[id]=person(id,name, g==='m'?'Son':'Daughter', rng(72,92), rng(60,85), {gender:g,gen:1,age:0,fam:true});
   S.people[id].otherParent=otherParent||null; setFlag('has_kids'); chg('happy',6);
   // GENETICS — the child inherits a roll of your genome and a co-parent's (gifted lines breed up; risks pass down)
