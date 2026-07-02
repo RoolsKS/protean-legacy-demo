@@ -4595,6 +4595,28 @@ const EVENTS = [
         return {text:`You keep the money to secure your own footing first. It's practical — but you feel the weight of expectation back home.`,tags:[['flag','Kept it this time']]}; }},
     ]};}},
 
+/* --- 🌍 A long-distance loved one invites you to come stay — cross the world or send your love --- */
+{ id:'em_invite', once:false, weight:13,
+  when:S=>S.age>=16 && Object.values(S.people).some(p=>p.alive&&!p.pet&&p.coLocated===false&&(p.affinity||0)>=40) && (S.age-(S._lastEmInv||-99)>=3),
+  build:S=>{ S._lastEmInv=S.age; const cand=Object.values(S.people).filter(p=>p.alive&&!p.pet&&p.coLocated===false&&(p.affinity||0)>=40); const p=cand[rng(0,cand.length-1)];
+    const fn=p.name.split(' ')[0], cn=countryName(p.countryOf), cf=countryFlag(p.countryOf);
+    const why=pick(['for the holidays','for their birthday','for the local festival — "you HAVE to see it"','because the guest room is finally finished','"before another year disappears on us"']);
+    return {yr:`Age ${S.age}`, title:'💌 An Invitation From Abroad',
+    text:`A message from <b>${fn}</b> in ${cn} ${cf}: come stay ${why}. ${(p.affinity||50)>=65?'You can hear how much they mean it.':'Things have been distant between you — maybe this is the bridge.'} Flights aren't cheap, and life here won't pause itself.`,
+    choices:[
+      {label:`✈️ Fly out to ${cn}`, tip:'Money and jet lag vs. memories', when:S=>S.money>=1500, apply:()=>{ const cost=Math.round(rng(1200,4800)*priceMult()); money(-Math.min(S.money,cost));
+        rel(p.id,+rng(9,16),+rng(6,12),'You crossed the world when they asked.'); chg('happy',rng(4,9)); addStress(-rng(2,6)); if(typeof keyMoment==='function')keyMoment(p,'reconciliation',12,'They invited you — and you came.');
+        const beat=pick([`${fn} cries at arrivals and pretends it's allergies.`,`The week ends with plans for the NEXT visit already made.`,`You meet their whole local life — the café, the neighbors, the view they always describe.`,`Their fridge is covered in photos of you. You didn't know that.`]);
+        return {text:`You go. ${beat} The distance shrinks to nothing for one perfect week. (${cur()}${cost.toLocaleString()})`,tags:[['good',`Visited ${fn} in ${cn}`],['rel','Bond rekindled']]}; }},
+      {label:'📦 Send a care package instead', tip:'Not the same — but something', apply:()=>{ const cost=Math.round(rng(150,600)*priceMult()); if(S.money>0)money(-Math.min(S.money,cost));
+        rel(p.id,+rng(2,6),+rng(1,4),'You sent a box of home when you couldn\'t come.');
+        return {text:`You fill a box with the things they can't get there — snacks, photos, a stupid inside-joke gift. ${fn} sends a video of the unboxing. Not the same as being there. Better than nothing.`,tags:[['good','Care package sent'],['flag','Maybe next year']]}; }},
+      {label:'📞 A marathon video call', tip:'Free — and it shows', apply:()=>{ rel(p.id,+rng(1,4),+rng(0,3),'A three-hour call instead of a visit.'); chg('happy',rng(1,3));
+        return {text:`Three hours, two time zones, one laptop propped against a fruit bowl. ${fn} walks you around their place camera-first. It's warm, it's easy — and when the screen goes dark, the room feels very quiet.`,tags:[['flag','Called instead']]}; }},
+      {label:'Leave it on read', tip:'Life is busy', apply:()=>{ rel(p.id,-rng(4,9),-rng(3,7),'They invited you. You never even answered.'); addStress(rng(1,4));
+        return {text:`You mean to reply. You keep meaning to. Weeks later the invitation is still sitting there, unanswered — and something between you and ${fn} quietly rusts.`,tags:[['bad',`${fn} drifting away`]]}; }},
+    ]};}},
+
 /* --- 🌍 EMIGRATION P2: FOREIGN OPPORTUNITY OFFERS — the world comes knocking. Accepting emigrates
    via emigrateCore (modal-free); the sponsor handles the paperwork (passport granted if missing). --- */
 { id:'em_offer_college', once:true, weight:16,
@@ -8784,7 +8806,8 @@ function openPerson(id){
   }
   const _ld=emLongDistance(p);
   const ch=[];
-  if(_ld){ ch.push({label:`🌍 Lives in ${countryFlag(p.countryOf)} ${countryName(p.countryOf)}`, fn:()=>toast('They live abroad — call, message or send things, or reunite in person (Activities → Emigrate).')});
+  if(_ld){ ch.push({label:`🌍 Lives in ${countryFlag(p.countryOf)} ${countryName(p.countryOf)}`, fn:()=>toast('They live abroad — call, message, send things, or fly out and visit them.')});
+           ch.push({label:'✈️ Go Visit Them', tip:`Fly to ${countryName(p.countryOf)} — a week together`, fn:()=>visitAbroad(id)});
            ch.push({label:'📞 Call / Video', fn:()=>personAction(id,'talk')}); }
   else { ch.push({label:'⏱️ Spend Time', fn:()=>personAction(id,'spend')});
          ch.push({label:'💬 Conversation', fn:()=>personAction(id,'talk')}); }
@@ -9981,6 +10004,44 @@ function doReunion(dir){ closeModal(); const mode=emTravelMode();   // modalpick
     : (dir==='here'? `${ld.length>1?'They':ld[0].name} land at the airport, jet-lagged and grinning, having flown in from ${fromC}. The reunion is everything.` : `You fly back to ${fromC} — customs, jet lag, and then the door opens and everyone's there.`);
   pushLog(`✈️ ${dir==='here'?'I flew my loved ones in':'I traveled back to the old country'} for a reunion (${cur()}${cost.toLocaleString()}).`,[['good','Reunion across borders']]);
   resultModal('Reunion', dir==='here'?'They Flew In 🛬':'Homecoming ✈️', mode==='ship'?'⛵':'✈️', [scene, `Time together rekindled your bonds. Cost: <b>${cur()}${cost.toLocaleString()}</b>.`], ()=>setTab('life'));
+}
+/* ✈️ VISIT A LONG-DISTANCE CONNECTION — fly to THEIR country for a week, then choose how to spend it.
+   Chain: openPerson (logged opener) → 'Go Visit Them' (modalpick) → this scenario modal → choice (modalpick leaf). */
+function visitAbroad(id){ closeModal(); const p=S.people[id]; if(!p||!p.alive||p.coLocated!==false){ setTab('people'); return; }
+  if(S.age<14){ toast('🍼 Too young to fly out alone — wait for a family reunion.'); return; }
+  if(!passportValid()){ resultModal('Travel','No Passport','🛂',[`Visiting <b>${p.name.split(' ')[0]}</b> in ${countryName(p.countryOf)} means crossing a border — you need a valid <b>passport</b>.`,`Apply for one in Activities → Go Out (Events).`],()=>setTab('people')); return; }
+  if(!onceYear('visit_abroad','flew out to visit someone')){ setTab('people'); return; }
+  if(!spendEnergy(20,'an international visit')){ setTab('people'); return; }
+  const mode=emTravelMode();
+  const cost=Math.round((mode==='air'?rng(900,4500):rng(2500,9000))*priceMult());
+  if(!spend(cost)) return;
+  S._visit={id, cost};
+  const fn=p.name.split(' ')[0], cn=countryName(p.countryOf), cf=countryFlag(p.countryOf);
+  openModal({banner:'Visit', title:`✈️ A Week with ${fn}`, icon:'✈️', closable:false,
+    text:`${mode==='ship'?'After long days at sea you step onto the dock':'You land jet-lagged'} in <b>${cn}</b> ${cf} (${cur()}${cost.toLocaleString()}) — and there's ${fn}, ${(p.affinity||50)>=60?'waving like a maniac at arrivals':'waiting with a careful smile'}. One week together. How do you spend it?`,
+    choices:[
+      {label:'🍲 Slow days — cook, talk, just be there', tip:'The deepest bond', fn:()=>visitAbroadDo('present')},
+      {label:'🔧 Roll your sleeves up — fix their place', tip:'Actions speak louder', fn:()=>visitAbroadDo('help')},
+      {label:'🎉 Paint their town — a week of nights out', tip:'Costs extra, unforgettable', fn:()=>visitAbroadDo('town')},
+      ...(p.fam?[{label:'📔 Memory lane — old photos & family stories', tip:'Know your roots', fn:()=>visitAbroadDo('roots')}]:[]),
+    ]});
+}
+function visitAbroadDo(kind){ closeModal(); const v=S._visit; S._visit=null; if(!v)return; const p=S.people[v.id]; if(!p)return;   // modalpick leaf → no logAct
+  const fn=p.name.split(' ')[0], cn=countryName(p.countryOf);
+  let text='', tags=[];
+  if(kind==='present'){ rel(v.id,+rng(9,16),+rng(7,12),'You crossed the world just to sit at their table.'); chg('happy',rng(4,9)); addStress(-rng(4,10));
+    text=`No plans, no rush — groceries, home cooking, second cups of coffee, and the kind of conversations that only happen after midnight. By the last day, the distance between you is gone in every way that counts.`; tags=[['good',`${fn} closer than ever`]]; }
+  else if(kind==='help'){ rel(v.id,+rng(5,10),+rng(9,15),'You flew out and fixed half their house.'); karma(3); chg('happy',rng(2,6));
+    const job=pick(['a leaking tap and a wobbly shelf','their ancient boiler','a garden gone completely feral','a mountain of official paperwork in a language you both half-know','that door that has never once closed properly']);
+    text=`You spend the week on ${job}. ${fn} protests, then surrenders, then quietly loves it. Some people say "I love you" — you re-grouted a bathroom.`; tags=[['good',`${fn} trusts you deeply`]]; }
+  else if(kind==='town'){ const extra=Math.round(rng(300,1500)*priceMult()); if(S.money>0)money(-Math.min(extra,S.money)); rel(v.id,+rng(7,13),+rng(3,8),'One legendary week out on their town.'); chg('happy',rng(6,12));
+    const beat=rng(0,100)<25?'You lose your phone on night three and gain a story you\'ll tell forever.':'Locals now greet you BY NAME in two bars and one kebab shop.';
+    text=`${fn} shows you every corner of ${cn} after dark. ${beat} (${cur()}${extra.toLocaleString()} extra — worth every cent.)`; tags=[['good',`A legendary week with ${fn}`]]; }
+  else { rel(v.id,+rng(8,14),+rng(6,11),'A week of photo albums and family stories together.'); chg('happy',rng(3,7)); chg('smarts',1); setFlag('family_lore');
+    text=`Shoeboxes of photographs, names you'd only half-heard at dinners, a family tree sketched on the back of a napkin. You leave knowing exactly where you come from — and ${fn} is lighter for the telling.`; tags=[['echo','Keeper of the family stories'],['good',`${fn} closer`]]; }
+  if(typeof keyMoment==='function') keyMoment(p,'reconciliation',10,`You flew to ${cn} to visit them.`);
+  pushLog(`✈️ I flew to <b>${cn}</b> to spend a week with <b>${p.name}</b> (${cur()}${v.cost.toLocaleString()}).`,tags);
+  resultModal('Visit',`A Week with ${fn}`,'✈️',[text, statBar('Relationship',p.affinity)],()=>setTab('people'));
 }
 function emigrate(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
   logAct('call',{fn:'emigrate'});
