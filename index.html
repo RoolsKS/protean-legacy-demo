@@ -8112,7 +8112,8 @@ function socSeasonEnd(){
   if(S.age<=21 && avg>=7.4 && ov>=72){ socAward(SOC_AWARDS.young); gainFame(rng(2,5)); }
   money(p.contract?p.contract.wagePerYear:8000);   // wages → net worth
   socAgeCurve(p);
-  if(!p.onNationalTeam && ov>=78){ p.onNationalTeam=true; socKeyMoment('nationalCallup','Called up to the national team.'); gainFame(rng(4,8)); lines.push(`🌍 Called up to the <b>national team</b>!`); }
+  if(!p.onNationalTeam && ov>=78){ if(emCitizen()){ p.onNationalTeam=true; socKeyMoment('nationalCallup','Called up to the national team.'); gainFame(rng(4,8)); lines.push(`🌍 Called up to the <b>national team</b>!`); }
+    else if(!p._natBlocked){ p._natBlocked=true; lines.push(`🛂 The selectors rate you — but only <b>citizens</b> wear the national shirt. Naturalize (${(S.emigration&&S.emigration.naturalizationProgress||0)}%) and the call will come.`); } }
   if(p.onNationalTeam && rng(0,100)<16){ socTrophy(SOC_COMPS.nations,'National Team'); gainFame(rng(6,12)); socKeyMoment('trophy',`Won the ${SOC_COMPS.nations}.`); lines.push(`🌍🏆 Won the <b>${SOC_COMPS.nations}</b> with your country!`); }
   p.careerStats.apps+=apps; p.careerStats.goals+=goals; p.careerStats.assists+=assists; p.careerStats.seasons++; sc.seasonsPlayed++;
   socRecent(`S${sc.seasonsPlayed}: ${apps} apps ${goals}g ${assists}a · ${club.name} ${_ord(rank)} ${SOC_TIERS[club.tier].name}.`);
@@ -9644,6 +9645,21 @@ const EMIG_CFG={ culture:true, asylum:true, diaspora:true };   // optional-featu
 function emInit(){ if(!S.emigration){ S.emigration={ bornCountry:S.country, currentCountry:S.country, countryHistory:[{country:S.country, ageArrived:Math.max(0,S.age||0), gen:S.legacyGen||1}], residencyStatus:'citizen', yearsInCurrentCountry:S.age||0, naturalizationProgress:100, cultureAdaptation:100 }; }
   const e=S.emigration; if(e.cultureAdaptation==null)e.cultureAdaptation=100; if(e.currentCountry==null)e.currentCountry=S.country; return e; }
 function emLongDistance(p){ return !!(p && p.coLocated===false); }   // an NPC who lives in another country now
+/* P3 — citizenship gates & culture friction */
+function emCitizen(){ emInit(); return S.emigration.residencyStatus==='citizen'; }
+function emUndocumented(){ emInit(); return S.emigration.residencyStatus==='undocumented'; }
+function emLowAdapt(){ emInit(); const e=S.emigration; return EMIG_CFG.culture && e.currentCountry!==e.bornCountry && (e.cultureAdaptation==null?100:e.cultureAdaptation)<40; }
+function emCivicGate(what){   // true = blocked (shows why); pure view, no RNG
+  if(emCitizen()) return false;
+  const e=S.emigration;
+  resultModal('Citizenship','🛂 Citizens Only','🛂',[
+    `${what} is reserved for <b>citizens of ${countryName(e.currentCountry)}</b>.`,
+    e.residencyStatus==='undocumented'
+      ? `You're <b>undocumented</b> — get legal status first, then earn naturalization.`
+      : `Your naturalization is at <b>${e.naturalizationProgress||0}%</b> — keep living here and it will come.`,
+  ],()=>setTab('life'));
+  return true;
+}
 function countryName(code){ return (COUNTRIES[code]&&COUNTRIES[code].name)||code; }
 function countryFlag(code){ return (COUNTRIES[code]&&COUNTRIES[code].flag)||'🌍'; }
 // who moves with you when you emigrate: your spouse + minor kids in your care + pets. Everyone else is left behind (long-distance).
@@ -9711,8 +9727,24 @@ function emigrate(){ if(!S){toast('Start a life first.');return;} if(isLocked())
   const choices=[{label:`🏙️ New city in ${COUNTRIES[S.country].name}`, fn:()=>doMove(S.country,true)}];
   sample.sort((a,b)=>{ const pa=COUNTRY_PINNED.indexOf(a), pb=COUNTRY_PINNED.indexOf(b); if(pa>=0||pb>=0) return (pa<0?9:pa)-(pb<0?9:pb); return COUNTRIES[a].name.localeCompare(COUNTRIES[b].name); });
   sample.forEach(c=>choices.push({label:`${COUNTRIES[c].flag} ${COUNTRIES[c].name}`, alt:true, fn:()=>doMove(c,false)}));
+  if(EMIG_CFG.asylum && !passportValid() && S.age>=16) choices.push({label:'🛂 Flee without papers — seek asylum', tip:'Dangerous, costs what you have — but no passport needed', alt:true, fn:()=>asylumFlee(sample[0])});
   openModal({banner:'Emigrate', title:'✈️ Move Where?', icon:'✈️', closable:true,
     text:`Moving <b>overseas</b> means <b>leaving it all behind</b> — your job and school team end, and everyone who doesn't move with you (your spouse & kids come along) becomes <b>long-distance</b>. You'll start over as an immigrant and slowly earn citizenship. A move within your country keeps everyone close.`, choices});
+}
+/* 🛂 P3 ASYLUM — flee without papers. Modalpick leaf (reached via emigrate's logged opener) → no logAct.
+   A dangerous, costly crossing: it can fail at the border; success lands you UNDOCUMENTED (informal work
+   only, no state jobs, no national team) until emigrationYear grants legal status over time. */
+function asylumFlee(dest){ closeModal();
+  if(!dest || dest===S.country){ const codes=Object.keys(COUNTRIES).filter(c=>c!==S.country); dest=codes[rng(0,codes.length-1)]; }
+  const d=COUNTRIES[dest];
+  const toll=S.money>0?Math.min(S.money,Math.round(rng(500,5000)*priceMult())):0; if(toll>0)money(-toll);
+  chg('health',-rng(2,8)); addStress(rng(8,16)); setFlag('sought_asylum');
+  if(rng(0,100)<25){
+    pushLog(`🛂 I tried to reach <b>${d.name}</b> without papers — stopped and turned back at the border.${toll>0?` The failed journey cost ${cur()}${toll.toLocaleString()}.`:''}`,[['bad','Turned back at the border']]);
+    resultModal('Asylum','Turned Back','🛂',[`The crossing to <b>${d.name}</b> ${d.flag} failed — you were stopped, processed, and sent back.${toll>0?` The smugglers kept your ${cur()}${toll.toLocaleString()}.`:''}`,`You made it home with your life. The dream survives; the route doesn't.`],()=>setTab('life'));
+    return;
+  }
+  doMove(dest,false,{asylum:true, free:true});
 }
 function doMove(country, sameCountry, opts){ opts=opts||{}; closeModal(); emInit();   // modalpick-reached (or offer-accept) → no logAct
   if(!sameCountry && !opts.asylum && !passportValid()){ resultModal('Border','No Passport','🛂',[`You can't emigrate to <b>${COUNTRIES[country].name}</b> without a <b>passport</b>.`,`Apply for one in Activities → Go Out (Events) first.`],()=>setTab('life')); return; }
@@ -10093,6 +10125,7 @@ function politics(){ if(!S){toast('Start a life first.');return;} if(isLocked())
   if(S.age<18){ toast('🔞 You must be 18 to enter politics.'); return; }
   logAct('call',{fn:'politics'});
   if(S.office && S.office.inOffice) return politicsOffice();
+  if(emCivicGate('Public office')) return;   // 🛂 P3: only citizens may run
   if(S.electionCooldown && S.age<S.electionCooldown){ return resultModal('Politics','Lying Low','🛌',[`You lost your last race.`,`You can run for office again at age <b>${S.electionCooldown}</b>.`],()=>setTab('life')); }
   const elig=eligibleOffices();
   const gf=worldRules.govForm(), monarchic=(gf==='monarchy'||gf==='empire');
@@ -11479,7 +11512,7 @@ function askPromotion(){
   logAct('call',{fn:'askPromotion'});
   j.asks=(j.asks||0)+1;
   const pester=Math.max(0,j.asks-2);   // asking >2× a year starts to annoy the boss
-  const chance=10 + (S.jobPerf||50)/4 + S.stats.smarts/9 - j.level*5 - pester*14;
+  const chance=10 + (S.jobPerf||50)/4 + S.stats.smarts/9 - j.level*5 - pester*14 - (emLowAdapt()?8:0);
   if(rng(0,100) < chance){
     promote();
     resultModal('Job','You Got the Promotion!','📈',[pick([`You walked in with your numbers, your case, and your best shirt — and walked out with the job.`,`You barely finish the pitch before the boss slides a new contract across the desk. "Took you long enough to ask."`,`The boss listens, leans back, checks something on the screen, and shrugs: "Fine. You've earned it."`]),`You're now <b>${jobTitle(j)}</b> · ${cur()}${j.salary.toLocaleString()}/yr.`],()=>setTab('job'));
@@ -11596,13 +11629,16 @@ function refreshJobs(){
   out.sort((a,b)=>b.salary-a.salary); S.jobListings=out;
 }
 function refreshJobsBtn(){ if(!S||isLocked()||S.job)return; logAct('call',{fn:'refreshJobsBtn'}); refreshJobs(); setTab('job'); }   // player-triggered manual refresh — logged for replay
+function jobNeedsCitizen(j){ return ['Police','Military','Government'].includes(j.field); }   // 🛂 P3: state jobs are citizens-only
 function openJobOffer(i){ const j=S.jobListings[i]; if(!j)return;
   logAct('call',{fn:'openJobOffer',args:[i]});
   const needDeg = j.deg && !hasGradDeg(j.deg);
-  const locked = (j.req && !hasJobExp(j.req)) || needDeg;
+  const needCit = jobNeedsCitizen(j) && !emCitizen();
+  const undoc = emUndocumented() && j.edu!=='none';   // undocumented → only informal work (no papers, no payroll)
+  const locked = (j.req && !hasJobExp(j.req)) || needDeg || needCit || undoc;
   const degSchool = j.deg ? (GRAD_SCHOOLS.find(g=>g.deg===j.deg)||{}).name : '';
   openModal({banner:'Job', title:j.title+(j.adult?' 🔞':''), icon:j.icon, closable:true,
-    text:`${needDeg?`🔒 <b>Degree required.</b> This career needs a <b>${j.deg.toUpperCase()}</b> — finish <b>${degSchool}</b> first.<br><br>`:(j.req&&!hasJobExp(j.req))?`🔒 <b>Experience required.</b> This role needs prior experience as a <b>${j.req}</b>. Work that job first, then come back.<br><br>`:'Apply for this open position today!<br><br>'}<b>Title:</b> ${j.title}<br><b>Employer:</b> ${j.employer}<br><b>Salary:</b> ${cur()}${j.salary.toLocaleString()}<br><b>Education:</b> ${eduName(j.edu)}${j.deg?`<br><b>Degree:</b> ${j.deg.toUpperCase()} (${degSchool})${needDeg?' ❌':' ✓'}`:''}${j.req?`<br><b>Experience:</b> must have worked as a ${j.req}${(j.req&&!hasJobExp(j.req))?' ❌':' ✓'}`:''}`,
+    text:`${undoc?`🛂 <b>Papers required.</b> You're <b>undocumented</b> — formal employers can't put you on the payroll. Only informal work is open to you until you get legal status.<br><br>`:needCit?`🛂 <b>Citizens only.</b> ${j.field} roles are reserved for citizens of ${countryName(S.emigration.currentCountry)} — your naturalization is at <b>${S.emigration.naturalizationProgress||0}%</b>.<br><br>`:needDeg?`🔒 <b>Degree required.</b> This career needs a <b>${j.deg.toUpperCase()}</b> — finish <b>${degSchool}</b> first.<br><br>`:(j.req&&!hasJobExp(j.req))?`🔒 <b>Experience required.</b> This role needs prior experience as a <b>${j.req}</b>. Work that job first, then come back.<br><br>`:'Apply for this open position today!<br><br>'}<b>Title:</b> ${j.title}<br><b>Employer:</b> ${j.employer}<br><b>Salary:</b> ${cur()}${j.salary.toLocaleString()}<br><b>Education:</b> ${eduName(j.edu)}${j.deg?`<br><b>Degree:</b> ${j.deg.toUpperCase()} (${degSchool})${needDeg?' ❌':' ✓'}`:''}${j.req?`<br><b>Experience:</b> must have worked as a ${j.req}${(j.req&&!hasJobExp(j.req))?' ❌':' ✓'}`:''}${jobNeedsCitizen(j)?`<br><b>Citizenship:</b> ${countryName(S.emigration?S.emigration.currentCountry:S.country)} citizens only${needCit?' ❌':' ✓'}`:''}`,
     choices:locked?[{label:'Got it', fn:closeModal}]:[{label:'Apply for this position', fn:()=>startInterview(i)}]}); }
 function startInterview(i){ const j=S.jobListings[i]; const Q=pick(INTERVIEW_Q); const best=rng(0,Q.a.length-1);
   openModal({banner:'Job', title:'Interview', icon:'💼', closable:false,
@@ -11610,11 +11646,13 @@ function startInterview(i){ const j=S.jobListings[i]; const Q=pick(INTERVIEW_Q);
     choices:Q.a.map((ans,idx)=>({label:ans, alt:idx>0, fn:()=>resolveInterview(i, idx===best)}))}); }
 function resolveInterview(i, good){ closeModal(); const j=S.jobListings[i]; if(!j)return;
   const need=40 + (j.smarts||0)*0.3;
+  const lowAdapt=emLowAdapt();   // 🌍 P3: still finding your feet in a new culture — interviews are harder
   let score=S.stats.smarts*0.5 + S.stats.looks*0.2 + (S.grades||50)*0.2 + rng(-15,28) + (good?8:0);
   if(doingAdult() && !j.adult) score -= 24;   // employers find your adult-content history — serious jobs get much harder
+  if(lowAdapt) score -= 10;
   if(score>need){ hireJob(j); }
   else { pushLog(`I interviewed for ${j.title} at ${j.employer} but didn't get it.`,[['bad','Rejected']]);
-    resultModal('Job','Interview','💼',[`I interviewed for <b>${j.title}</b> at ${j.employer}.`,`They went with another candidate. 😕`],()=>setTab('job')); }
+    resultModal('Job','Interview','💼',[`I interviewed for <b>${j.title}</b> at ${j.employer}.`,`They went with another candidate. 😕`,lowAdapt?`<span style="color:var(--dim);font-size:12px">🌍 The idioms, the references, the unwritten rules — interviews here are still an away game. (Culture adaptation low — it rises every year.)</span>`:''],()=>setTab('job')); }
 }
 function hireJob(j){
   S.job={title:j.title,field:j.field,employer:j.employer,base:j.salary,salary:j.salary,level:0,promo:0,asks:0,icon:j.icon,adult:j.adult,years:0};
