@@ -779,10 +779,41 @@ function applyTalent(t){
      modeling:()=>chg('looks',15), music:()=>chg('happy',10), sports:()=>chg('health',15) }[t]||(()=>{}))();
 }
 
-const FIRST=['Avery','Rowan','Sage','Quinn','Noa','Eli','Mara','Cole','Iris','Dev','Luca','Wren'];
-const MALE=['James','Leo','Marcus','Theo','Owen','Hugo','Eli','Noah','Felix','Aaron','Dmitri','Caleb'];
-const FEMALE=['Mara','Iris','Lena','Nora','Ava','Ruby','Sofia','Elena','Clara','Vera','Naomi','Talia'];
-const LAST=['Vale','Ash','Crane','Vance','Reyes','Holt','Mori','Fenn','Okoro','Bauer'];
+const FIRST=['Avery','Rowan','Sage','Quinn','Noa','Eli','Mara','Cole','Iris','Dev','Luca','Wren',
+  'River','Ellis','Emery','Ariel','Robin','Sky','Jules','Micah','Nico','Remy','Shay','Tatum',
+  'Ash','Blair','Casey','Drew','Eden','Frankie','Gray','Harper','Indie','Jesse','Kai','Lane',
+  'Marlow','Oakley','Phoenix','Reese','Sasha','Toby','Val','Winter'];
+const MALE=['James','Leo','Marcus','Theo','Owen','Hugo','Eli','Noah','Felix','Aaron','Dmitri','Caleb',
+  'Adrian','Alejandro','Amir','Anders','Andre','Arjun','Asher','August','Benjamin','Bruno','Carlos','Cassius',
+  'Cedric','Cyrus','Damian','Daniel','Dante','Darius','Declan','Diego','Dominic','Edgar','Emil','Emmanuel',
+  'Ethan','Ezra','Gabriel','Gideon','Grant','Harvey','Hassan','Henry','Ibrahim','Idris','Igor','Isaac',
+  'Ivan','Jasper','Javier','Jonah','Jorge','Julian','Kenji','Kwame','Lars','Levi','Liam','Lorenzo',
+  'Luka','Malik','Mateo','Matthias','Maxim','Miguel','Milo','Mohammed','Nathaniel','Nikolai','Oliver','Omar',
+  'Oscar','Pablo','Patrick','Rafael','Rashid','Raymond','Ren','Roman','Ruben','Salim','Samuel','Santiago',
+  'Sebastian','Silas','Simon','Soren','Stefan','Takeshi','Tariq','Tobias','Tomas','Victor','Vincent','Wesley',
+  'Xavier','Yusuf','Zane','Zion'];
+const FEMALE=['Mara','Iris','Lena','Nora','Ava','Ruby','Sofia','Elena','Clara','Vera','Naomi','Talia',
+  'Adela','Aisha','Alma','Amara','Amelia','Anastasia','Anika','Anya','Aurora','Beatriz','Bianca','Camila',
+  'Carmen','Catalina','Celeste','Chiara','Dahlia','Daniela','Delphine','Eleanor','Elif','Eloise','Esme','Esperanza',
+  'Estelle','Eva','Fatima','Fiona','Freya','Gabriela','Giselle','Greta','Hana','Hazel','Imani','Ines',
+  'Ingrid','Isabella','Ivy','Jasmine','Josephine','Juniper','Kaia','Katarina','Layla','Leilani','Lila','Lucia',
+  'Luna','Lydia','Maeve','Margot','Mariam','Marisol','Matilda','Maya','Mei','Mercy','Mina','Miriam',
+  'Nadia','Nia','Nina','Noemi','Odette','Olive','Oriana','Paloma','Penelope','Priya','Rania','Renata',
+  'Rosa','Rosalind','Saskia','Selene','Simone','Sana','Tessa','Thea','Valentina','Violet','Willa','Yara',
+  'Yuki','Zainab','Zelda','Zoe'];
+const LAST=['Vale','Ash','Crane','Vance','Reyes','Holt','Mori','Fenn','Okoro','Bauer',
+  'Abara','Adler','Aguilar','Ainsley','Alvarez','Amari','Arden','Armas','Barlow','Becker',
+  'Bellamy','Blackwood','Bram','Calloway','Campos','Castellan','Cavalli','Cifuentes','Colter','Corvin',
+  'Dario','Delacroix','Dias','Draven','Dubois','Eastwick','Eller','Emberly','Endo','Escala',
+  'Fairbanks','Falk','Ferrer','Fontaine','Frost','Gallo','Grieve','Guerra','Haas','Halloway',
+  'Hargrove','Hayashi','Hollis','Huang','Ibarra','Idowu','Iqbal','Ishida','Iverson','Jansen',
+  'Juarez','Kader','Kaplan','Katz','Keller','Kimura','Kovac','Kruger','Laurent','Leclair',
+  'Lindqvist','Lombardi','Lowell','Mabena','Marchetti','Mbeki','Mercer','Mireles','Moreau','Mwangi',
+  'Nakamura','Navarro','Nkosi','Novak','Nyström','Obi','Ojeda','Okafor','Onyx','Ortiz',
+  'Osei','Oyelaran','Pace','Petrov','Prescott','Quintero','Rahim','Ramaswamy','Renshaw','Riva',
+  'Rosales','Rowe','Sable','Salazar','Santoro','Sarpong','Sato','Schreiber','Serrano','Sharma',
+  'Sinclair','Sorensen','Soto','Stroud','Suarez','Tanaka','Thorn','Toledo','Ueda','Umeh',
+  'Vasquez','Vega','Volkov','Voss','Wilder','Winslow','Wren','Yamamoto','Zaman','Zheng'];
 /* ============================================================
    SEEDED DETERMINISTIC RNG (mulberry32) — required for replay-proof leaderboards.
    ALL in-life randomness flows through rand(). Its 32-bit state lives in S._rng, so
