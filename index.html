@@ -537,6 +537,7 @@
     <button class="mi" onclick="leaderboardView()">🏆 Legacy Leaderboard</button>
     <button class="mi" onclick="closeMenu();exportSaga()">📤 Share My Saga</button>
     <button class="mi" onclick="importSagaPrompt()">📜 Load a Saga</button>
+    <button class="mi" onclick="openVault()">📦 Character Vault</button>
     <button class="mi" id="hapticMi" onclick="toggleHaptics()">📳 Haptics: On</button>
     <button class="mi" data-i18n="menu_language" onclick="languageMenu()">🌐 Language</button>
     <button class="mi" data-i18n="menu_close" onclick="closeMenu()">✖ Close</button>
@@ -1317,6 +1318,79 @@ function continueGame(){
     if(S._rng==null){ const sd=_freshSeed(); S.seed=(S.seed!=null?S.seed:sd); S._rng=sd; }   // pre-determinism saves: seed from here on (not replay-valid for past years)
     showGameUI(); setTab('life');
   }catch(e){ toast('Could not load your save.'); }
+}
+
+/* ---- 📦 CHARACTER VAULT — store characters and swap between them. 8 slots free · 20 with Premium.
+   Meta-level like Save/Load-Saga: no logAct, no RNG — never touches the replay tape. ---- */
+const VAULT_KEY='pl_vault_v1';
+function vaultCap(){ return isPremium()?20:8; }
+function vaultList(){ try{ const v=JSON.parse(localStorage.getItem(VAULT_KEY)||'[]'); return Array.isArray(v)?v:[]; }catch(e){ return []; } }
+function vaultWrite(list){ try{ localStorage.setItem(VAULT_KEY, JSON.stringify(list)); return true; }catch(e){ toast('⚠️ Device storage is full — delete a stored character first.'); return false; } }
+function vaultMeta(s){ return { name:s.name||'Unknown', age:s.age||0, gender:s.gender||'?', alive:s.alive!==false, gen:s.legacyGen||1, country:s.country, money:Math.round((s.money||0)+(s.savings||0)), job:(s.job&&s.job.title)||null, era:s.era||'modern' }; }
+function vaultStore(){ if(!S){ toast('Start a life first.'); return; }
+  const list=vaultList(), cap=vaultCap();
+  if(list.length>=cap){ vaultFullModal(); return; }
+  const t=S._party; S._party=null; let state; try{ state=JSON.stringify(S); }finally{ S._party=t; }
+  list.push({ id:'v'+Date.now()+'_'+Math.floor(Math.random()*1e6), meta:vaultMeta(S), state });
+  if(!vaultWrite(list)) return;
+  toast(`📦 ${S.name} stored (${list.length}/${cap}).`);
+  openVault();
+}
+function vaultFullModal(){ closeModal();
+  const prem=isPremium();
+  openModal({banner:'Character Vault', title:'📦 Vault Full', icon:'📦', closable:true,
+    text:`All <b>${vaultCap()}</b> of your slots are in use.${prem?'':'<br><br>👑 <b>Premium</b> raises the vault to <b>20 slots</b> — or delete a character to make room.'}`,
+    choices:[ ...(prem?[]:[{label:'👑 Go Premium — 20 slots', fn:()=>{ closeModal(); if(typeof openPremium==='function') openPremium(); }}]),
+      {label:'🗑️ Manage the vault', alt:true, fn:()=>openVault()},
+      {label:'✖ Close', alt:true, fn:closeModal} ]});
+}
+function vaultLine(m){ const flag=(typeof COUNTRIES!=='undefined'&&COUNTRIES[m.country]&&COUNTRIES[m.country].flag)||'🌍';
+  return `${m.alive?(m.gender==='f'?'👩':'👨'):'⚰️'} ${m.name} — Age ${m.age} ${flag}`; }
+function vaultTip(m){ return `${m.alive?'':'✝ deceased · '}Gen ${m.gen} · ${cur()}${(m.money||0).toLocaleString()}${m.job?' · '+m.job:''}`; }
+function openVault(){ if(typeof closeMenu==='function') closeMenu(); closeModal();
+  const list=vaultList(), cap=vaultCap();
+  openModal({banner:'Character Vault', title:'📦 Character Vault', icon:'📦', closable:true,
+    text:`Store characters here and swap between lives whenever you like.<br><b>${list.length}/${cap}</b> slots used${isPremium()?' · 👑 Premium':` · <span style="color:var(--dim);font-size:12px">👑 Premium raises it to 20</span>`}${list.length?'':'<br><br><span style="color:var(--dim)">The vault is empty — store your current character to begin.</span>'}`,
+    choices:[
+      ...(S?[{label:`➕ Store ${S.name||'current character'} (Age ${S.age})`, fn:()=>vaultStore()}]:[]),
+      ...list.map(sl=>({label:vaultLine(sl.meta), tip:vaultTip(sl.meta), alt:true, fn:()=>vaultSlotMenu(sl.id)})),
+      {label:'✖ Close', alt:true, fn:closeModal},
+    ]});
+}
+function vaultSlotMenu(id){ const slot=vaultList().find(x=>x.id===id); if(!slot){ openVault(); return; }
+  closeModal(); const m=slot.meta;
+  openModal({banner:'Character Vault', title:vaultLine(m), icon:'📦', closable:true,
+    text:`${vaultTip(m)}<br><span style="color:var(--dim);font-size:12px">Stored characters keep their whole life — story, family, fortune and all.</span>`,
+    choices:[
+      {label:`▶️ Play as ${m.name}`, fn:()=>vaultLoadConfirm(id)},
+      {label:'🗑️ Delete from vault', alt:true, fn:()=>vaultDeleteConfirm(id)},
+      {label:'‹ Back', alt:true, fn:()=>openVault()},
+    ]});
+}
+function vaultLoadConfirm(id){ const slot=vaultList().find(x=>x.id===id); if(!slot)return;
+  if(!S){ vaultLoad(id); return; }   // nothing active to lose
+  closeModal(); const canStore=vaultList().length<vaultCap();
+  openModal({banner:'Character Vault', title:`Switch to ${slot.meta.name}?`, icon:'🔁', closable:true,
+    text:`Your current character, <b>${S.name}</b> (Age ${S.age}), will be replaced.${canStore?' Store them first if you want to come back.':' <span style="color:var(--warn)">The vault is full — they can\'t be stored.</span>'}`,
+    choices:[
+      ...(canStore?[{label:`📦 Store ${S.name} first, then switch`, fn:()=>{ const list=vaultList(); const t=S._party; S._party=null; let st; try{ st=JSON.stringify(S); }finally{ S._party=t; } list.push({id:'v'+Date.now()+'_'+Math.floor(Math.random()*1e6), meta:vaultMeta(S), state:st}); if(vaultWrite(list)) vaultLoad(id); }}]:[]),
+      {label:`🔁 Switch without storing`, alt:true, fn:()=>vaultLoad(id)},
+      {label:'✖ Cancel', alt:true, fn:()=>vaultSlotMenu(id)},
+    ]});
+}
+function vaultLoad(id){ const slot=vaultList().find(x=>x.id===id); if(!slot)return;
+  try{ localStorage.setItem(SAVE_KEY, slot.state); }catch(e){ toast('Could not switch characters.'); return; }
+  closeModal(); pending=null; continueGame();
+  toast(`📦 Now playing as ${slot.meta.name}.`);
+}
+function vaultDeleteConfirm(id){ const slot=vaultList().find(x=>x.id===id); if(!slot)return;
+  closeModal();
+  openModal({banner:'Character Vault', title:`Delete ${slot.meta.name}?`, icon:'🗑️', closable:true,
+    text:`<b>${slot.meta.name}</b> (Age ${slot.meta.age}) will be gone for good — their whole story with them.`,
+    choices:[
+      {label:'🗑️ Delete forever', fn:()=>{ const list=vaultList().filter(x=>x.id!==id); vaultWrite(list); toast(`🗑️ ${slot.meta.name} removed.`); openVault(); }},
+      {label:'✖ Keep them', alt:true, fn:()=>vaultSlotMenu(id)},
+    ]});
 }
 
 function person(id,name,rel,aff,trust,opts={}){
