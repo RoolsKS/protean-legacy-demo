@@ -6955,6 +6955,7 @@ function belongingMenu(i){ const b=(S.assets&&S.assets.belongings||[])[i]; if(!b
     choices:[
       ...(!b.appraised?[{label:'🔎 Get it appraised (¤100)', tip:'Confirm authenticity & true value', fn:()=>appraiseBelonging(i)}]:[]),
       {label:`💰 Sell at auction`, tip:b.appraised?`~${fcm(b.value)}`:'Buyers appraise it themselves — surprises possible', fn:()=>sellBelonging(i)},
+      ...(b.contraband?[{label:'🕶️ Fence it quietly', tip:'Safe, no police — but half price', fn:()=>fenceBelonging(i)}]:[]),
       {label:'✖ Keep it', alt:true, fn:closeModal},
     ]});
 }
@@ -6966,7 +6967,22 @@ function appraiseBelonging(i){ const b=(S.assets&&S.assets.belongings||[])[i]; i
     resultModal('Appraisal','A Forgery 🔎','🔎',[`The appraiser barely hides a wince. Your <b>${b.name}</b> is a <b>fake</b> — real value about <b>${fcm(b.value)}</b>.`,`Lesson learned: appraise BEFORE you buy.`],()=>setTab('assets')); return; }
   pushLog(`🔎 I had my ${b.name} appraised — authentic, worth about ${fcm(b.value)}.`,[['good','Appraised: authentic']]);
   resultModal('Appraisal','Certified Authentic ✅','✅',[`Good news: your <b>${b.name}</b> is the real thing.`,`Certified market value: <b>${fcm(b.value)}</b>.`],()=>setTab('assets')); }
+function fenceBelonging(i){ const b=(S.assets&&S.assets.belongings||[])[i]; if(!b)return; closeModal();   // modalpick leaf → no logAct
+  const real = (b.appraised&&b.fake)?b.value:(b.fake?Math.round(b.value*(b.fakeFrac||0.2)):b.value);
+  const proceeds=Math.max(1,Math.round(real*rng(38,58)/100)); money(proceeds);   // fences lowball you — but no questions, no cops
+  const profit=proceeds-(b.bought||proceeds); S.flipProfit=(S.flipProfit||0)+Math.max(0,profit);
+  S.assets.belongings.splice(i,1);
+  pushLog(`🕶️ I fenced my ${b.name} quietly for ${cur()}${proceeds.toLocaleString()} — no questions asked.`,[['flag',`Fenced ${b.name}`]]);
+  resultModal('Fence','Moved Quietly 🕶️','🕶️',[`Your contact takes the <b>${b.name}</b> off your hands for <b>${cur()}${proceeds.toLocaleString()}</b> — half what it's worth, but clean and quiet. No paper trail, no police.`],()=>setTab('assets')); }
 function sellBelonging(i){ const b=(S.assets&&S.assets.belongings||[])[i]; if(!b)return; closeModal();   // modalpick leaf → no logAct
+  // 🕶️ selling STOLEN goods at a public auction can trip a police flag — the higher the value, the bigger the risk
+  if(b.contraband){ const crime=(COUNTRIES[S.country]||{}).crime||50;
+    const seizeChance = clamp(22 + Math.min(30,(b.value||0)/8000) - crime/5 - (S.karma||0)/12, 6, 70);
+    if(rng(0,100) < seizeChance){ const fine=rng(2000,15000); money(-fine); karma(-4); setFlag('criminal'); setFlag('arrested');
+      S.assets.belongings.splice(i,1);
+      pushLog(`🚔 The auction house ran provenance on my <b>${b.name}</b> — it was flagged <b>stolen</b>. Seized, and ${cur()}${fine.toLocaleString()} in fines.`,[['bad','Contraband seized']]);
+      resultModal('Seized!','Provenance Check 🚔','🚔',[`As the bidding opened, an investigator stepped forward: your <b>${b.name}</b> is <b>stolen property</b>. It's <b>seized</b>, you're fined <b>${cur()}${fine.toLocaleString()}</b>, and there's a record now.`,`Contraband is safer fenced quietly than sold in the open.`],()=>setTab('life')); return; }
+  }
   // an unknown fake gets caught by the auction house's appraiser — you get burned
   const caught = b.fake && !b.appraised;
   const base = caught ? Math.round(b.value*(b.fakeFrac||0.2)) : b.value;
@@ -10681,8 +10697,38 @@ function blackMarket(){ if(!S){toast('Start a life first.');return;} if(isLocked
   ];
   openModal({banner:'Black Market', title:'🕶️ The Black Market', icon:'🕶️', closable:true,
     text:`A shady contact in ${S.city}. Everything here is illegal — every deal risks getting <b>busted</b> (worse in high-crime areas).`,
-    choices: items.map(it=>({label:`${it.label} · ${cur()}${it.cost.toLocaleString()}`, tip:it.desc, alt:true, fn:()=>blackMarketBuy(it.k, it.cost)})).concat([{label:'Leave', fn:closeModal}]) });
+    choices: items.map(it=>({label:`${it.label} · ${cur()}${it.cost.toLocaleString()}`, tip:it.desc, alt:true, fn:()=>blackMarketBuy(it.k, it.cost)}))
+      .concat([{label:'💎 Contraband Goods ›', tip:'Stolen art, looted antiques, fenced jewels — cheap now, valuable… if you can move them', alt:true, fn:()=>blackMarketGoods()},{label:'Leave', fn:closeModal}]) });
 }
+/* Contraband dealers — hot goods sold cheap (a fraction of true worth). Many are FAKE. Reselling them
+   openly at auction risks a police flag → seizure. Feeds the same appraise/flip loop as legit belongings. */
+const CONTRABAND=[
+  {m:'The Antique Peddler', cat:'art', items:[['Looted Roman Coin','🪙',6000],['Stolen Ming Vase','🏺',48000],['Grave-Robbed Relic','⚱️',22000],['Smuggled Fossil','🦴',15000]]},
+  {m:'The Art Thief', cat:'art', items:[['"Borrowed" Old Master','🖼️',260000],['Cut-Canvas Masterpiece','🎨',90000],['Heist Sculpture','🗿',52000]]},
+  {m:'The Jewel Fencer', cat:'jewelry', items:[['Hot Diamond Necklace','💎',120000],['Fenced Royal Brooch','📿',75000],['Stolen Watch Collection','⌚',40000]]},
+  {m:'The Wildlife Smuggler', cat:'art', items:[['Ivory Carving','🐘',30000],['Rare Taxidermy','🦁',18000],['Exotic Egg Clutch','🥚',9000]]},
+];
+function blackMarketGoods(){ closeModal();   // reached via the logged blackMarket() opener → modalpick, no logAct
+  const rows=[]; CONTRABAND.forEach((d,di)=>d.items.forEach((it,ii)=>{ const disc=rng(28,58)/100; const price=Math.round(it[2]*disc*priceMult()); rows.push({di,ii,name:it[0],icon:it[1],cat:d.cat,true:it[2],price,m:d.m}); }));
+  S._contraband=rows;   // freeze this visit's roll so the buy uses the same numbers (replay-safe: rebuilt identically)
+  openModal({banner:'Black Market', title:'💎 Contraband Goods', icon:'💎', closable:true,
+    text:`Hot goods, priced to move — a fraction of their real worth. But plenty are <b>forgeries</b>, and selling stolen art at auction can bring the <b>police</b> to your door. Appraise carefully. Fence quietly.`,
+    choices: rows.map((r,i)=>({label:`${r.icon} ${r.name} · ${cur()}${r.price.toLocaleString()}`, tip:`${r.m} · "worth" ~${fcm(r.true)}`, alt:true, fn:()=>buyContraband(i)})).concat([{label:'‹ Back', fn:()=>blackMarket()}]) });
+}
+function buyContraband(i){ closeModal(); const r=(S._contraband||[])[i]; if(!r)return;   // modalpick leaf
+  if(S.money<r.price){ toast('💸 You can’t afford that.'); return; }
+  if(storedCount()>=storageCapacity()){ resultModal('No Room','Storage Full','📦',[`No room for more belongings (${storedCount()}/${storageCapacity()}). Rent a Storage Unit first.`],()=>{ S._shopCat='storage'; setTab('shop'); }); return; }
+  const crime=(COUNTRIES[S.country]||{}).crime||50;
+  const bust=rng(0,100) < (20 - crime/5 - (S.karma||0)/12);
+  spend(r.price);
+  if(bust){ const fine=rng(1000,9000); money(-fine); karma(-4); setFlag('criminal'); setFlag('arrested');
+    pushLog(`🚔 A contraband buy from ${r.m} was a <b>sting</b> — arrested, ${cur()}${fine.toLocaleString()} in fines.`,[['bad','Busted buying contraband']]);
+    resultModal('Busted!','Sting Operation','🚔',[`The "${r.name}" deal was a police sting. Arrested and fined <b>${cur()}${fine.toLocaleString()}</b> — and you've a record now.`],()=>setTab('life')); return; }
+  const fake = rng(0,100)<32; const fakeFrac = fake?rng(8,22)/100:1;   // contraband is fake far more often than legit shops
+  S.assets.belongings.push({name:r.name, icon:r.icon, value:Math.round(r.true*priceMult()), bought:r.price, cat:r.cat, fake, fakeFrac, appraised:false, contraband:true, boughtAge:S.age});
+  setFlag('dealt_contraband');
+  pushLog(`🕶️ I bought <b>${r.name}</b> from ${r.m} for ${cur()}${r.price.toLocaleString()} — hot goods.`,[['flag','Bought contraband']]);
+  resultModal('Contraband', r.name, r.icon, [`You scored the <b>${r.name}</b> for <b>${cur()}${r.price.toLocaleString()}</b> — a fraction of its supposed worth.`,`It's in your Belongings. <span style="color:var(--warn);font-size:12px">⚠️ Appraise it (it may be fake) and fence it carefully — an open auction could tip off the police.</span>`],()=>setTab('assets')); }
 function blackMarketBuy(kind, cost){ closeModal();
   if(S.money<cost){ toast('💸 You can’t afford that.'); return; }
   const crime=(COUNTRIES[S.country]||{}).crime||50;
