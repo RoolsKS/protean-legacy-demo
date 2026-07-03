@@ -8911,12 +8911,18 @@ function personAction(id,action){
     const coolEnd=pick([`It was fine — the words were there, the spark wasn't.`,`You talked. You're not sure they listened. Maybe next time.`,`Pleasant enough, but you left feeling you'd talked at them, not with them.`]);
     lines=[`You and ${p.name} got into it about ${topic}. They ${warm?warmReact:coolReact}.`, warm?warmEnd:coolEnd]; }
   else if(action==='compliment'){ const ok=p.affinity>30; rel(id, ok?4:-2, ok?2:-1);
-    lines = ok?[`You told ${p.name} how much they mean to you.`,`They lit up — it clearly landed, and they felt appreciated. 😊`]:[`You laid the praise on thick with ${p.name}.`,`They found it hollow and brushed it off. You felt a bit foolish. 😬`]; }
+    const praise=pick([`told ${p.name} how much they mean to you`,`said out of nowhere that you were proud of them`,`told ${p.name} they had the best laugh in the family`,`said you didn't know what you'd do without them`,`told ${p.name} they were secretly the glue holding everyone together`,`complimented the thing they're quietly insecure about`,`said they'd raised you right (even if they didn't)`,`told ${p.name} they still had it`]);
+    const good=pick([`They lit up — it clearly landed, and they felt seen. 😊`,`They pretended to wave it off, but the smile gave them away.`,`They went a little pink and changed the subject, pleased.`,`"You're just saying that," they said, absolutely glowing.`,`They got unexpectedly emotional. Words like that don't get said enough.`]);
+    const bad=pick([`They found it hollow and brushed it off. You felt a bit foolish. 😬`,`"What do you want?" they asked, flatly. Ouch.`,`It landed with a thud — the timing, or the history, was all wrong.`,`They eyed you like you were running an angle. Maybe you were.`]);
+    lines=[`You ${praise}.`, ok?good:bad]; }
   else if(action==='gift'){ const cost=rng(50,500); if(!spend(cost))return; rel(id,+8,+5,'You gave them a gift.');
-    const g=pick(['a thoughtful little gift','flowers','their favourite treat','a book they’d love','something handmade','a small surprise']);
-    lines=[`You surprised ${p.name} with ${g} (${cur()}${cost}).`,`They were genuinely touched — you could see it on their face. 🎁`]; }
+    const g=pick(['a thoughtful little something','a bunch of their favourite flowers','the treat they always pretend they shouldn\'t have','a book you knew they\'d devour','something handmade, badly, with love','a gift so them it was almost eerie','a keepsake from a place you both love','the exact thing they mentioned wanting once, months ago','a wildly impractical gadget they\'ll adore','concert tickets for a band they thought you\'d forgotten they liked']);
+    const react=pick([`They were genuinely touched — you could see it on their face. 🎁`,`"You remembered," they said quietly. That was the whole gift, really.`,`They immediately used it / wore it / displayed it. A hit.`,`They tried to give it back out of politeness, then hugged it instead.`,`They got that rare, unguarded look. Money well spent.`,`They insisted it was "too much" while very much keeping it.`]);
+    lines=[`You surprised ${p.name} with ${g} (${cur()}${cost}).`, react]; }
   else if(action==='givemoney'){ const amt=Math.max(500,Math.round((S.peakMoney||1000)*0.01)); if(!spend(amt))return; rel(id,+12,+8,'You gave them money.');
-    lines=[`You slipped ${p.name} ${cur()}${amt.toLocaleString()} to help them out.`,`They were grateful and a little emotional — they won’t forget this. 💸`]; }
+    const why=pick([`to help with the bills`,`to get them over a rough month`,`"just because," no strings`,`to cover the thing they were too proud to ask about`,`to chase off the debt that was keeping them up at night`,`as a leg-up, not a loan`]);
+    const react=pick([`They were grateful and a little emotional — they won't forget this. 💸`,`They welled up and couldn't find the words. You didn't need them to.`,`"I'll pay you back," they insisted. You both knew they wouldn't need to.`,`The relief on their face was worth ten times the amount.`,`They went quiet, squeezed your hand, and that was that.`]);
+    lines=[`You slipped ${p.name} ${cur()}${amt.toLocaleString()} ${why}.`, react]; }
   else if(action==='ask'){ const gen=(npcDial(p,'warmth')+npcDial(p,'loyalty'))/2; const willing=p.affinity*0.4 + gen*0.6 - npcDial(p,'willpower')*0.3;   // warmth/loyalty give, willpower resists
     if(willing>30 && rng(0,100)<willing){ const amt=Math.round(rng(100,2000)*(0.5+gen/100)); money(amt); rel(id,-2,0);
       lines=[`You asked ${p.name} for a little help.`,`They lent you ${cur()}${amt.toLocaleString()} — but it left things a touch awkward between you. 🙏`]; }
@@ -8928,23 +8934,33 @@ function personAction(id,action){
     const d=pick(['dinner and a movie','a candlelit dinner','dancing till late','a moonlit walk','a cosy night in']);
     lines=[`You took ${p.name} out for ${d} (${cur()}${cost}).`,`The spark is very much alive — you both felt it tonight. 💘 (${sparkBand(p.spark).l})`]; }
   else if(action==='allowance'){ const amt=rng(20,300); if(!spend(amt))return; rel(id,+7,+4,'You gave them an allowance.');
-    lines=[`You handed ${p.name} a ${cur()}${amt} allowance.`,`Their whole face lit up. 💵`]; }
+    const react=pick([`Their whole face lit up. 💵`,`They immediately started planning what to blow it on.`,`They pocketed it with the solemn dignity of a tiny CEO.`,`"Best day ever," they declared, sprinting off before you changed your mind.`,`They tried to negotiate for more. You respect the hustle.`]);
+    lines=[`You handed ${p.name} a ${cur()}${amt} allowance.`, react]; }
   else if(action==='school'){ rel(id,+6,+4,'You helped with their schoolwork.'); chg('smarts',1);
-    lines=[`You sat down and helped ${p.name} with their homework.`,`It finally clicked for them — and they’re proud of you. 📚`]; }
+    const subj=pick(['a brutal math worksheet','a science project due tomorrow','an essay they had been dreading','history flashcards','a reading assignment','fractions that had them in tears']);
+    const react=pick([`It finally clicked for them — and they're proud of you. 📚`,`You watched the lightbulb go on. Nothing beats that look.`,`They got the top mark and made sure everyone knew you'd helped. 📚`,`Turns out you'd forgotten half of it too — you learned it together, laughing.`,`They hugged you out of nowhere. Homework: unexpectedly wholesome.`]);
+    lines=[`You sat down and helped ${p.name} with ${subj}.`, react]; }
   else if(action==='birthday'){ const cost=rng(80,600); if(!spend(cost))return; rel(id,+10,+6,'You threw them a birthday party.'); chg('happy',3); karma(1);
-    const theme=pick(['a cake and a pile of balloons','a party with all their friends','a trip to their favourite place','a surprise party they never saw coming','presents, games and too much cake']);
-    lines=[`You threw ${p.name} a birthday celebration — ${theme} (${cur()}${cost.toLocaleString()}).`,`They had the best day. These are the moments they'll carry forever. 🎂`]; }
+    const theme=pick(['a cake and a pile of balloons','a blowout with all their friends','a trip to their favourite place','a surprise party they never saw coming','presents, games and dangerously too much cake','a tiny, perfect gathering of just the people who matter','a themed party they\'ll be talking about for years']);
+    const react=pick([`They had the best day. These are the moments they'll carry forever. 🎂`,`They blew out the candles, caught your eye mid-wish, and grinned. Perfect.`,`They said it was the best birthday they'd ever had. You believe them.`,`Somebody cried (happy tears), somebody fell in the cake, everybody remembers it.`,`Long after the guests left, they said quietly, "thank you for this." 🎂`]);
+    lines=[`You threw ${p.name} a birthday celebration — ${theme} (${cur()}${cost.toLocaleString()}).`, react]; }
   // ---- DEEPER INTERACTIONS — driven by personality dials + shared memory ----
   else if(action==='vent'){ const care=(npcDial(p,'warmth')+npcDial(p,'loyalty'))/2;
+    const burden=pick([`about the weight you've been carrying`,`about the thing that's been eating at you`,`about how tired you really are under it all`,`about the fear you don't say out loud`,`about everything that's been piling up`,`about the grief you'd been holding in`,`about how lost you've been feeling lately`]);
     if(care>50){ addStress(-rng(8,16)); addMood(rng(2,6)); rel(id,+4,+4,'You opened up to them.');
-      lines=[`You opened up to ${p.name} about what you've been carrying.`,`They held space for you — no fixing, just listening. The weight feels lighter for being shared. 🫂`]; }
+      const good=pick([`They held space for you — no fixing, just listening. The weight feels lighter for being shared. 🫂`,`They put everything down and just... stayed with you. That was enough.`,`"I've got you," they said, and for once you believed it. The knot in your chest loosened.`,`They didn't rush to solve it. They just sat in it with you, and somehow that healed more than advice would have.`,`They shared a struggle of their own back. You both walked away less alone. 🫂`]);
+      lines=[`You opened up to ${p.name} ${burden}.`, good]; }
     else { addStress(-rng(2,5)); rel(id,-1,0);
-      lines=[`You tried to open up to ${p.name}…`,`but they're not the comforting type — they shifted in their seat and changed the subject. It helped a little, just to say it aloud.`]; } }
+      const cool=pick([`but they're not the comforting type — they shifted, cracked a joke, and changed the subject. It helped a little, just to say it aloud.`,`but they went straight to unsolicited advice and "have you tried just not worrying?" You stopped halfway through.`,`but their eyes glazed over. Some people can't hold that weight. You carried it back home mostly alone.`,`but they made it about themselves within a minute. Lesson learned about who to open up to.`]);
+      lines=[`You tried to open up to ${p.name}…`, cool]; } }
   else if(action==='confide'){ const loyal=npcDial(p,'loyalty'), risk=npcDial(p,'craziness');
+    const secret=pick([`something you've never told anyone`,`the thing you'd take to your grave`,`a secret that could unravel your whole life`,`what really happened, all those years ago`,`the one lie you've been living`,`who you really are underneath it all`]);
     if(loyal>=risk && rng(0,100)<loyal+8){ rel(id,+8,+14,'You trusted them with a secret.'); addStress(-rng(3,8)); keyMoment(p,'milestone',32,`You confided in them, and they kept your trust.`);
-      lines=[`You told ${p.name} something you've never told anyone.`,`They listened, held it close, and swore to keep it. A trust like this is rare. 🤝`]; }
+      const kept=pick([`They listened, held it close, and swore to keep it. A trust like this is rare. 🤝`,`They didn't flinch, didn't judge — just nodded slowly and said, "It's safe with me." And it is.`,`"That never leaves this room," they said, and you knew it never would. Something between you deepened forever.`,`They took your hand. "Thank you for trusting me with that." The secret bound you closer, not apart.`]);
+      lines=[`You told ${p.name} ${secret}.`, kept]; }
     else { rel(id,-3,-5,'You confided in the wrong person.'); ledgerAdd('scandal',18,{pub:false,note:`A secret you told ${p.name} — it may not stay buried.`});
-      lines=[`You confided in ${p.name}…`,`but you caught the glint in their eye. This won't stay between you. You may have just handed someone leverage. 🤫`]; } }
+      const leaked=pick([`but you caught the glint in their eye. This won't stay between you — you may have just handed someone leverage. 🤫`,`and watched their expression flicker from shock to... calculation. That was a mistake.`,`and immediately regretted it. Some people collect secrets like currency. You just made a deposit.`,`and by the way they said "your secret's safe with me," you knew for certain it wasn't.`]);
+      lines=[`You confided in ${p.name} — ${secret}…`, leaked]; } }
   else if(action==='favor'){ const willing=p.affinity*0.4 + npcDial(p,'loyalty')*0.5 - npcDial(p,'willpower')*0.2;
     if(rng(0,100)<willing){ rel(id,-3,+2,'They did you a favor.'); chg('happy',3); addSelfWorth(2);
       const boon=pick(['pulled some strings for you','vouched for you','connected you with the right person','covered for you','got you out of a jam']);
