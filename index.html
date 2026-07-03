@@ -1348,6 +1348,7 @@ function continueGame(){
     S=JSON.parse(d); pending=null;
     // backfill any fields added in newer versions so old saves don't break
     S.assets=S.assets||{properties:[],vehicles:[],belongings:[]}; S.storageUnits=S.storageUnits||[]; S.carStorage=S.carStorage||[];
+    (S.assets.belongings||[]).forEach(b=>{ if(b.bought==null)b.bought=b.value; if(b.cat==null)b.cat='furniture'; if(b.appraised==null)b.appraised=true; if(b.fake==null)b.fake=false; });   // 💎 belongings-economy backfill
     if(S.housing===undefined) S.housing = has('owns_home')?'owned':(S.age>=18?'renting':'parents'); S.rentedCars=S.rentedCars||[];
     S.jobHistory=S.jobHistory||[]; if(S.job&&S.job.title&&S.jobHistory.indexOf(S.job.title)<0) S.jobHistory.push(S.job.title);
     if(S.popularity===undefined) S.popularity=clamp(40+Math.round(((S.stats&&S.stats.looks)||50)/5)); S.clubs=S.clubs||[];
@@ -2255,6 +2256,7 @@ function lifeRecord(){
     bestFriend: has('has_best_friend'), hadNemesis: has('has_nemesis'),
     abroad: !!(S.emigration && S.emigration.currentCountry && S.emigration.bornCountry && S.emigration.currentCountry!==S.emigration.bornCountry),
     naturalized: has('naturalized'), migratedGens: (function(){ const cc=new Set((S.emigration&&S.emigration.countryHistory||[]).map(h=>h.country)); return cc.size; })(),
+    flipProfit: S.flipProfit||0,
     asylumAscent: has('sought_asylum') && has('naturalized'),
     crowned: has('crowned_monarch'),
     royalHiddenYears: (S.royal&&S.royal.fled)?(((S.royal.found||S.age)-S.royal.fled)):0,
@@ -2356,6 +2358,7 @@ const RIBBONS=[
   {id:'asylum_ascent', name:'From Nothing', icon:'🕊️', rarity:'epic', priority:7, secret:true, desc:'Arrive with no papers — and die a citizen.', q:r=>r.asylumAscent?1:0},
   {id:'world_family', name:'World Family', icon:'🌐', rarity:'epic', priority:6, desc:'A living family spread across three or more countries.', q:r=>_frac(r.familyCountries,3)},
   {id:'two_worlds', name:'Child of Two Worlds', icon:'🌗', rarity:'rare', priority:5, secret:true, desc:'Continue the dynasty from the far side of a family split.', q:r=>r.diasporaHeir?1:0},
+  {id:'art_of_the_deal', name:'Art of the Deal', icon:'🔨', rarity:'rare', priority:5, desc:'Make ¤250,000 flipping belongings at auction.', q:r=>_frac(r.flipProfit,250000)},
   {id:'crowned', name:'Crowned', icon:'👑', rarity:'legendary', priority:9, desc:'Take the throne of your family\'s kingdom.', q:r=>r.crowned?1:0},
   {id:'ghost_of_crown', name:'Ghost of the Crown', icon:'🕯️', rarity:'epic', priority:6, secret:true, desc:'Evade the palace\'s hunters for five years.', q:r=>_frac(r.royalHiddenYears,5)},
 ];
@@ -5211,6 +5214,7 @@ function ageUp(){
   emigrationYear();                                                   // 🌍 residency/naturalization, culture adaptation, long-distance decay (deterministic)
   allowanceYear();                                                    // 👑 pocket money scaled to the family's wealth (deterministic)
   royaltyYear();                                                      // 👑 royal-in-exile: runaway hunt, succession, stipend (deterministic)
+  belongingsYear();                                                   // 💎 art/jewelry appreciate, electronics/fashion depreciate (deterministic)
   clubsYear();                                                        // 🎽 school clubs/teams accrue years & performance (deterministic)
   sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
   staffYear();                                                        // 🧑‍✈️ household staff salaries + their yearly perks (deterministic)
@@ -5873,7 +5877,7 @@ function continueAsHeir(id){
   if(heir.eduInvest){ const bonus=clamp(Math.round(heir.eduInvest*2.5),0,22); S.stats.smarts=clamp(S.stats.smarts+bonus); setFlag('privately_educated'); }   // 🎓 a privately-schooled heir starts life sharper (dynasty payoff)
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
   S.money=inheritance; S.peakMoney=Math.max(S.peakMoney||0,inheritance);
-  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.founderPeak=0; S._agentEarnings=0; S.endurance=-1; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
+  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.founderPeak=0; S.flipProfit=0; S._agentEarnings=0; S.endurance=-1; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
   S.rentOwed=0; S.rentMult=1; S.autopayRent=true; S.karma=0; S.landlord=null;
   // 🌍 P4 DIASPORA SPLIT — an heir who grew up ABROAD continues the dynasty from THEIR country;
   // the family re-sorts around them: relatives in the heir's country are near, everyone else is now the long-distance side.
@@ -6227,9 +6231,11 @@ function renderAssets(){ const v=document.getElementById('assetsView'); if(!v||!
   if(a.vehicles.length){ h+=`<div class="genlabel">🚗 Vehicles</div>`;
     h+=a.vehicles.map(vh=>`<div class="platrow"><div class="picon" style="background:#222b37">${vh.icon}</div>
       <div class="pinfo"><div class="pn">${vh.makeModel||vh.name}</div><div class="pf">${vh.makeModel?vh.name+' · ':''}worth ${fcm(vh.value)}${vh.g?(vh.parked==='street'?' · 🛣️ street':' · 🏚️ garage'):''}</div></div></div>`).join(''); }
-  if(a.belongings.length){ h+=`<div class="genlabel">💎 Belongings <span>${storedCount()}/${storageCapacity()} stored</span></div>`;
-    h+=a.belongings.map(b=>`<div class="platrow"><div class="picon" style="background:#222b37">${b.icon}</div>
-      <div class="pinfo"><div class="pn">${b.name}</div><div class="pf">worth ${fcm(b.value)}</div></div></div>`).join(''); }
+  if(a.belongings.length){ h+=`<div class="genlabel">💎 Belongings <span>${storedCount()}/${storageCapacity()} stored · tap to appraise or sell</span></div>`;
+    h+=a.belongings.map((b,i)=>{ const pl=(b.bought!=null)?b.value-b.bought:0; const plTxt=(b.bought!=null&&b.value!==b.bought)?` · <span style="color:${pl>=0?'var(--good)':'var(--bad)'}">${pl>=0?'▲':'▼'}${fcm(Math.abs(pl))}</span>`:'';
+      const badge = b.appraised?(b.fake?' <span style="color:var(--bad)">· fake</span>':' ✅'):'';
+      return `<div class="platrow" onclick="belongingMenu(${i})"><div class="picon" style="background:#222b37">${b.icon}</div>
+      <div class="pinfo"><div class="pn">${b.name}${badge}</div><div class="pf">worth ${fcm(b.value)}${plTxt}</div></div><span class="parrow">›</span></div>`; }).join(''); }
   h+=`<div class="genlabel">🔑 More</div>`;
   h+=hubCard('📱','Social Media', (S.sm&&S.sm.joined)?`${fc(totalFollowers())} total reach`:'Build a following', "setTab('social')");
   h+=hubCard('🏆','World’s Richest','Your real global wealth rank', "openRichList()");
@@ -6922,10 +6928,66 @@ function buyBelonging(kind,i){ const bc=BELONGING_CATS[kind]; const list=bc?bc.l
   const price=Math.round(x.value*colFactor());
   if(S.money<price){ penniless2(price, `buy the ${x.name.toLowerCase()}`); return; }
   logAct('call',{fn:'buyBelonging',args:[kind,i]});
-  spend(price); S.assets.belongings.push({name:x.name, icon:x.icon, value:price});
+  // some fine art & jewelry in the wild is fake — you won't know until you appraise it (or a buyer's appraiser catches it)
+  let fake=false, fakeFrac=1; if((kind==='art'||kind==='jewelry') && price>=1500 && rng(0,100)<9){ fake=true; fakeFrac=rng(12,28)/100; }
+  spend(price); S.assets.belongings.push({name:x.name, icon:x.icon, value:price, bought:price, cat:kind, fake, fakeFrac, appraised:false, boughtAge:S.age});
   pushLog(`I bought ${x.name} for ${fcm(price)}. ${x.icon}`,[['good',`Bought ${x.name}`]]);
-  resultModal(BELONGING_CATS[kind].label, x.name, x.icon, [`You bought the <b>${x.name}</b> for ${fcm(price)}.`, buyFlex(kind), `Stored: ${storedCount()}/${storageCapacity()}.`], ()=>setTab('shop'));
+  resultModal(BELONGING_CATS[kind].label, x.name, x.icon, [`You bought the <b>${x.name}</b> for ${fcm(price)}.`, buyFlex(kind), `Stored: ${storedCount()}/${storageCapacity()}. <span style="color:var(--dim);font-size:12px">Have it appraised in Assets to confirm what it's really worth.</span>`], ()=>setTab('shop'));
 }
+/* 💎 BELONGINGS ECONOMY — appraise, watch values drift over the years, and flip at auction.
+   Appreciating: art, jewelry, instruments (real assets). Depreciating: electronics, fashion, sports. Furniture ~flat. */
+const APPRECIATE_CATS=['art','jewelry','instruments'], DEPRECIATE_CATS=['electronics','fashion','sports'];
+function belongingsYear(){ if(!S||!S.assets) return; const bs=S.assets.belongings||[];
+  for(const b of bs){ if(b.value==null) continue; const c=b.cat||'furniture';
+    let pct;
+    if(APPRECIATE_CATS.includes(c)) pct = rng(-2,7) + (rng(0,100)<6?rng(8,30):0);   // slow climb, occasional windfall (a piece gets 'discovered')
+    else if(DEPRECIATE_CATS.includes(c)) pct = -rng(4,13) + (rng(0,100)<4?rng(6,20):0);   // steady loss, rare collector revival
+    else pct = rng(-3,4);   // furniture drifts gently
+    b.value=Math.max(1, Math.round(b.value*(1+pct/100)));
+  }
+}
+function belongingMenu(i){ const b=(S.assets&&S.assets.belongings||[])[i]; if(!b){ setTab('assets'); return; } if(isLocked())return;
+  logAct('call',{fn:'belongingMenu',args:[i]});   // logged opener → appraise/sell are modalpick leaves
+  const pl = b.value-(b.bought||b.value); const plTxt = (b.bought!=null)?`<br>Bought for ${fcm(b.bought)} · <span style="color:${pl>=0?'var(--good)':'var(--bad)'}">${pl>=0?'▲':'▼'} ${fcm(Math.abs(pl))} ${pl>=0?'gain':'loss'}</span>`:'';
+  const status = b.appraised ? (b.fake?`🔎 <span style="color:var(--bad)">Appraised: a FORGERY</span>`:`✅ Appraised: authentic`) : `❓ Not appraised — its true worth is a guess`;
+  openModal({banner:'Belonging', title:`${b.icon} ${b.name}`, icon:b.icon, closable:true,
+    text:`Estimated value <b>${fcm(b.value)}</b>${plTxt}<br>${status}`,
+    choices:[
+      ...(!b.appraised?[{label:'🔎 Get it appraised (¤100)', tip:'Confirm authenticity & true value', fn:()=>appraiseBelonging(i)}]:[]),
+      {label:`💰 Sell at auction`, tip:b.appraised?`~${fcm(b.value)}`:'Buyers appraise it themselves — surprises possible', fn:()=>sellBelonging(i)},
+      {label:'✖ Keep it', alt:true, fn:closeModal},
+    ]});
+}
+function appraiseBelonging(i){ const b=(S.assets&&S.assets.belongings||[])[i]; if(!b)return; closeModal();   // modalpick leaf → no logAct
+  const fee=Math.round(100*priceMult()); if(!spend(fee)){ toast('Can\'t cover the ¤100 appraisal fee.'); return; }
+  b.appraised=true;
+  if(b.fake){ b.value=Math.max(1,Math.round(b.value*(b.fakeFrac||0.2))); b.bought=b.bought;   // the truth hurts
+    pushLog(`🔎 I had my ${b.name} appraised — it's a <b>forgery</b>, worth only ${fcm(b.value)}.`,[['bad','Bought a fake']]);
+    resultModal('Appraisal','A Forgery 🔎','🔎',[`The appraiser barely hides a wince. Your <b>${b.name}</b> is a <b>fake</b> — real value about <b>${fcm(b.value)}</b>.`,`Lesson learned: appraise BEFORE you buy.`],()=>setTab('assets')); return; }
+  pushLog(`🔎 I had my ${b.name} appraised — authentic, worth about ${fcm(b.value)}.`,[['good','Appraised: authentic']]);
+  resultModal('Appraisal','Certified Authentic ✅','✅',[`Good news: your <b>${b.name}</b> is the real thing.`,`Certified market value: <b>${fcm(b.value)}</b>.`],()=>setTab('assets')); }
+function sellBelonging(i){ const b=(S.assets&&S.assets.belongings||[])[i]; if(!b)return; closeModal();   // modalpick leaf → no logAct
+  // an unknown fake gets caught by the auction house's appraiser — you get burned
+  const caught = b.fake && !b.appraised;
+  const base = caught ? Math.round(b.value*(b.fakeFrac||0.2)) : b.value;
+  const roll = rng(0,100); let mult;
+  if(roll<10) mult=rng(118,140)/100;        // bidding war
+  else if(roll<74) mult=rng(92,110)/100;    // fair
+  else if(roll<92) mult=rng(72,90)/100;     // soft
+  else mult=rng(50,68)/100;                 // flop
+  const proceeds=Math.max(1,Math.round(base*mult)); money(proceeds);
+  const profit=proceeds-(b.bought||proceeds); S.flipProfit=(S.flipProfit||0)+Math.max(0,profit);
+  S.assets.belongings.splice(i,1);
+  let head, lines;
+  if(caught){ head='Caught Out 🔨'; lines=[`Mid-auction, the house's appraiser flags your <b>${b.name}</b> as a <b>fake</b>. It sells for scraps: <b>${fcm(proceeds)}</b>.`,`You should have appraised it first.`]; }
+  else { const scene = roll<10?`A <b>bidding war</b> erupts — two collectors will not back down!`
+      : roll<74?`Steady bidding lands a fair price.`
+      : roll<92?`Bidding is lukewarm — it goes for under estimate.`
+      : `The room is cold; it barely sells.`;
+    head = profit>=0?`Sold — ${fcm(proceeds)} 🔨`:`Sold at a Loss 🔨`;
+    lines=[`${scene}`, `Your <b>${b.name}</b> sold for <b>${fcm(proceeds)}</b>${b.bought!=null?` (${profit>=0?'a '+fcm(profit)+' profit':'a '+fcm(-profit)+' loss'} vs what you paid)`:''}.`]; }
+  pushLog(`🔨 I sold my ${b.name} at auction for ${fcm(proceeds)}.`,[[profit>=0?'good':'flag',`Sold ${b.name} · ${fcm(proceeds)}`]]);
+  resultModal('Auction',head,'🔨',lines,()=>setTab('assets')); }
 function rentStorage(i){ const t=STORAGE_TIERS[i]; if(!t)return;
   if(S.money<t.rent){ penniless2(t.rent, `rent the ${t.t.toLowerCase()}`); return; }
   logAct('call',{fn:'rentStorage',args:[i]});
