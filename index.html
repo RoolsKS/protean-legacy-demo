@@ -2257,6 +2257,7 @@ function lifeRecord(){
     abroad: !!(S.emigration && S.emigration.currentCountry && S.emigration.bornCountry && S.emigration.currentCountry!==S.emigration.bornCountry),
     naturalized: has('naturalized'), migratedGens: (function(){ const cc=new Set((S.emigration&&S.emigration.countryHistory||[]).map(h=>h.country)); return cc.size; })(),
     flipProfit: S.flipProfit||0,
+    emsTop: has('ems_top'), emsSenior: has('ems_senior'), emsMedals: (S.ems&&S.ems.medals||[]).length, emsYears:(S.ems&&S.ems.years)||0,
     asylumAscent: has('sought_asylum') && has('naturalized'),
     crowned: has('crowned_monarch'),
     royalHiddenYears: (S.royal&&S.royal.fled)?(((S.royal.found||S.age)-S.royal.fled)):0,
@@ -2359,6 +2360,9 @@ const RIBBONS=[
   {id:'world_family', name:'World Family', icon:'🌐', rarity:'epic', priority:6, desc:'A living family spread across three or more countries.', q:r=>_frac(r.familyCountries,3)},
   {id:'two_worlds', name:'Child of Two Worlds', icon:'🌗', rarity:'rare', priority:5, secret:true, desc:'Continue the dynasty from the far side of a family split.', q:r=>r.diasporaHeir?1:0},
   {id:'art_of_the_deal', name:'Art of the Deal', icon:'🔨', rarity:'rare', priority:5, desc:'Make ¤250,000 flipping belongings at auction.', q:r=>_frac(r.flipProfit,250000)},
+  {id:'first_responder', name:'First Responder', icon:'🚨', rarity:'rare', priority:5, desc:'Serve 15 years in an emergency service.', q:r=>_frac(r.emsYears,15)},
+  {id:'top_brass', name:'Top Brass', icon:'🎖️', rarity:'legendary', priority:8, desc:'Reach the top rank of a service — Chief, Warden, General.', q:r=>r.emsTop?1:0},
+  {id:'decorated', name:'Decorated', icon:'🏅', rarity:'epic', priority:6, secret:true, desc:'Earn a medal for valor in the line of duty.', q:r=>_frac(r.emsMedals,1)},
   {id:'crowned', name:'Crowned', icon:'👑', rarity:'legendary', priority:9, desc:'Take the throne of your family\'s kingdom.', q:r=>r.crowned?1:0},
   {id:'ghost_of_crown', name:'Ghost of the Crown', icon:'🕯️', rarity:'epic', priority:6, secret:true, desc:'Evade the palace\'s hunters for five years.', q:r=>_frac(r.royalHiddenYears,5)},
 ];
@@ -5215,6 +5219,7 @@ function ageUp(){
   allowanceYear();                                                    // 👑 pocket money scaled to the family's wealth (deterministic)
   royaltyYear();                                                      // 👑 royal-in-exile: runaway hunt, succession, stipend (deterministic)
   belongingsYear();                                                   // 💎 art/jewelry appreciate, electronics/fashion depreciate (deterministic)
+  emsYear(); emsPensionYear();                                        // 🚨 emergency-services pay/promotion/deployment, and retiree pension (deterministic)
   clubsYear();                                                        // 🎽 school clubs/teams accrue years & performance (deterministic)
   sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
   staffYear();                                                        // 🧑‍✈️ household staff salaries + their yearly perks (deterministic)
@@ -5877,7 +5882,7 @@ function continueAsHeir(id){
   if(heir.eduInvest){ const bonus=clamp(Math.round(heir.eduInvest*2.5),0,22); S.stats.smarts=clamp(S.stats.smarts+bonus); setFlag('privately_educated'); }   // 🎓 a privately-schooled heir starts life sharper (dynasty payoff)
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
   S.money=inheritance; S.peakMoney=Math.max(S.peakMoney||0,inheritance);
-  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.founderPeak=0; S.flipProfit=0; S._agentEarnings=0; S.endurance=-1; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
+  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.founderPeak=0; S.flipProfit=0; S.ems=null; S._agentEarnings=0; S.endurance=-1; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
   S.rentOwed=0; S.rentMult=1; S.autopayRent=true; S.karma=0; S.landlord=null;
   // 🌍 P4 DIASPORA SPLIT — an heir who grew up ABROAD continues the dynasty from THEIR country;
   // the family re-sorts around them: relatives in the heir's country are near, everyone else is now the long-distance side.
@@ -6119,7 +6124,7 @@ function hubBack(view){
   return pageHead(VIEW_TITLES[view]||'', `setTab('${par}')`, '‹');   // deeper page header (‹ goes back to the parent hub)
 }
 /* ⏳ SCHEDULE / ENERGY — a yearly free-time pool so you can't do every activity at once (BitLife Schedule). */
-function occupationHours(){ let h=0; if(['primary','high','college','cc'].includes(S.eduLevel)) h+=30; if(S.job) h+=35+((S.job.level||0)*2);
+function occupationHours(){ let h=0; if(['primary','high','college','cc'].includes(S.eduLevel)) h+=30; if(S.job) h+=35+((S.job.level||0)*2); if(typeof emsActive==='function'&&emsActive()) h+=40+((S.ems.rank||0)*2);
   const proSport=(typeof socActive==='function'&&socActive())||(typeof bbActive==='function'&&bbActive())||(typeof nflActive==='function'&&nflActive())||(typeof sp2Active==='function'&&(sp2Active('tennis')||sp2Active('volley')||sp2Active('hockey')));
   if(proSport) h+=30; return Math.min(92,h); }
 function energyLeft(){ if(S.energy==null)S.energy=100; return clamp(S.energy); }
@@ -6146,10 +6151,12 @@ function renderCareer(){ const v=document.getElementById('careerView'); if(!v||!
   { let you=''; const student=['primary','high','college','cc'].includes(S.eduLevel);
     if(student) you+=careerStatRow('🎓', ({primary:'Primary School',high:'High School',college:'University',cc:'Community College'}[S.eduLevel]||'School'), S.schoolName||'', 'Grades', S.grades||0, "setTab('school')");
     if(S.job) you+=careerStatRow('💼', jobTitle(S.job), `${cur()}${S.job.salary.toLocaleString()}/yr`, 'Performance', S.jobPerf||50, "setTab('job')");
+    if(emsActive()) you+=careerStatRow(emsIcon(), emsTitle(), `${cur()}${emsPayNow().toLocaleString()}/yr`, 'Performance', S.ems.perf||50, "emsMenu()");
     { const sc=activeSpecialCareer(); if(sc) you+=careerStatRow(sc.emoji, sc.name, sc.sub, 'Overall', sc.ov, "setTab('specialcareers')"); }
     if(S.age>=6) you+=careerStatRow('📅','Schedule', `${occupationHours()} hrs/week`, 'Free time this year', energyLeft(), "scheduleView()");
     if(you) h+=`<div class="genlabel">You</div>${you}<div class="genlabel">Explore</div>`; }
   h+=hubCard('💼','Job', S.job?`${jobTitle(S.job)} · ${cur()}${S.job.salary.toLocaleString()}/yr`:'Find work & climb the ladder', "setTab('job')");
+  if(S.age>=17) h+=hubCard('🚨','Emergency Services', emsActive()?`${emsTitle()} · ${cur()}${emsPayNow().toLocaleString()}/yr`:(S.ems&&S.ems.retired)?`Retired ${emsRankObj().name}`:'Police · Fire · EMS · Military · more', "emsMenu()");
   h+=hubCard('🎓','School', statusText().includes('Student')?statusText():(has('graduated_college')?'Graduate':'Education & enrollment'), "setTab('school')");
   if(S.age>=12) h+=hubCard('💸','Side Hustles', `Quick gigs for fast cash${S.gigs?` · ${S.gigs.filter(g=>!g.done).length} open`:''}`, "setTab('gigs')");
   if(S.business) h+=hubCard(S.business.icon||'🏢','My Business', `${S.business.name} · ${fcm(S.business.value)} valuation`, "setTab('business')");
@@ -10747,7 +10754,382 @@ function blackMarketBuy(kind, cost){ closeModal();
 }
 
 /* ============================================================
+   🚨 EMERGENCY SERVICES & PUBLIC SAFETY (content) — a dedicated career
+   family separate from the 9-to-5 job board. Real-life services, rank
+   ladders and pay: Police (→ Detective branch), State Trooper, Fire, EMS/
+   Paramedic, 911 Dispatch, DOT, Park Ranger, Border Patrol, Corrections,
+   and the Military (5 branches × enlisted/officer tracks). Enlist → climb
+   ranks by performance & years → respond to interactive calls → retire.
+   Citizenship-gated where real (ties into the emigration system).
+   State: S.ems={svc,branch,track,rank,years,yearsInRank,perf,retired,medals,deployed}.
+   Determinism: emsMenu logs the opener; sub-actions are modalpick leaves;
+   emsYear runs in ageUp; calls consume rng deterministically.
+   ============================================================ */
+const MIL_PAY_E=[25300,28400,31700,34700,38400,43300,49600,68300,79900];
+const MIL_PAY_O=[49900,63000,72500,84200,95000,111100,150000,175000,200000,225700];
+const MIL_BRANCHES={
+  army:{name:'Army',icon:'🪖', enl:['Private','Private E-2','Private First Class','Specialist','Sergeant','Staff Sergeant','Sergeant First Class','Master Sergeant','Sergeant Major'],
+    off:['Second Lieutenant','First Lieutenant','Captain','Major','Lieutenant Colonel','Colonel','Brigadier General','Major General','Lieutenant General','General']},
+  navy:{name:'Navy',icon:'⚓', enl:['Seaman Recruit','Seaman Apprentice','Seaman','Petty Officer 3rd Class','Petty Officer 2nd Class','Petty Officer 1st Class','Chief Petty Officer','Senior Chief Petty Officer','Master Chief Petty Officer'],
+    off:['Ensign','Lieutenant Junior Grade','Lieutenant','Lieutenant Commander','Commander','Captain','Rear Admiral (Lower Half)','Rear Admiral','Vice Admiral','Admiral']},
+  airforce:{name:'Air Force',icon:'✈️', enl:['Airman Basic','Airman','Airman First Class','Senior Airman','Staff Sergeant','Technical Sergeant','Master Sergeant','Senior Master Sergeant','Chief Master Sergeant'],
+    off:['Second Lieutenant','First Lieutenant','Captain','Major','Lieutenant Colonel','Colonel','Brigadier General','Major General','Lieutenant General','General']},
+  marines:{name:'Marines',icon:'🎖️', enl:['Private','Private First Class','Lance Corporal','Corporal','Sergeant','Staff Sergeant','Gunnery Sergeant','Master Sergeant','Master Gunnery Sergeant'],
+    off:['Second Lieutenant','First Lieutenant','Captain','Major','Lieutenant Colonel','Colonel','Brigadier General','Major General','Lieutenant General','General']},
+  coastguard:{name:'Coast Guard',icon:'🛟', enl:['Seaman Recruit','Seaman Apprentice','Seaman','Petty Officer 3rd Class','Petty Officer 2nd Class','Petty Officer 1st Class','Chief Petty Officer','Senior Chief Petty Officer','Master Chief Petty Officer'],
+    off:['Ensign','Lieutenant Junior Grade','Lieutenant','Lieutenant Commander','Commander','Captain','Rear Admiral (Lower Half)','Rear Admiral','Vice Admiral','Admiral']},
+};
+// civilian public-safety services — each with a real rank ladder & pay, entry gate, and a call-scenario pool key
+const EMS_SERVICES={
+  police:{name:'Police', icon:'👮', cat:'law', pool:'police', minAge:21, edu:'hs', citizen:true, academy:'the Police Academy',
+    desc:'City patrol — traffic stops, calls, chases. Branches into Detective.',
+    ranks:[{name:'Cadet',pay:42000},{name:'Police Officer',pay:58000},{name:'Police Officer II',pay:68000},{name:'Corporal',pay:75000},{name:'Sergeant',pay:85000},{name:'Lieutenant',pay:98000},{name:'Captain',pay:112000},{name:'Commander',pay:128000},{name:'Deputy Chief',pay:140000},{name:'Chief of Police',pay:185000}]},
+  detective:{name:'Detective', icon:'🕵️', cat:'law', pool:'detective', branchOnly:true,
+    desc:'Investigations — a promotion branch off patrol.',
+    ranks:[{name:'Detective I',pay:70000},{name:'Detective II',pay:85000},{name:'Detective III',pay:105000},{name:'Detective Sergeant',pay:118000},{name:'Detective Lieutenant',pay:138000}]},
+  trooper:{name:'State Trooper', icon:'🚓', cat:'law', pool:'trooper', minAge:21, edu:'hs', citizen:true, academy:'the State Trooper Academy',
+    desc:'Highway patrol — pursuits, interdiction, crashes. A tall ladder.',
+    ranks:[{name:'Recruit',pay:48000},{name:'Trooper',pay:66000},{name:'Senior Trooper',pay:78000},{name:'Master Trooper',pay:92000},{name:'Sergeant',pay:102000},{name:'Lieutenant',pay:115000},{name:'Captain',pay:128000},{name:'Major',pay:142000},{name:'Lieutenant Colonel',pay:158000},{name:'Colonel',pay:180000}]},
+  fire:{name:'Fire Department', icon:'🚒', cat:'fire', pool:'fire', minAge:18, edu:'hs', citizen:false, academy:'the Fire Academy',
+    desc:'Firefighting & rescue — structure fires, extrications, medical runs.',
+    ranks:[{name:'Probationary Firefighter',pay:44000},{name:'Firefighter',pay:53000},{name:'Firefighter / EMT',pay:58000},{name:'Engineer',pay:72000},{name:'Lieutenant',pay:85000},{name:'Captain',pay:98000},{name:'Battalion Chief',pay:120000},{name:'Assistant Chief',pay:150000},{name:'Fire Chief',pay:185000}]},
+  ems:{name:'EMS / Paramedic', icon:'🚑', cat:'ems', pool:'ems', minAge:18, edu:'hs', citizen:false, academy:'EMT school',
+    desc:'The ambulance — cardiac arrests, wrecks, overdoses, deliveries.',
+    ranks:[{name:'EMR',pay:34000},{name:'EMT-Basic',pay:41000},{name:'Advanced EMT',pay:47000},{name:'Paramedic',pay:58000},{name:'Critical Care Paramedic',pay:72000},{name:'EMS Captain',pay:80000},{name:'EMS Chief',pay:105000}]},
+  dispatch:{name:'911 Dispatch', icon:'📞', cat:'dispatch', pool:'dispatch', minAge:18, edu:'hs', citizen:false, academy:'dispatch training',
+    desc:'Emergency comms — route calls, talk callers through the worst moments.',
+    ranks:[{name:'Dispatcher Trainee',pay:38000},{name:'Dispatcher',pay:49000},{name:'Senior Dispatcher',pay:57000},{name:'Lead Dispatcher',pay:65000},{name:'Comms Supervisor',pay:75000},{name:'Comms Manager',pay:110000}]},
+  dot:{name:'DOT (Transportation)', icon:'🚧', cat:'dot', pool:'dot', minAge:18, edu:'hs', citizen:false, academy:'a CDL & orientation',
+    desc:'Highways — plows, potholes, bridge inspections, storm callouts.',
+    ranks:[{name:'Highway Maintenance Worker',pay:45000},{name:'Senior Maintenance Worker',pay:58000},{name:'Maintenance Supervisor',pay:72000},{name:'Maintenance Superintendent',pay:90000},{name:'District Engineer',pay:115000}]},
+  ranger:{name:'Park Ranger', icon:'🏞️', cat:'ranger', pool:'ranger', minAge:21, edu:'college', citizen:true, academy:'FLETC ranger training',
+    desc:'Protect the parks — search & rescue, wildlife, poaching, wildfires.',
+    ranks:[{name:'Seasonal Ranger',pay:32000},{name:'Park Ranger',pay:45000},{name:'Park Ranger (GS-9)',pay:57000},{name:'Supervisory Ranger',pay:69000},{name:'District Ranger',pay:83000},{name:'Chief Ranger',pay:100000},{name:'Park Superintendent',pay:130000}]},
+  cbp:{name:'Border Patrol', icon:'🛂', cat:'cbp', pool:'cbp', minAge:21, edu:'hs', citizen:true, academy:'the CBP Academy',
+    desc:'Federal — checkpoints, tracking, interdiction, desert rescues.',
+    ranks:[{name:'Border Patrol Agent',pay:65000},{name:'Agent (GS-7)',pay:72000},{name:'Agent (GS-9)',pay:80000},{name:'Senior Agent',pay:92000},{name:'Supervisory Agent',pay:110000},{name:'Field Ops Supervisor',pay:130000},{name:'Chief Patrol Agent',pay:160000}]},
+  corrections:{name:'Corrections', icon:'🔒', cat:'corrections', pool:'corrections', minAge:18, edu:'hs', citizen:true, academy:'corrections academy',
+    desc:'Inside the walls — shakedowns, lockdowns, riots, contraband.',
+    ranks:[{name:'Corrections Officer',pay:45000},{name:'Senior Officer',pay:55000},{name:'Corporal',pay:62000},{name:'Sergeant',pay:72000},{name:'Lieutenant',pay:88000},{name:'Captain',pay:105000},{name:'Deputy Warden',pay:125000},{name:'Warden',pay:155000}]},
+};
+const EMS_ORDER=['police','detective','trooper','fire','ems','dispatch','dot','ranger','cbp','corrections'];
+function emsActive(){ return !!(S.ems && !S.ems.retired); }
+function emsLadder(){ const e=S.ems; if(!e) return [];
+  if(e.svc==='military'){ const b=MIL_BRANCHES[e.branch]; const names=e.track==='officer'?b.off:b.enl; const pay=e.track==='officer'?MIL_PAY_O:MIL_PAY_E; return names.map((n,i)=>({name:n,pay:pay[i]})); }
+  return (EMS_SERVICES[e.svc]||{}).ranks||[]; }
+function emsRankObj(){ const l=emsLadder(); return l[Math.min(S.ems.rank,l.length-1)]||{name:'—',pay:0}; }
+function emsIsTop(){ return S.ems.rank>=emsLadder().length-1; }
+function emsPayNow(){ return Math.round((emsRankObj().pay||0)*priceMult()); }
+function emsIcon(){ const e=S.ems; return e.svc==='military'?MIL_BRANCHES[e.branch].icon:(EMS_SERVICES[e.svc]||{}).icon||'🚨'; }
+function emsSvcName(){ const e=S.ems; return e.svc==='military'?MIL_BRANCHES[e.branch].name+(e.track==='officer'?' (Officer)':''):(EMS_SERVICES[e.svc]||{}).name||'Service'; }
+function emsTitle(){ return `${emsRankObj().name} · ${emsSvcName()}`; }
+function emsPoolKey(){ const e=S.ems; return e.svc==='military'?'military':(EMS_SERVICES[e.svc]||{}).pool; }
+function emsPromoteReq(){ return 2 + Math.floor(S.ems.rank/2); }   // higher ranks take longer to earn
+
+/* ---- Career-tab entry point (logged opener) ---- */
+function emsMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  logAct('call',{fn:'emsMenu'});
+  if(emsActive()) return emsHub();
+  if(S.ems && S.ems.retired) return emsHub();   // show the retired record
+  emsBrowse();
+}
+function emsBrowse(){ closeModal();
+  const cats={law:'👮 Law Enforcement', fire:'🚒 Fire & Rescue', ems:'🚑 Medical', dispatch:'📞 Communications', dot:'🚧 Infrastructure', ranger:'🏞️ Parks & Wildlife', cbp:'🛂 Federal', corrections:'🔒 Corrections'};
+  const choices=[];
+  EMS_ORDER.forEach(k=>{ const d=EMS_SERVICES[k]; if(d.branchOnly)return; choices.push({label:`${d.icon} ${d.name}`, tip:`${d.desc} · from ${cur()}${Math.round(d.ranks[0].pay*priceMult()).toLocaleString()}/yr`, alt:true, fn:()=>emsJoinInfo(k)}); });
+  choices.push({label:`🪖 Military — 5 branches`, tip:'Enlist or commission as an officer · Army, Navy, Air Force, Marines, Coast Guard', alt:true, fn:()=>emsMilBranch()});
+  choices.push({label:'‹ Back', fn:()=>setTab('career')});
+  openModal({banner:'Emergency Services', title:'🚨 Public Safety Careers', icon:'🚨', closable:true,
+    text:`Serve your community — or your country. Real careers with real ranks: climb from the academy to the top, one promotion at a time. <span style="color:var(--dim);font-size:12px">Some services require citizenship.</span>`, choices});
+}
+function emsGateReason(d){   // returns null if clear, else a reason string
+  if(S.age<d.minAge) return `You must be at least <b>${d.minAge}</b> to join the ${d.name}.`;
+  if(d.edu==='hs' && !meetsEdu('hs')) return `The ${d.name} needs a <b>high-school diploma</b>.`;
+  if(d.edu==='college' && !meetsEdu('college')) return `This role needs a <b>university degree</b>.`;
+  if(d.citizen && typeof emCitizen==='function' && !emCitizen()) return `🛂 The ${d.name} is open only to <b>citizens of ${countryName((S.emigration&&S.emigration.currentCountry)||S.country)}</b>. Your naturalization is at <b>${(S.emigration&&S.emigration.naturalizationProgress)||0}%</b>.`;
+  if(has('criminal')) return `A <b>criminal record</b> disqualifies you from ${d.name}.`;
+  return null;
+}
+function emsJoinInfo(k){ closeModal(); const d=EMS_SERVICES[k]; if(!d)return;
+  const reason=emsGateReason(d);
+  const ladder=d.ranks.map((r,i)=>`${i===0?'▸ ':''}${r.name} — ${cur()}${Math.round(r.pay*priceMult()).toLocaleString()}`).join('<br>');
+  openModal({banner:'Emergency Services', title:`${d.icon} ${d.name}`, icon:d.icon, closable:true,
+    text:`${d.desc}<br><br><b>Rank ladder & pay:</b><br><span style="font-size:12.5px;line-height:1.7">${ladder}</span><br><br><b>Entry:</b> age ${d.minAge}+, ${d.edu==='college'?'university degree':d.edu==='hs'?'high-school diploma':'no diploma needed'}${d.citizen?', citizens only 🛂':''} · ${d.academy}.${reason?`<br><br><span style="color:var(--bad)">🔒 ${reason}</span>`:''}`,
+    choices:[
+      ...(reason?[]:[{label:`✍️ Join — enter ${d.academy}`, fn:()=>emsEnlist(k)}]),
+      {label:'‹ Back to services', alt:true, fn:()=>emsBrowse()},
+    ]});
+}
+function emsMilBranch(){ closeModal();
+  openModal({banner:'Military', title:'🪖 Choose a Branch', icon:'🪖', closable:true,
+    text:`Five branches, two paths: <b>enlist</b> (age 17+, high-school) or <b>commission as an officer</b> (needs a university degree — and citizenship). Officers outrank and outearn the enlisted.`,
+    choices:[...Object.keys(MIL_BRANCHES).map(bk=>({label:`${MIL_BRANCHES[bk].icon} ${MIL_BRANCHES[bk].name}`, alt:true, fn:()=>emsMilTrack(bk)})), {label:'‹ Back', fn:()=>emsBrowse()}]});
+}
+function emsMilTrack(bk){ closeModal(); const b=MIL_BRANCHES[bk];
+  const cit = (typeof emCitizen!=='function')||emCitizen();
+  const enlistOK = S.age>=17 && S.age<=39 && meetsEdu('hs') && !has('criminal');
+  const officerOK = S.age>=18 && S.age<=34 && meetsEdu('college') && cit && !has('criminal');
+  const enlReason = !meetsEdu('hs')?'needs high-school':(S.age<17||S.age>39)?'age 17–39':has('criminal')?'criminal record':'';
+  const offReason = !meetsEdu('college')?'needs a degree':!cit?'citizens only 🛂':(S.age<18||S.age>34)?'age 18–34':has('criminal')?'criminal record':'';
+  openModal({banner:'Military', title:`${b.icon} ${b.name}`, icon:b.icon, closable:true,
+    text:`<b>Enlisted</b> — ${b.enl[0]} to ${b.enl[b.enl.length-1]} (${cur()}${Math.round(MIL_PAY_E[0]*priceMult()).toLocaleString()}–${cur()}${Math.round(MIL_PAY_E[8]*priceMult()).toLocaleString()}).<br><b>Officer</b> — ${b.off[0]} to ${b.off[b.off.length-1]} (${cur()}${Math.round(MIL_PAY_O[0]*priceMult()).toLocaleString()}–${cur()}${Math.round(MIL_PAY_O[9]*priceMult()).toLocaleString()}).`,
+    choices:[
+      enlistOK?{label:'🎖️ Enlist', tip:'Boot camp, then climb the enlisted ranks', fn:()=>emsEnlistMil(bk,'enlisted')}:{label:`🔒 Enlist — ${enlReason}`, fn:()=>toast('🔒 '+enlReason)},
+      officerOK?{label:'⭐ Commission as an Officer', tip:'Lead from the front', fn:()=>emsEnlistMil(bk,'officer')}:{label:`🔒 Officer — ${offReason}`, fn:()=>toast('🔒 '+offReason)},
+      {label:'‹ Back', alt:true, fn:()=>emsMilBranch()},
+    ]});
+}
+function emsStart(obj, joinText){ if(S.job){ if(!S.job.owner) clearCoworkers(); S.job=null; }   // your service IS your occupation
+  S.ems=Object.assign({rank:0, years:0, yearsInRank:0, perf:rng(48,62), retired:false, medals:[], deployed:false}, obj);
+  S.jobPerf=50;
+  pushLog(joinText,[['good',`Joined: ${emsSvcName()}`]]);
+  resultModal('Enlisted', emsTitle(), emsIcon(), [joinText, `Starting pay: <b>${cur()}${emsPayNow().toLocaleString()}/yr</b>.`, `Prove yourself and the ranks will open up.`], ()=>emsHub());
+}
+function emsEnlist(k){ closeModal(); const d=EMS_SERVICES[k]; const r=emsGateReason(d); if(r){ toast('🔒 Cannot join.'); return; }
+  emsStart({svc:k}, `🚨 I graduated ${d.academy} and joined the <b>${d.name}</b> as a ${d.ranks[0].name}.`); }
+function emsEnlistMil(bk,track){ closeModal(); const b=MIL_BRANCHES[bk];
+  emsStart({svc:'military', branch:bk, track}, `🪖 I ${track==='officer'?'was commissioned into':'enlisted in'} the <b>${b.name}</b> as a ${(track==='officer'?b.off:b.enl)[0]}.`); }
+
+/* ---- The hub — your standing, promote, respond to a call, retire ---- */
+function emsHub(){ closeModal(); const e=S.ems; if(!e){ emsBrowse(); return; }
+  if(e.retired){ openModal({banner:'Service Record', title:`${emsIcon()} ${emsSvcName()}`, icon:emsIcon(), closable:true,
+      text:`<b>Retired ${emsRankObj().name}</b> · ${e.years} years of service.${(e.medals&&e.medals.length)?`<br>🎖️ Honors: ${e.medals.join(', ')}`:''}<br><span style="color:var(--dim);font-size:12px">A life of service, remembered.</span>`,
+      choices:[{label:'‹ Back', fn:()=>setTab('career')}]}); return; }
+  const nextRank = emsIsTop()?null:emsLadder()[e.rank+1];
+  const canPromote = !emsIsTop() && e.yearsInRank>=emsPromoteReq() && e.perf>=62;
+  openModal({banner:'Emergency Services', title:emsTitle(), icon:emsIcon(), closable:true,
+    text:`<div style="text-align:left"><b>${cur()}${emsPayNow().toLocaleString()}/yr</b> · ${e.years} yr${e.years===1?'':'s'} of service${(e.medals&&e.medals.length)?`<br>🎖️ ${e.medals.join(', ')}`:''}<div class="relbars" style="margin-top:8px">${barRow('⭐ Performance',e.perf,100)}</div>${nextRank?`<div class="pf" style="margin-top:6px">Next: <b>${nextRank.name}</b>${canPromote?' — <span style="color:var(--good)">eligible!</span>':` · needs ${emsPromoteReq()} yrs in rank (${e.yearsInRank}) & strong reviews`}</div>`:`<div class="pf" style="margin-top:6px">🏆 You've reached the <b>top of the ladder</b>.</div>`}</div>`,
+    choices:[
+      {label:'🚨 Respond to a Call', tip:'A shift on the job — your choices shape it', fn:()=>emsCall()},
+      ...(canPromote?[{label:`⬆️ Go before the promotion board — ${nextRank.name}`, fn:()=>emsPromoteBoard()}]:[]),
+      ...(S.ems.svc==='police' && S.ems.rank>=2 && S.ems.years>=3?[{label:'🕵️ Apply for Detective', tip:'Branch into investigations', fn:()=>emsToDetective()}]:[]),
+      ...(e.years>=5?[{label:'🎖️ Retire from service', alt:true, fn:()=>emsRetire()}]:[]),
+      {label:'‹ Back', alt:true, fn:()=>setTab('career')},
+    ]});
+}
+function emsPromoteBoard(){ closeModal(); const e=S.ems; if(emsIsTop())return;   // modalpick leaf
+  const nx=emsLadder()[e.rank+1];
+  const odds=clamp(45 + (e.perf-62)*1.5 + S.stats.smarts/6, 20, 96);
+  if(rng(0,100)<odds){ e.rank++; e.yearsInRank=0; e.perf=clamp(e.perf-rng(2,6));   // fresh rung, prove yourself again
+    if(emsIsTop()) setFlag('ems_top'); setFlag('ems_senior');
+    pushLog(`⬆️ I was promoted to <b>${nx.name}</b> — now ${cur()}${emsPayNow().toLocaleString()}/yr.`,[['good',`Promoted: ${nx.name}`]]);
+    resultModal('Promotion', nx.name, emsIcon(), [`The board reviewed your record and advanced you to <b>${nx.name}</b>.`,`Pay is now <b>${cur()}${emsPayNow().toLocaleString()}/yr</b>.`], ()=>emsHub()); }
+  else { e.yearsInRank=Math.max(0,e.yearsInRank-1);
+    pushLog(`I went before the promotion board for ${nx.name} — passed over this time.`,[['flag','Passed over']]);
+    resultModal('Promotion Board','Not This Time', '📋', [`The board wasn't convinced yet. Keep your performance up and try again.`], ()=>emsHub()); }
+}
+function emsToDetective(){ closeModal(); const e=S.ems;
+  e.svc='detective'; e.rank=0; e.yearsInRank=0; e.perf=clamp(e.perf-rng(0,5)); setFlag('made_detective');
+  pushLog(`🕵️ I passed the detective exam and made <b>Detective</b> — leaving patrol for investigations.`,[['good','Made Detective']]);
+  resultModal('Detective','Shield & Cases 🕵️', '🕵️', [`You traded the uniform for a shield. Welcome to Investigations, <b>Detective I</b>.`,`Pay: <b>${cur()}${emsPayNow().toLocaleString()}/yr</b>.`], ()=>emsHub()); }
+function emsRetire(){ closeModal(); const e=S.ems;
+  const pension = e.years>=20 ? Math.round(emsPayNow()*0.5) : 0;
+  e.retired=true; e.pension=pension; if(typeof collectCareer==='function' && e.years>=20) collectCareer(emsSvcName());
+  pushLog(`🎖️ I retired from the ${emsSvcName()} after <b>${e.years} years</b> as a ${emsRankObj().name}.${pension?` Pension: ${cur()}${pension.toLocaleString()}/yr.`:''}`,[['good','Retired from service']]);
+  resultModal('Retirement', `Retired ${emsRankObj().name}`, emsIcon(), [`After <b>${e.years} years</b>, you hang it up.`, pension?`A pension of <b>${cur()}${pension.toLocaleString()}/yr</b> honors your service.`:`Under 20 years — no pension, but no regrets.`, (e.medals&&e.medals.length)?`Honors: ${e.medals.join(', ')}.`:''], ()=>setTab('career')); }
+
+/* ---- Yearly: pay, performance drift, auto-promotion consideration, military deployment ---- */
+function emsYear(){ if(!S||!S.alive||!S.ems||S.ems.retired) return; const e=S.ems;
+  // pension for the retired handled below
+  e.years=(e.years||0)+1; e.yearsInRank=(e.yearsInRank||0)+1;
+  money(emsPayNow());
+  // performance drifts toward a baseline set by your aptitude
+  const apt = (S.stats.smarts*0.4 + (S.fitness||50)*0.3 + pers('discipline')*0.3);
+  e.perf = clamp(Math.round((e.perf||50) + (apt-e.perf)*0.15 + rng(-4,6)));
+  // auto promotion when clearly earned (so you climb even if you never open the hub)
+  if(!emsIsTop() && e.yearsInRank>=emsPromoteReq()+1 && e.perf>=70 && rng(0,100)<55){ const nx=emsLadder()[e.rank+1];
+    e.rank++; e.yearsInRank=0; if(emsIsTop())setFlag('ems_top'); setFlag('ems_senior');
+    pushLog(`⬆️ I was promoted to <b>${nx.name}</b> (${cur()}${emsPayNow().toLocaleString()}/yr).`,[['good',`Promoted: ${nx.name}`]]); }
+  // military: occasional deployment with a valor/casualty roll
+  if(e.svc==='military' && !e.deployed && S.age>=19 && rng(0,100)<15){ e.deployed=true;
+    if(rng(0,100)<10){ e.medals=e.medals||[]; const m=pick(['Bronze Star','Silver Star','Commendation Medal']); if(e.medals.indexOf(m)<0)e.medals.push(m); e.perf=clamp(e.perf+rng(6,12)); gainFame(rng(2,6)); setFlag('decorated_veteran');
+        pushLog(`🎖️ On deployment I was decorated with the <b>${m}</b> for valor.`,[['good',`Decorated: ${m}`]]); }
+    else if(rng(0,100)<8){ chg('health',-rng(8,20)); if(typeof addTrauma==='function')addTrauma('combat',rng(12,26),'what you saw downrange'); e.medals=e.medals||[]; if(e.medals.indexOf('Purple Heart')<0)e.medals.push('Purple Heart');
+        pushLog(`🎗️ I was wounded on deployment — awarded the <b>Purple Heart</b>.`,[['bad','Wounded in action']]); }
+    else pushLog(`✈️ I shipped out on a deployment — months away from home.`,[['flag','Deployed']]);
+  } else if(e.deployed && rng(0,100)<40){ e.deployed=false; pushLog(`🏠 I came home from deployment.`,[['good','Home from deployment']]); }
+}
+function emsPensionYear(){ if(S&&S.ems&&S.ems.retired&&S.ems.pension){ money(S.ems.pension); } }
+
+/* ---- INTERACTIVE CALLS — a shift on the job, your choices shape it. Each choice's resolver returns
+   {txt, perf, tag?, fame?, karma?, health?, happy?, stress?, money?, medal?}. rng inside resolvers is replay-safe. ---- */
+function emsResolve(out){ closeModal(); const e=S.ems; if(!e)return;
+  e.perf=clamp((e.perf||50)+(out.perf||0));
+  if(out.fame)gainFame(out.fame); if(out.karma)karma(out.karma); if(out.health)chg('health',out.health); if(out.happy)chg('happy',out.happy); if(out.money)money(out.money); if(out.stress)addStress(out.stress);
+  if(out.medal){ e.medals=e.medals||[]; if(e.medals.indexOf(out.medal)<0){ e.medals.push(out.medal); gainFame(rng(1,4)); setFlag('decorated_veteran'); } }
+  pushLog('🚨 '+(out.txt||'').replace(/<[^>]+>/g,''), [[(out.perf||0)>=0?'good':'bad', out.tag||'On duty']]);
+  resultModal('On Duty', emsTitle(), emsIcon(), [out.txt, statBar('Performance', e.perf)], ()=>emsHub());
+}
+function emsCall(){ closeModal(); const e=S.ems; if(!e||e.retired){ setTab('career'); return; }
+  if(!onceYear('ems_call','answered a call')){ emsHub(); return; }
+  if(!spendEnergy(15,'a shift')){ emsHub(); return; }
+  const pool=EMS_CALLS[emsPoolKey()]||EMS_CALLS.police;
+  const call=pool[rng(0,pool.length-1)];
+  openModal({banner:'On Duty', title:'🚨 A Call Comes In', icon:emsIcon(), closable:false,
+    text:call.t, choices: call.c.map(ch=>({label:ch.l, tip:ch.tip, fn:()=>emsResolve(ch.r())}))});
+}
+const _win=(lo,hi)=>rng(lo,hi);
+const EMS_CALLS={
+  police:[
+    {t:`A traffic stop turns tense — the driver's hands drop out of sight.`, c:[
+      {l:'De-escalate — calm, steady voice', tip:'Patience', r:()=>rng(0,100)<70?{txt:`You talk him down; hands come up, no one's hurt. Textbook.`,perf:_win(6,11),karma:2,tag:'De-escalated'}:{txt:`He panics anyway and bolts — but you kept it non-violent.`,perf:_win(1,5),tag:'Got away'}},
+      {l:'Draw your weapon, take control', tip:'Command the scene', r:()=>rng(0,100)<60?{txt:`Firm commands, cuffs on, contraband in the trunk. A clean collar.`,perf:_win(5,10),tag:'Good arrest'}:{txt:`It escalates fast — a scuffle, a formal complaint filed.`,perf:-_win(3,8),stress:6,tag:'Complaint'}},
+      {l:'Call for backup, hold position', tip:'Safe but slow', r:()=>({txt:`Backup rolls up and the situation resolves quietly. No medals, no mistakes.`,perf:_win(2,5),tag:'By the book'})},
+    ]},
+    {t:`A domestic-disturbance call — shouting behind the door, then silence.`, c:[
+      {l:'Separate them, listen to both', tip:'Careful work', r:()=>rng(0,100)<66?{txt:`You defuse it, connect them with services. Nobody goes to the hospital tonight.`,perf:_win(6,10),karma:3,tag:'Defused it'}:{txt:`It reignites the moment your back turns — a long, ugly night.`,perf:-_win(1,5),stress:8,tag:'Reignited'}},
+      {l:'Make an arrest on the spot', tip:'End it now', r:()=>({txt:`You cuff the aggressor. Maybe the right call, maybe not — the paperwork will decide.`,perf:_win(2,6),tag:'Arrest made'})},
+    ]},
+    {t:`A silent alarm — burglary in progress at a warehouse.`, c:[
+      {l:'Set a perimeter and wait them out', tip:'Smart', r:()=>rng(0,100)<72?{txt:`They walk right into your net at the loading dock. Caught red-handed.`,perf:_win(7,12),tag:'Nabbed them'}:{txt:`They slip out a side exit you couldn't cover.`,perf:-_win(0,3),tag:'Slipped away'}},
+      {l:'Go in solo — don\'t let them escape', tip:'Risky', r:()=>rng(0,100)<48?{txt:`You corner the burglar alone. Gutsy — and it worked. Commendation earned.`,perf:_win(9,15),fame:2,tag:'Solo collar'}:{txt:`Going in alone, you're jumped in the dark and hurt.`,perf:-_win(4,9),health:-_win(6,14),stress:8,tag:'Ambushed'}},
+    ]},
+    {t:`A mental-health crisis call — a man on a ledge, in tears.`, c:[
+      {l:'Talk to him, human to human', tip:'The hardest, best work', r:()=>rng(0,100)<60?{txt:`An hour of quiet talk, and he takes your hand and steps down. You'll never forget it.`,perf:_win(8,13),karma:5,happy:3,tag:'Talked him down'}:{txt:`Despite everything, it ends in tragedy. It stays with you.`,perf:_win(2,5),stress:14,tag:'Haunted'}},
+      {l:'Wait for the crisis team', tip:'Not your training', r:()=>({txt:`You hold the scene until the specialists arrive. The right humility.`,perf:_win(2,5),tag:'Held the scene'})},
+    ]},
+  ],
+  detective:[
+    {t:`An interrogation — your suspect is lying, but he's careful.`, c:[
+      {l:'Play good-cop, build rapport', tip:'Patience cracks people', r:()=>rng(0,100)<64?{txt:`Twenty minutes of empathy and he confesses everything. Case closed.`,perf:_win(7,12),tag:'Confession'}:{txt:`He lawyers up. You'll need harder evidence.`,perf:-_win(0,3),tag:'Lawyered up'}},
+      {l:'Bluff — claim you have his DNA', tip:'A gamble', r:()=>rng(0,100)<50?{txt:`The bluff lands; he cracks and gives up his accomplice too.`,perf:_win(8,13),tag:'Bluff worked'}:{txt:`He calls it — now the whole interview is tainted.`,perf:-_win(4,8),tag:'Bluff blew up'}},
+    ]},
+    {t:`A cold case reopens — a box of old evidence, a nagging hunch.`, c:[
+      {l:'Re-run the DNA with modern tools', tip:'Science', r:()=>rng(0,100)<58?{txt:`A cold hit. After 15 years, you name the killer. The family finally exhales.`,perf:_win(9,15),fame:4,karma:4,tag:'Cold case solved'}:{txt:`The sample's too degraded. The case goes cold again — for now.`,perf:_win(1,3),tag:'Still cold'}},
+      {l:'Re-interview the original witnesses', tip:'Old-fashioned legwork', r:()=>rng(0,100)<52?{txt:`One witness, older now, finally tells the truth. The thread unravels the whole case.`,perf:_win(7,12),tag:'Broke it open'}:{txt:`Memories have faded past usefulness.`,perf:_win(0,2),tag:'Dead end'}},
+    ]},
+    {t:`An undercover buy-bust — you're wired, the dealer's suspicious.`, c:[
+      {l:'Stay in character, ride it out', tip:'Nerve', r:()=>rng(0,100)<62?{txt:`You sell the role, the deal goes down, the takedown is clean. Big arrest.`,perf:_win(8,13),tag:'Bust'}:{txt:`He makes you as a cop — you barely get out before backup arrives.`,perf:-_win(3,7),stress:10,tag:'Made'}},
+      {l:'Abort — signal the takedown early', tip:'Safe', r:()=>({txt:`You pull the plug. A smaller charge sticks, but everyone goes home safe.`,perf:_win(2,5),tag:'Aborted safe'})},
+    ]},
+  ],
+  trooper:[
+    {t:`A car blows past your radar at 110 mph and won't stop.`, c:[
+      {l:'Pursue — stay on him', tip:'Adrenaline', r:()=>rng(0,100)<58?{txt:`Miles of white-knuckle chase end with a PIT maneuver. He's in cuffs, no one hurt.`,perf:_win(8,13),fame:2,tag:'Pursuit ended'}:{txt:`The chase turns dangerous and Command calls it off for public safety.`,perf:-_win(0,4),stress:8,tag:'Called off'}},
+      {l:'Back off, radio ahead for a roadblock', tip:'Smarter', r:()=>rng(0,100)<70?{txt:`Troopers down the interstate box him in. Clean, safe, textbook.`,perf:_win(6,10),tag:'Boxed in'}:{txt:`He exits before the roadblock and vanishes into side roads.`,perf:_win(0,3),tag:'Lost him'}},
+    ]},
+    {t:`A routine stop — but you smell something, and the driver's sweating.`, c:[
+      {l:'Ask to search — press for consent', tip:'Instinct', r:()=>rng(0,100)<55?{txt:`A hidden compartment, packed. A major interdiction bust off the highway.`,perf:_win(9,14),fame:3,tag:'Big seizure'}:{txt:`Nothing there. The stop drags on and the driver files a complaint.`,perf:-_win(2,6),tag:'Nothing found'}},
+      {l:'Write the ticket, let him go', tip:'No probable cause', r:()=>({txt:`Just a speeder after all. You keep it clean and professional.`,perf:_win(1,4),tag:'Ticket issued'})},
+    ]},
+    {t:`A fatal multi-car pileup in fog — chaos, injured everywhere.`, c:[
+      {l:'Take command, triage the scene', tip:'Leadership', r:()=>rng(0,100)<66?{txt:`You marshal fire, EMS and traffic into order. Lives are saved because you kept your head.`,perf:_win(8,13),karma:4,tag:'Ran the scene'}:{txt:`It's overwhelming; you do what you can. Some nights the job just hurts.`,perf:_win(2,5),stress:12,tag:'Rough scene'}},
+    ]},
+  ],
+  fire:[
+    {t:`A house fire — and a neighbor screams there's a child inside.`, c:[
+      {l:'Mask up and go in for the child', tip:'This is the job', r:()=>rng(0,100)<62?{txt:`Through the smoke, low and fast — you find the kid under a bed and carry them out. A hero's welcome.`,perf:_win(10,16),fame:5,karma:6,happy:4,medal:'Medal of Valor',tag:'Saved a child'}:{txt:`The floor gives way — you make it out, barely, empty-handed and burned. It wasn't survivable.`,perf:_win(3,6),health:-_win(8,18),stress:16,tag:'Flashover'}},
+      {l:'Fight the fire from outside first', tip:'By protocol', r:()=>rng(0,100)<50?{txt:`Knocking the fire down first opens a safe path — and the child is found alive.`,perf:_win(7,12),karma:3,tag:'Textbook rescue'}:{txt:`By the time it's safe to enter, it's too late. A brutal call.`,perf:_win(1,4),stress:14,tag:'Too late'}},
+    ]},
+    {t:`A pin-in accident on the highway — driver trapped, fuel leaking.`, c:[
+      {l:'Jaws of life — cut him out fast', tip:'Race the clock', r:()=>rng(0,100)<70?{txt:`Sparks, steel, sixty seconds to spare — you pop the door and drag him clear before it goes up.`,perf:_win(8,13),karma:4,tag:'Extrication'}:{txt:`The cut goes slow; you get him out singed but alive. Close one.`,perf:_win(3,7),tag:'Close call'}},
+      {l:'Foam the fuel first, then extract', tip:'Safety margin', r:()=>({txt:`You blanket the leak, then work calm and clean. Everyone goes home.`,perf:_win(5,9),tag:'Safe extraction'})},
+    ]},
+    {t:`A "Mayday" crackles over the radio — a brother is down inside.`, c:[
+      {l:'Lead the RIT team in after him', tip:'No one left behind', r:()=>rng(0,100)<60?{txt:`You find him, share your air, and haul him out. Firefighters take care of their own.`,perf:_win(9,15),fame:3,karma:5,medal:'Firefighter\'s Cross',tag:'Saved a brother'}:{txt:`You reach him, but the rescue costs you — smoke inhalation, a hospital stay.`,perf:_win(4,8),health:-_win(10,20),stress:14,tag:'Hurt saving him'}},
+    ]},
+    {t:`Third false alarm this week — burnt toast at the same apartment.`, c:[
+      {l:'Reset it with a smile', tip:'Community', r:()=>({txt:`You reset the alarm, teach the tenant about the toaster, and roll out. All part of it.`,perf:_win(1,4),happy:2,tag:'False alarm'})},
+      {l:'Write it up — this is a pattern', tip:'By the book', r:()=>({txt:`You document it properly. Not glamorous, but it's the paperwork that keeps a department running.`,perf:_win(2,4),tag:'Documented'})},
+    ]},
+  ],
+  ems:[
+    {t:`Cardiac arrest — a man down on a restaurant floor, no pulse.`, c:[
+      {l:'CPR and shock — work the code', tip:'Time is everything', r:()=>rng(0,100)<58?{txt:`Compressions, the AED, one shock — and a rhythm comes back. You just brought someone back from the dead.`,perf:_win(9,15),karma:5,happy:4,tag:'Got him back'}:{txt:`You work him hard the whole way in, but he's gone. Some you can't save.`,perf:_win(2,5),stress:12,tag:'Lost him'}},
+    ]},
+    {t:`A bad wreck — a young driver with a bleed you can't quite control.`, c:[
+      {l:'Tourniquet and diesel bolus to the trauma center', tip:'Load and go', r:()=>rng(0,100)<66?{txt:`Tourniquet high and tight, lights and sirens — you hand off a live patient to the surgeons. Textbook.`,perf:_win(8,13),karma:4,tag:'Saved the bleed'}:{txt:`You do everything right and it still isn't enough. The worst part of the job.`,perf:_win(3,6),stress:13,tag:'Couldn\'t save them'}},
+    ]},
+    {t:`An overdose — a teenager, barely breathing, friends panicking.`, c:[
+      {l:'Narcan and bag him', tip:'Fast', r:()=>rng(0,100)<74?{txt:`One dose of naloxone and he gasps back to life. His mother will never know how close it was.`,perf:_win(7,12),karma:4,tag:'Reversed it'}:{txt:`He needs more than one round; it's touch and go all the way to the ER.`,perf:_win(3,6),stress:8,tag:'Touch and go'}},
+    ]},
+    {t:`A woman in active labor — the baby is coming in the back of your rig.`, c:[
+      {l:'Deliver the baby', tip:'Two patients now', r:()=>rng(0,100)<78?{txt:`A healthy cry fills the ambulance. You've delivered a life instead of racing one to a hospital. Nothing beats this.`,perf:_win(8,13),karma:5,happy:6,tag:'Delivered a baby'}:{txt:`A complication turns it tense — but you steady it and both make it to the hospital okay.`,perf:_win(5,9),stress:6,tag:'Tense delivery'}},
+    ]},
+    {t:`Your fourth "frequent flyer" call today — non-emergency, again.`, c:[
+      {l:'Treat them with patience anyway', tip:'Everyone deserves care', r:()=>({txt:`You check them out kindly. Loneliness is its own emergency, and you're who showed up.`,perf:_win(2,5),karma:3,tag:'Kindness call'})},
+    ]},
+  ],
+  dispatch:[
+    {t:`A caller whispers an address, then: "I'd like to order a pizza."`, c:[
+      {l:'Play along — she can\'t speak freely', tip:'Read between the lines', r:()=>rng(0,100)<80?{txt:`You catch the code — a domestic-violence caller who can't talk. "Yes/no" questions, units rolling silently. You may have just saved her life.`,perf:_win(9,15),karma:6,tag:'Cracked the code'}:{txt:`You get units moving but the address is incomplete — an agonizing wait.`,perf:_win(3,6),stress:10,tag:'Racing the clock'}},
+      {l:'Tell her she has the wrong number', tip:'By the script', r:()=>({txt:`You miss the signal and she hangs up. Later, you learn what it was. It stays with you.`,perf:-_win(4,9),stress:12,tag:'Missed it'})},
+    ]},
+    {t:`Three lines light up at once — a fire, a stroke, and a fender-bender.`, c:[
+      {l:'Triage — fire and stroke first', tip:'Prioritize', r:()=>rng(0,100)<72?{txt:`You route the criticals in seconds and calmly hold the fender-bender. Flawless multitasking under fire.`,perf:_win(7,12),tag:'Ran the board'}:{txt:`It's a scramble; everyone gets help, but your supervisor notes the delay.`,perf:_win(1,4),stress:8,tag:'Scramble'}},
+    ]},
+    {t:`A 911 caller is doing CPR and losing hope — "I can't do this."`, c:[
+      {l:'Coach her through it, count out loud', tip:'Be her calm', r:()=>rng(0,100)<64?{txt:`"Push — one, two, three — you've got this." You keep her going until medics arrive. Her father lives.`,perf:_win(8,13),karma:5,tag:'Talked her through CPR'}:{txt:`You never stop coaching, but it wasn't enough. You tell her she did everything right. She did.`,perf:_win(3,6),stress:13,tag:'Did everything right'}},
+    ]},
+  ],
+  dot:[
+    {t:`A blizzard at 3 a.m. — the interstate's a sheet of ice and the plows are yours to send.`, c:[
+      {l:'Take the wheel yourself, lead the convoy', tip:'Lead from the front', r:()=>rng(0,100)<70?{txt:`You break trail through the whiteout for hours. By dawn the road's open and nobody died on your watch.`,perf:_win(7,12),karma:3,tag:'Cleared the storm'}:{txt:`You jackknife on black ice — no injuries, but a plow's in the ditch and a long report to write.`,perf:-_win(2,6),stress:8,tag:'Jackknifed'}},
+    ]},
+    {t:`During a routine bridge inspection, you spot a hairline crack in a girder.`, c:[
+      {l:'Flag it and close the bridge', tip:'Better safe', r:()=>rng(0,100)<75?{txt:`You call it in. Engineers confirm it was days from failing. Your caution saved lives — quietly.`,perf:_win(8,13),karma:5,tag:'Caught the crack'}:{txt:`It turns out minor and the closure snarls traffic for a week. You took heat, but you'd do it again.`,perf:_win(1,4),tag:'Overcautious'}},
+      {l:'Note it for the next scheduled review', tip:'Probably fine', r:()=>rng(0,100)<80?{txt:`It holds — this time. But you'll think about that crack every time you drive over it.`,perf:_win(0,3),tag:'Let it ride'}:{txt:`It worsens fast and forces an emergency closure. Should've flagged it.`,perf:-_win(4,9),tag:'Should have flagged it'}},
+    ]},
+    {t:`A washout after heavy rain — the road's gone and cars are stopping at the edge in the dark.`, c:[
+      {l:'Get out and direct traffic yourself', tip:'Now', r:()=>({txt:`Flares, cones, your own body between drivers and a 20-foot drop. You hold the line till the barricades arrive.`,perf:_win(6,10),karma:4,tag:'Held the line'})},
+    ]},
+  ],
+  ranger:[
+    {t:`A hiker's overdue — night's falling and a storm's rolling into the backcountry.`, c:[
+      {l:'Lead a search into the dark', tip:'Every minute counts', r:()=>rng(0,100)<62?{txt:`You track them by headlamp to a ravine, splint the ankle, and walk them out at dawn. Alive because you went.`,perf:_win(8,13),karma:5,tag:'Found the hiker'}:{txt:`The storm forces you back; you find them cold but breathing at first light. Barely.`,perf:_win(4,7),stress:8,tag:'Close rescue'}},
+    ]},
+    {t:`A bear's wandered into a crowded campground at dusk.`, c:[
+      {l:'Haze it out calmly, clear the crowd', tip:'Coexist', r:()=>rng(0,100)<72?{txt:`You move the campers back and encourage the bear off without a shot fired. Everybody wins, bear included.`,perf:_win(6,10),karma:3,tag:'Bear handled'}:{txt:`It gets hairy and a tent is destroyed, but no one's hurt. The bear gets relocated.`,perf:_win(2,5),tag:'Bear relocated'}},
+    ]},
+    {t:`You catch a poacher standing over a felled elk, rifle still warm.`, c:[
+      {l:'Make the arrest', tip:'LE ranger', r:()=>rng(0,100)<60?{txt:`You take him in clean — and his network unravels into a multi-state case. A career bust.`,perf:_win(8,13),fame:2,karma:4,tag:'Poacher busted'}:{txt:`He runs into the trees; you recover the rifle and the elk but he slips the ridge.`,perf:_win(1,4),tag:'Ran off'}},
+    ]},
+  ],
+  cbp:[
+    {t:`A vehicle at the checkpoint rides low and the driver won't meet your eyes.`, c:[
+      {l:'Send it to secondary, run the K-9', tip:'Instinct', r:()=>rng(0,100)<58?{txt:`The dog alerts on a false floor packed with contraband. A major seizure — and a smuggling ring exposed.`,perf:_win(9,14),fame:3,tag:'Big seizure'}:{txt:`Nothing but nerves and an expired registration. You wave them through, professional as ever.`,perf:_win(1,4),tag:'Clean vehicle'}},
+    ]},
+    {t:`Cutting sign in the desert, you find fresh tracks — and hear a faint cry.`, c:[
+      {l:'Follow the cry — someone needs help', tip:'Life first', r:()=>rng(0,100)<70?{txt:`You find a dehydrated migrant near death and get water and a medevac to him in time. The badge is a rescue tool too.`,perf:_win(7,12),karma:6,tag:'Desert rescue'}:{txt:`You reach him just in time; it's a hard, humbling night in the heat.`,perf:_win(4,7),stress:8,tag:'Barely in time'}},
+    ]},
+    {t:`Night surveillance flags movement — a suspected tunnel mouth in a warehouse.`, c:[
+      {l:'Coordinate the raid', tip:'Patience pays', r:()=>rng(0,100)<62?{txt:`Weeks of watching pay off in one clean raid — a cross-border tunnel shut down. Front-page work.`,perf:_win(8,13),fame:3,tag:'Tunnel busted'}:{txt:`The raid comes up empty — they'd moved on. The intel game is like that.`,perf:_win(0,3),tag:'Empty raid'}},
+    ]},
+  ],
+  corrections:[
+    {t:`A cell shakedown turns up a phone — and a shank taped under the bunk.`, c:[
+      {l:'Write it up and confiscate', tip:'By the book', r:()=>rng(0,100)<72?{txt:`You document it clean. The intel on the phone breaks up a smuggling ring inside the walls.`,perf:_win(6,11),tag:'Good find'}:{txt:`The inmate marks you now; you'll have to watch your back on the block.`,perf:_win(2,5),stress:8,tag:'Made an enemy'}},
+    ]},
+    {t:`A fight erupts in the yard and it's spreading fast toward a riot.`, c:[
+      {l:'Call lockdown, wade in with your team', tip:'Control the block', r:()=>rng(0,100)<58?{txt:`Fast lockdown, coordinated response — you snuff a riot before it ignites. The warden notices.`,perf:_win(8,13),tag:'Stopped a riot'}:{txt:`It gets loose before you contain it — bruises, a torn uniform, a very long shift.`,perf:_win(2,5),health:-_win(5,12),stress:10,tag:'Ugly brawl'}},
+    ]},
+    {t:`An inmate slides an envelope across the desk. "Look the other way. There's more where that came from."`, c:[
+      {l:'Refuse and report it', tip:'Integrity', r:()=>({txt:`You write him up for attempted bribery. Clean hands, straight record — the only way to survive this job.`,perf:_win(6,10),karma:4,tag:'Refused the bribe'})},
+      {l:'Take the money', tip:'Who\'s watching?', r:()=>rng(0,100)<55?{txt:`The cash is good… until it isn't. You're compromised now, and he owns a piece of you. ${'💰'}`,perf:-_win(2,6),karma:-6,money:_win(2000,9000),tag:'Took the bribe'}:{txt:`It's a sting. Internal affairs was watching. You're suspended and disgraced.`,perf:-_win(10,18),karma:-8,tag:'Caught dirty'}},
+    ]},
+  ],
+  military:[
+    {t:`Boot camp — the drill instructor is inches from your face and a recruit beside you is folding.`, c:[
+      {l:'Cover for him, push through together', tip:'Brotherhood', r:()=>rng(0,100)<70?{txt:`You carry your battle-buddy through the worst of it. You both graduate — and he never forgets it.`,perf:_win(7,12),karma:3,tag:'Honor grad'}:{txt:`You both nearly wash out, but grit gets you across the line.`,perf:_win(3,6),stress:6,tag:'Barely made it'}},
+      {l:'Focus on your own performance', tip:'Every soldier for themselves', r:()=>({txt:`You ace the standards and earn a meritorious promotion out of basic. He gets recycled.`,perf:_win(5,9),tag:'Top recruit'})},
+    ]},
+    {t:`Selection week for special forces — the attrition rate is brutal, and your body's screaming.`, c:[
+      {l:'Embrace the suck — don\'t quit', tip:'Elite or bust', r:()=>rng(0,100)<40?{txt:`You make it through the pipeline. You're one of the few now — the tab, the trident, the prestige.`,perf:_win(12,20),fame:5,medal:'Special Forces Tab',tag:'Passed selection'}:{txt:`Your body gives out on the final evolution. No shame — most don't finish. You return to your unit stronger.`,perf:_win(2,6),stress:8,tag:'Rang the bell'}},
+      {l:'Withdraw before you get injured', tip:'Live to fight', r:()=>({txt:`You self-select out with your health intact. Not everyone's meant for it, and that's fine.`,perf:_win(1,3),tag:'Withdrew'})},
+    ]},
+    {t:`On patrol overseas, your squad takes contact — rounds snapping overhead.`, c:[
+      {l:'Lead the counter-assault', tip:'Valor', r:()=>rng(0,100)<55?{txt:`You flank under fire and break the ambush. Everyone comes home. The citation reads "conspicuous gallantry."`,perf:_win(10,16),fame:4,medal:'Silver Star',tag:'Gallantry'}:{txt:`You take shrapnel pulling a squadmate to cover. You both live — you've earned that Purple Heart.`,perf:_win(5,9),health:-_win(10,22),stress:16,medal:'Purple Heart',tag:'Wounded'}},
+      {l:'Call in support, hold cover', tip:'By the book', r:()=>rng(0,100)<72?{txt:`You coordinate fire support and extract clean. No heroics, no casualties — the best outcome there is.`,perf:_win(6,10),tag:'Held cover'}:{txt:`The contact breaks off, but it's a long, tense night in the dark.`,perf:_win(2,5),stress:10,tag:'Long night'}},
+    ]},
+    {t:`A promotion board — you're up for the next rank, record in hand.`, c:[
+      {l:'Present your record with confidence', tip:'You earned this', r:()=>rng(0,100)<64?{txt:`The board is impressed. Meritorious advancement — you're moving up ahead of your peers.`,perf:_win(7,12),tag:'Board passed'}:{txt:`Solid, but they want another year of seasoning. Next cycle.`,perf:_win(1,4),tag:'Not yet'}},
+    ]},
+  ],
+};
+
+/* ============================================================
    THE UNDERWORLD (content) — a criminal progression: commit crimes
+   to build street rep, join a crew, and climb from Associate to Boss.
    to build street rep, join a crew, and climb from Associate to Boss.
    Ties into the Ledger (crime/violence facts), family standing
    (infamy), feuds (you make enemies), mental health (violence trauma,
