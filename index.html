@@ -4761,6 +4761,129 @@ const EVENTS = [
         return {text:`You improvise a speech about causes the crown "should" fund. The silence from the wings is arctic. Your calendar of engagements is suddenly, mysteriously empty for a year.`,tags:[['bad','Off message'],['flag','Benched by the court']]}; }},
     ]};}},
 
+/* --- 🚨 EMERGENCY SERVICES: story beats that surface while you serve (distinct from on-demand calls) --- */
+{ id:'es_commended', once:false, weight:16,
+  when:S=>emsActive() && (S.ems.perf||50)>=68 && (S.age-(S._lastEsC||-99)>=4),
+  build:S=>{ S._lastEsC=S.age; const cat=S.ems.svc==='military'?'military':(EMS_SERVICES[S.ems.svc]||{}).cat;
+    return {yr:`Age ${S.age}`, title:'🎖️ Commended for Service',
+    text:`Your ${emsSvcName()} is holding an awards ceremony — and your name is on the list. A <b>commendation</b> for your work as a ${emsRankObj().name}, in front of the brass, the press, and your family.`,
+    choices:[
+      {label:'Accept it with a proud speech', tip:'Own the moment', apply:()=>{ S.ems.perf=clamp((S.ems.perf||50)+rng(3,7)); gainFame(rng(2,6)); chg('happy',rng(3,6)); const sp=S.spouse&&S.people[S.spouse]; if(sp&&sp.alive)rel(sp.id,+rng(2,5),+rng(1,3),'They watched you get commended.');
+        return {text:`You take the podium, thank your crew, and mean every word. The photo runs in the local paper. Days like this are why you signed up.`,tags:[['good','Commended 🎖️']]}; }},
+      {label:'Deflect the credit to your team', tip:'A leader\'s move', apply:()=>{ S.ems.perf=clamp((S.ems.perf||50)+rng(2,5)); karma(3); if(cat==='military'||cat==='law')setFlag('respected_leader');
+        return {text:`"This belongs to my whole ${cat==='fire'?'crew':cat==='military'?'unit':'team'}," you say, and pull them up on stage with you. They'd run through a wall for you now.`,tags:[['good','Shared the honor'],['flag','Respected leader']]}; }},
+      {label:'Skip it — the work is the reward', tip:'Not one for ceremonies', apply:()=>{ chg('happy',rng(0,2));
+        return {text:`You send your regrets and work your shift instead. The commendation sits in a drawer. You know what you did; that's enough.`,tags:[['flag','Quietly served']]}; }},
+    ]};}},
+{ id:'es_burnout', once:false, weight:14,
+  when:S=>emsActive() && S.ems.years>=3 && (S.mind&&S.mind.stress>=52) && (S.age-(S._lastEsB||-99)>=4),
+  build:S=>{ S._lastEsB=S.age;
+    return {yr:`Age ${S.age}`, title:'😮‍💨 Running on Empty',
+    text:`The shifts blur together. The calls follow you home. As a ${emsRankObj().name}, you've been carrying too much for too long — and something has to give.`,
+    choices:[
+      {label:'Take real leave and reset', tip:'Health first', apply:()=>{ addStress(-rng(12,22)); chg('health',rng(2,6)); chg('happy',rng(3,7)); S.ems.perf=clamp((S.ems.perf||50)-rng(1,4));
+        return {text:`You finally take the leave you've earned — sleep, sunlight, your own bed. You come back a person again, if a step behind on the promotion track.`,tags:[['good','Recharged']]}; }},
+      {label:'See the department counselor', tip:'Talk it out', apply:()=>{ addStress(-rng(8,16)); addMood(rng(2,5)); setFlag('sought_help'); if(typeof addSelfWorth==='function')addSelfWorth(3);
+        return {text:`You sit down with the counselor and, haltingly, say the things you've been swallowing. It helps more than you expected. Strength isn't silence.`,tags:[['good','Got support 🫂']]}; }},
+      {label:'Push through — you\'re fine', tip:'Bottle it', apply:()=>{ addStress(rng(4,9)); S.ems.perf=clamp((S.ems.perf||50)+rng(0,3)); if(rng(0,100)<35 && typeof addTrauma==='function')addTrauma('burnout',rng(8,16),'the job you couldn\'t put down');
+        return {text:`You tell everyone you're fine and pick up an extra shift to prove it. The cracks don't show — yet. But they're there.`,tags:[['bad','Bottled it up']]}; }},
+    ]};}},
+{ id:'es_bribe', once:false, weight:12,
+  when:S=>emsActive() && ['law','cbp','corrections'].includes(S.ems.svc==='military'?'':(EMS_SERVICES[S.ems.svc]||{}).cat) && (S.age-(S._lastEsBr||-99)>=6),
+  build:S=>{ S._lastEsBr=S.age;
+    return {yr:`Age ${S.age}`, title:'💵 A Quiet Offer',
+    text:`Someone with a lot to lose slides an envelope across the table. "You didn't see anything tonight. There's more where this came from." As a ${emsRankObj().name}, you're exactly the kind of person they need to own.`,
+    choices:[
+      {label:'Report it — wear a wire if you have to', tip:'The hard right', apply:()=>{ S.ems.perf=clamp((S.ems.perf||50)+rng(4,9)); karma(5); setFlag('incorruptible'); gainFame(rng(0,3));
+        return {text:`You take it to Internal Affairs and help build the case. It costs you some "friends" — but you can look your reflection in the eye.`,tags:[['good','Incorruptible'],['flag','Clean hands']]}; }},
+      {label:'Take the money, look away', tip:'Nobody\'s watching', apply:()=>{ const amt=Math.round(rng(3000,20000)*priceMult()); money(amt); karma(-6); setFlag('corrupt'); setFlag('dirty_cop');
+        if(rng(0,100)<30){ S.ems.perf=clamp((S.ems.perf||50)-rng(10,20)); setFlag('arrested'); return {text:`You pocket the <b>${cur()}${amt.toLocaleString()}</b>… and months later it's a sting. You're stripped of your rank and disgraced. The badge meant something. Not anymore.`,tags:[['bad',`Caught dirty −rank`]]}; }
+        return {text:`You take the <b>${cur()}${amt.toLocaleString()}</b> and see nothing. Easy money — the first time always is. Something in you goes quiet.`,tags:[['bad',`Took a bribe +${cur()}${amt.toLocaleString()}`],['flag','On the take']]}; }},
+      {label:'Refuse and walk — no report', tip:'Stay out of it', apply:()=>{ chg('happy',-rng(0,3));
+        return {text:`You push the envelope back and leave. You won't take it — but you won't be a rat either. You'll wonder if that was enough.`,tags:[['flag','Refused, stayed quiet']]}; }},
+    ]};}},
+{ id:'es_offduty', once:false, weight:13,
+  when:S=>emsActive() && (S.age-(S._lastEsO||-99)>=5),
+  build:S=>{ S._lastEsO=S.age; const cat=S.ems.svc==='military'?'military':(EMS_SERVICES[S.ems.svc]||{}).cat;
+    const scene=cat==='fire'?'smoke pouring from a second-floor window':cat==='ems'?'a man collapse and stop breathing':cat==='law'||cat==='cbp'?'a mugging turn violent across the street':'a car flip and land in a ditch';
+    return {yr:`Age ${S.age}`, title:'🚨 Off-Duty Emergency',
+    text:`You're off the clock, out with family, when you see <b>${scene}</b>. No uniform, no backup, no radio — just your training and a split second to decide.`,
+    choices:[
+      {label:'Act — you never really clock out', tip:'Instinct over caution', apply:()=>{ const ok=rng(0,100)<62+((S.ems.perf||50)-50)/4; if(ok){ S.ems.perf=clamp((S.ems.perf||50)+rng(4,8)); gainFame(rng(2,6)); karma(6); chg('happy',rng(2,5)); setFlag('off_duty_hero');
+          return {text:`You move on instinct and it works — a stranger is alive because you didn't hesitate. Bystanders film it; you're a local hero by morning.`,tags:[['good','Off-duty hero 🦸']]}; }
+        chg('health',-rng(4,12)); addStress(rng(4,9)); karma(4);
+        return {text:`You throw yourself in — and it goes sideways. You get hurt, and help arrives before you can finish the job. But you tried, and that mattered.`,tags:[['bad','Hurt trying'],['flag','Ran toward it']]}; }},
+      {label:'Call it in, keep your family safe', tip:'The disciplined choice', apply:()=>{ karma(2); S.ems.perf=clamp((S.ems.perf||50)+rng(0,3));
+        return {text:`You get everyone to safety and work the phone — clear location, clear description, units rolling. Sometimes the bravest thing is being the calm voice.`,tags:[['good','Called it in']]}; }},
+    ]};}},
+{ id:'es_family', once:false, weight:12,
+  when:S=>emsActive() && (has('married')||Object.values(S.people).some(p=>p.alive&&p.fam&&p.gen>=1)) && (S.age-(S._lastEsF||-99)>=6),
+  build:S=>{ S._lastEsF=S.age; const kid=Object.values(S.people).find(p=>p.alive&&p.fam&&p.gen>=1); const sp=S.spouse&&S.people[S.spouse]; const who=sp&&sp.alive?sp:kid;
+    return {yr:`Age ${S.age}`, title:'🏡 The Badge or the Table',
+    text:`Another holiday, another shift. ${who?`<b>${who.name}</b> `:'Your family '}says it quietly, without accusation: "We miss you. The job always wins." The ${emsSvcName()} doesn't run on your family's schedule — and they feel it.`,
+    choices:[
+      {label:'Swap the shift — be there this time', tip:'They come first', apply:()=>{ if(who)rel(who.id,+rng(5,10),+rng(3,7),'You put family over the job when it mattered.'); chg('happy',rng(3,7)); S.ems.perf=clamp((S.ems.perf||50)-rng(1,4));
+        return {text:`You call in a favor and trade the shift. Homemade dinner, no pager, the look on ${who?who.name.split(' ')[0]:'their'} face. The job will survive one holiday without you.`,tags:[['good','Chose family 💛']]}; }},
+      {label:'Explain why the work matters', tip:'Ask them to understand', apply:()=>{ if(who)rel(who.id,+rng(0,4),+rng(1,4),'You helped them understand the calling.'); if(typeof addSelfWorth==='function')addSelfWorth(2);
+        return {text:`You sit ${who?who.name.split(' ')[0]:'them'} down and explain the family on the other end of your calls — the ones who get their loved one back because you showed up. They don't love it. But they understand it a little more.`,tags:[['flag','A hard calling']]}; }},
+      {label:'Take the shift anyway', tip:'Duty calls', apply:()=>{ if(who)rel(who.id,-rng(3,7),-rng(2,5),'The job won again.'); addStress(rng(2,6));
+        return {text:`You go in. Someone has to. But the empty chair at the table is starting to feel permanent, and you know it.`,tags:[['bad','The job won again']]}; }},
+    ]};}},
+{ id:'es_rookie', once:true, weight:14,
+  when:S=>emsActive() && S.ems.rank>=2 && S.ems.years>=4,
+  build:S=>({yr:`Age ${S.age}`, title:'🧑‍🚒 The Rookie',
+    text:`A green ${emsSvcName().toLowerCase()} recruit is assigned to shadow you. Wide-eyed, terrified, and looking at you — a ${emsRankObj().name} — like you hung the moon. How you train them is how they'll do this job for thirty years.`,
+    choices:[
+      {label:'Mentor them patiently', tip:'Pay it forward', apply:()=>{ S.ems.perf=clamp((S.ems.perf||50)+rng(2,6)); karma(4); setFlag('mentor'); if(typeof addSelfWorth==='function')addSelfWorth(4);
+        return {text:`You teach them the things the academy can't — how to stay calm, how to carry the weight, when to call for help. Years later they'll say your name when someone asks who made them good at this.`,tags:[['good','Made a mentor of yourself'],['flag','Paid it forward']]}; }},
+      {label:'Haze them like you were hazed', tip:'Toughen them up', apply:()=>{ S.ems.perf=clamp((S.ems.perf||50)+rng(0,3)); karma(-2);
+        return {text:`You run them ragged and let them sweat. Some of it toughens them; some of it just teaches them to hide their fear. That's how it was done to you, after all.`,tags:[['flag','Old-school']]}; }},
+    ]})},
+{ id:'es_haunted', once:false, weight:11,
+  when:S=>emsActive() && ['fire','ems','law','military','dispatch'].includes(S.ems.svc==='military'?'military':(EMS_SERVICES[S.ems.svc]||{}).cat) && (S.age-(S._lastEsH||-99)>=7),
+  build:S=>{ S._lastEsH=S.age;
+    return {yr:`Age ${S.age}`, title:'🕯️ The One That Stays',
+    text:`Most calls fade. This one won't. A face, a sound, a moment you couldn't fix — it comes back at 3 a.m., every night this month. Even a ${emsRankObj().name} is only human.`,
+    choices:[
+      {label:'Get help — therapy, the works', tip:'Do the brave thing', apply:()=>{ addStress(-rng(10,20)); setFlag('sought_help'); if(typeof addTrauma==='function'){ const t=(S.mind&&S.mind.traumas||[]).find(x=>x.type==='combat'||x.type==='grief'); if(t)t.heal=Math.min(100,(t.heal||0)+rng(15,30)); } if(typeof addSelfWorth==='function')addSelfWorth(4);
+        return {text:`You do the hardest thing a first responder can do: you ask for help. Slowly, the 3 a.m. visits get quieter. You're not weak for it — you're still here because of it.`,tags:[['good','Faced it 🫂']]}; }},
+      {label:'Drink it quiet', tip:'The old way', apply:()=>{ addStress(-rng(2,5)); chg('health',-rng(1,4)); if(rng(0,100)<40){ (S.addictions=S.addictions||[]).some(a=>a.key==='drinking')||S.addictions.push({key:'drinking',name:'Drinking',drain:2}); }
+        return {text:`You do what a lot of them do — pour a drink and don't talk about it. It takes the edge off tonight. It takes something else off, slowly, over years.`,tags:[['bad','Numbed it']]}; }},
+      {label:'Carry it — it\'s the job', tip:'Grin and bear it', apply:()=>{ addStress(rng(3,7)); if(typeof addTrauma==='function')addTrauma('grief',rng(6,14),'the call you couldn\'t save');
+        return {text:`You fold it up small and put it with the others. The stack gets heavy over a career. But you keep showing up, because that's who you are.`,tags:[['flag','Carried it']]}; }},
+    ]};}},
+{ id:'es_viral', once:false, weight:10,
+  when:S=>emsActive() && ['law','cbp'].includes(S.ems.svc==='military'?'':(EMS_SERVICES[S.ems.svc]||{}).cat) && (S.age-(S._lastEsV||-99)>=6),
+  build:S=>{ S._lastEsV=S.age; const good=rng(0,100)<50;
+    return {yr:`Age ${S.age}`, title:good?'📹 Caught on Camera':'📹 The Clip',
+    text: good
+      ? `A bystander filmed you calmly talking down a tense situation without a hand raised. It's going viral — for the right reasons this time.`
+      : `A ten-second clip of a hard arrest you made is spreading online, stripped of all context. The comments are a firestorm, and the department wants a statement.`,
+    choices: good?[
+      {label:'Let the good press ride', tip:'Rare win', apply:()=>{ gainFame(rng(4,9)); S.ems.perf=clamp((S.ems.perf||50)+rng(3,6)); chg('happy',rng(2,5)); karma(2);
+        return {text:`For once the internet decides you're the good guy. The department puts you on the recruiting poster. You'll take it.`,tags:[['good','Viral — the good kind']]}; }},
+    ]:[
+      {label:'Cooperate fully with the review', tip:'Transparency', apply:()=>{ const cleared=rng(0,100)<55+(S.karma||0)/4; if(cleared){ S.ems.perf=clamp((S.ems.perf||50)+rng(1,4));
+          return {text:`You hand over the body-cam and answer every question. The full footage clears you — the clip left out the weapon. It blows over, slowly.`,tags:[['good','Cleared by the footage']]}; }
+        S.ems.perf=clamp((S.ems.perf||50)-rng(4,9)); addStress(rng(6,12));
+        return {text:`The review drags on for months in the spotlight. You're cleared of criminal wrongdoing but reassigned to a desk. The job doesn't feel the same after.`,tags:[['bad','Desk duty']]}; }},
+      {label:'Lawyer up and say nothing', tip:'Circle the wagons', apply:()=>{ addStress(rng(3,8)); S.ems.perf=clamp((S.ems.perf||50)-rng(0,4));
+        return {text:`Your union rep does the talking. Legally smart, publicly terrible — the silence reads as guilt online. It follows you.`,tags:[['flag','Stayed silent']]}; }},
+    ]};}},
+{ id:'es_strike', once:false, weight:9,
+  when:S=>emsActive() && S.ems.rank<=4 && (S.age-(S._lastEsS||-99)>=8),
+  build:S=>{ S._lastEsS=S.age;
+    return {yr:`Age ${S.age}`, title:'✊ The Union Vote',
+    text:`Pay's been frozen for years and the ${emsSvcName()} rank-and-file are talking about a work action. The union calls a vote. As a ${emsRankObj().name}, where do you stand?`,
+    choices:[
+      {label:'Stand with your union', tip:'Solidarity', apply:()=>{ if(rng(0,100)<60){ const raise=Math.round(emsPayNow()*rng(4,10)/100); setFlag('union_strong');
+          return {text:`You march with your brothers and sisters. The pressure works — the contract lands with a real raise. Worth every cold morning on the picket line. (+${cur()}${raise.toLocaleString()}/yr going forward)`,tags:[['good','Won the contract ✊']]}; }
+        S.ems.perf=clamp((S.ems.perf||50)-rng(1,4));
+        return {text:`You stand with the union, but the action fizzles and management holds firm. No raise, some bruised morale — but you stood where you should have.`,tags:[['flag','Held the line']]}; }},
+      {label:'Cross the line — you can\'t afford not to', tip:'Bills don\'t wait', apply:()=>{ money(Math.round(emsPayNow()*rng(2,5)/100)); karma(-3); setFlag('crossed_the_line');
+        return {text:`You keep working through the action. The paychecks help — but the cold shoulder in the break room is going to last a lot longer than the strike.`,tags:[['bad','Crossed the picket line']]}; }},
+    ]};}},
+
 /* --- FAME: awards season — a nomination you can attend or snub (recurring) --- */
 { id:'award_nom', once:false, weight:14,
   when:S=>S.age>=16 && ((S.fame||0)>=45 || has('influencer') || (typeof totalFollowers==='function'&&totalFollowers()>=250000)) && (S.age-(S._lastAward||-99)>=2),
