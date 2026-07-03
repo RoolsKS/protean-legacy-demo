@@ -5184,6 +5184,7 @@ function ageUp(){
   S.partiesThisYear=0;                 // a fresh allowance of big gatherings each year
   S.energy=100;                        // ⏳ SCHEDULE: a fresh pool of free time/energy each year — effort activities draw it down so you can't do everything at once
   S._actsUsed=[];                      // ⏳ ONCE-PER-YEAR: reset the "done this year" list so flagged activities free up again
+  S._mbReps={};                        // 💪 fresh diminishing-returns counters each year (gym/diet/meditate can be repeated, energy is the cap)
   // WORLD-CLOCK (P3+): in Living-Timeline mode the world advances over time — the era can change mid-life (pure fn of dynastyYears → replay-safe)
   if(S.worldMode==='living'){ S.dynastyYears=(S.dynastyYears||0)+1; const _jump=syncWorldEra();
     if(_jump){ const b=ERA_DEFS[_jump.to];
@@ -9897,27 +9898,31 @@ function mindBody(){ if(!S){toast('Start a life first.');return;} if(isLocked())
   openModal({banner:'Mind & Body', title:'🧘 Mind & Body', icon:'🧘', closable:true,
     text:`<div style="text-align:left">Work on yourself — a fit body ages slower and dies later.<div class="relbars" style="margin-top:7px">${barRow('💪 Fitness',S.fitness||50,100)}${barRow('❤️ Health',S.stats.health,100)}</div>${S.age>=14?`<div class="pf" style="margin-top:6px">🏃 Endurance: ${enduranceIdx()>=0?`<b>${ENDURANCE[enduranceIdx()].name}</b> conquered`:'untested'}${enduranceNext()?` · next: ${enduranceNext().name}`:' · every distance done 🏆'}</div>`:''}</div>`,
     choices:[
-      {label:actDone('mb_gym')?'🏋️ Hit the gym ✓ done this year':'🏋️ Hit the gym', fn:actDone('mb_gym')?()=>toast('⏳ Once a year — Age Up first.'):()=>mbDo('gym')},
-      {label:actDone('mb_diet')?'🥗 Eat clean ✓ done this year':'🥗 Eat clean (diet)', alt:true, fn:actDone('mb_diet')?()=>toast('⏳ Once a year — Age Up first.'):()=>mbDo('diet')},
-      {label:actDone('mb_meditate')?'🧘 Meditate ✓ done this year':'🧘 Meditate', alt:true, fn:actDone('mb_meditate')?()=>toast('⏳ Once a year — Age Up first.'):()=>mbDo('meditate')},
+      {label:`🏋️ Hit the gym${mbRepTag('gym')}`, fn:()=>mbDo('gym')},
+      {label:`🥗 Eat clean (diet)${mbRepTag('diet')}`, alt:true, fn:()=>mbDo('diet')},
+      {label:`🧘 Meditate${mbRepTag('meditate')}`, alt:true, fn:()=>mbDo('meditate')},
       ...(S.age>=14?[{label:`🏃 Endurance Challenge${enduranceNext()?` · ${enduranceNext().name}`:' · all conquered'}`, alt:true, fn:()=>{ closeModal(); enduranceChallenge(); }}]:[]),
       {label:'🛋️ See a therapist', alt:true, fn:()=>{ closeModal(); startTherapy(); }},
       {label:'🧠 Inner Self', alt:true, fn:()=>{ closeModal(); mindView(); }},
     ]});
 }
+function mbRepTag(kind){ const n=(S._mbReps&&S._mbReps[kind])||0; return n?` <span style="opacity:.7;font-size:11px">· ${n}×</span>`:''; }
 function mbDo(kind){ closeModal();
-  const _oid='mb_'+kind, _olab={gym:'hit the gym',diet:'ate clean',meditate:'meditated',therapy:'had a session'}[kind]||'did that';
-  if(!onceYear(_oid,_olab)){ setTab('activities'); return; }
-  if(!spendEnergy(25,'that')) { setTab('activities'); return; }
-  if(kind==='gym'){ const cost=rng(0,600); if(S.money>0)money(-Math.min(cost,S.money)); S.fitness=clamp((S.fitness||50)+rng(5,12)); chg('looks',rng(1,3)); chg('health',rng(1,3));
-    const story=pick(['You hit the weights hard — heavy squats, deadlifts and a brutal leg day every week.','Dawn runs, boxing three nights a week, and you finally stopped skipping cardio.','You practically lived at the gym: circuit training, spin class, and a new bench PR.','A year of CrossFit chewed you up and spat you back out — stronger.','Long swims and a couch-to-5K that quietly became a 10K.','You found a training partner who wouldn\'t let you quit, and it showed.','Powerlifting became an obsession; the plates kept going up.']);
-    pushLog(`🏋️ ${story}`,[['good','Gym']]); resultModal('Mind & Body','Workout','🏋️',[story+' <span style="color:var(--dim);font-size:12px">(+Looks · +Health)</span>',statBar('Fitness',S.fitness)],()=>mindBody()); }
-  else if(kind==='diet'){ S.fitness=clamp((S.fitness||50)+rng(3,8)); chg('health',rng(2,4)); chg('looks',1);
-    const story=pick(['You swapped takeout for home-cooked meals, meal-prepped every Sunday, and ditched the soda.','You went mostly plant-based, learned to actually cook, and your energy took off.','Cut the junk, dialed in your macros, and rediscovered your kitchen.','Intermittent fasting, more water, and greens with every plate.','You quit the late-night snacking and started eating like someone planning to stick around.']);
-    pushLog(`🥗 ${story}`,[['good','Healthy diet']]); resultModal('Mind & Body','Eating Clean','🥗',[story+' <span style="color:var(--dim);font-size:12px">(+Health)</span>',statBar('Fitness',S.fitness)],()=>mindBody()); }
-  else if(kind==='meditate'){ chg('happy',rng(4,9)); chg('health',1); addStress(-rng(8,16)); addMood(rng(3,7));
-    const story=pick(['Ten quiet minutes each morning grew into a real practice.','You learned to breathe through the noise — a daily sit, rain or shine.','Guided sessions, then silence, then a stillness you carried into the day.','A weekend retreat quietly rewired how you handle stress.','You journaled at night and sat at dawn, and the mental chatter finally hushed.']);
-    pushLog(`🧘 ${story}`,[['good','Meditation']]); resultModal('Mind & Body','Calm','🧘',[story,`Stress eased, mood lifted, a clearer mind. <span style="color:var(--dim);font-size:12px">(+Happiness)</span>`],()=>mindBody()); }
+  if(!spendEnergy(20,'that')) { setTab('activities'); return; }   // your yearly ENERGY budget is the real limit — train as often as it lasts
+  // diminishing returns WITHIN a year: your body adapts, so each extra session of the same kind gives less
+  S._mbReps=S._mbReps||{}; const reps=S._mbReps[kind]||0; S._mbReps[kind]=reps+1;
+  const f=Math.max(0.2, 1 - reps*0.3);   // 1st session full · 2nd 70% · 3rd 40% · 4th+ 20%
+  const sc=(lo,hi)=>Math.max(reps>0?0:1, Math.round(rng(lo,hi)*f));   // scaled stat gain (first session always lands something)
+  const dimTag = f<1 ? ` <span style="color:var(--dim);font-size:12px">· session ${reps+1} this year${f<0.5?' — diminishing returns':''}</span>` : '';
+  if(kind==='gym'){ const cost=rng(0,120); if(S.money>0)money(-Math.min(cost,S.money)); S.fitness=clamp((S.fitness||50)+sc(4,9)); chg('looks',sc(1,2)); chg('health',sc(1,2));
+    const story=pick(['A brutal session of squats, deadlifts and heavy pulls.','An early run and boxing rounds until your arms gave out.','Circuit training, a spin class, and a new bench PR.','Long, punishing laps in the pool.','Leg day. You regret it on the stairs — but the gains are real.','A training partner dragged you through sets you\'d have skipped.','You chased the pump and caught it.','Grip until failure, then one more set out of spite.']);
+    pushLog(`🏋️ ${story}`,[['good','Gym']]); resultModal('Mind & Body','Workout','🏋️',[story+' <span style="color:var(--dim);font-size:12px">(+Fitness · +Looks · +Health)</span>'+dimTag,statBar('Fitness',S.fitness)],()=>mindBody()); }
+  else if(kind==='diet'){ S.fitness=clamp((S.fitness||50)+sc(2,6)); chg('health',sc(1,3)); if(reps<1)chg('looks',1);
+    const story=pick(['A clean stretch of home-cooked meals and zero soda.','Meal-prep Sunday, greens on every plate.','You cut the junk and dialed in your macros.','More water, more sleep, fewer late-night snacks.','You actually learned to cook, and your energy climbed.','Swapped takeout for real food and felt the difference fast.']);
+    pushLog(`🥗 ${story}`,[['good','Healthy diet']]); resultModal('Mind & Body','Eating Clean','🥗',[story+' <span style="color:var(--dim);font-size:12px">(+Health · +Fitness)</span>'+dimTag,statBar('Fitness',S.fitness)],()=>mindBody()); }
+  else if(kind==='meditate'){ chg('happy',sc(3,7)); if(reps<2)chg('health',1); addStress(-sc(6,14)); addMood(sc(2,6));
+    const story=pick(['Ten quiet minutes that steadied the whole day.','You breathed through the noise and found some stillness.','A guided session, then silence, then a clearer head.','You journaled at night and sat at dawn.','A quiet afternoon that reset your nervous system.','You watched your thoughts pass instead of chasing them.']);
+    pushLog(`🧘 ${story}`,[['good','Meditation']]); resultModal('Mind & Body','Calm','🧘',[story,`Stress eased, mood lifted, a clearer mind. <span style="color:var(--dim);font-size:12px">(+Happiness)</span>`+dimTag],()=>mindBody()); }
   else { const cost=rng(200,1500); if(!spend(cost))return; chg('happy',rng(6,12));
     const dep=(S.illnesses||[]).find(i=>i.key==='depression'&&!i.treated); let eased=false; if(dep&&rng(0,100)<60){ S.illnesses=S.illnesses.filter(i=>i!==dep); eased=true; }
     const story=pick(['You finally talked through the things you\'d buried for years.','Week after week, you untangled knots you\'d carried since childhood.','Hard, honest sessions — you learned to name what you actually felt.','You did the work: the patterns, the triggers, the old wounds.','It wasn\'t easy, but you slowly started to forgive yourself.']);
