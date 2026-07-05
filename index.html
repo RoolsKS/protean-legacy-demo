@@ -351,11 +351,12 @@
      LIFE-SIM TEMPLATE THEME (latest) — red header, navy→purple body,
      timeline Life Story, colorful toolbar, Wellbeing panel. Overrides above.
      ===================================================================== */
-  :root{ --accent:#37c6dd; --accent2:#8b5bff; --dim:#9aa6d6; --line:#313b70; --panel:#1b2350; --panel2:#252e63; }
-  body{ background:#11163a; }
-  #app{ background:linear-gradient(180deg,#10173e 0%,#171748 42%,#251a55 100%); }
+  :root{ --accent:#37c6dd; --accent2:#8b5bff; --dim:#9aa6d6; --line:#313b70; --panel:#1b2350; --panel2:#252e63; --text:#e7edf5;
+    --body-bg:#11163a; --app-grad:linear-gradient(180deg,#10173e 0%,#171748 42%,#251a55 100%); }
+  body{ background:var(--body-bg); }
+  #app{ background:var(--app-grad); }
   /* Create-a-Life page matches the main GUI theme */
-  #create{ background:linear-gradient(180deg,#10173e 0%,#171748 42%,#251a55 100%); }
+  #create{ background:var(--app-grad); }
   #create .ctitle{ filter:drop-shadow(0 3px 16px rgba(123,91,255,.5)); }
   #create .fld input, #create .fld select{ background:linear-gradient(180deg,#212a38,#161c26); border:1px solid #323d4f; }
 
@@ -542,6 +543,7 @@
     <button class="mi" onclick="importSagaPrompt()">📜 Load a Saga</button>
     <button class="mi" onclick="openVault()">📦 Character Vault</button>
     <button class="mi" id="hapticMi" onclick="toggleHaptics()">📳 Haptics: On</button>
+    <button class="mi" onclick="themeMenu()">🎨 Theme</button>
     <button class="mi" data-i18n="menu_language" onclick="languageMenu()">🌐 Language</button>
     <button class="mi" data-i18n="menu_close" onclick="closeMenu()">✖ Close</button>
     <div class="ver">v0.2 · eras + living timeline · 56 countries</div>
@@ -1148,10 +1150,70 @@ const ERA_THEMES={
 function applyEraTheme(eraId){ try{
   const root = (typeof document!=='undefined') && document.documentElement;
   if(!root || !root.style || typeof root.style.setProperty!=='function') return;   // headless replay / Node validator → no-op
+  if(currentTheme()!=='default') return;   // 🎨 a custom user theme owns the palette — don't let the era override it
   const e=ERA_DEFS[eraId]||ERA_DEFS.modern, t=ERA_THEMES[e.themeTokens]||{};
   ['--accent','--accent2'].forEach(k=>{ try{ root.style.removeProperty(k); }catch(_){}});
   for(const k in t){ try{ root.style.setProperty(k,t[k]); }catch(_){}}
 }catch(e){} }
+/* 🎨 THEMES — pure UI (localStorage, no S, no RNG → zero replay impact). Default (dark) & Light are free;
+   the rest are Premium. Each theme is a full set of CSS-var overrides applied inline (highest priority). */
+const THEMES={
+  default:{ name:'Midnight (Dark)', icon:'🌙', premium:false, vars:{} },   // {} = the built-in dark look
+  light:{ name:'Daylight (Light)', icon:'☀️', premium:false, vars:{
+    '--body-bg':'#eef1f7', '--app-grad':'linear-gradient(180deg,#f4f6fb 0%,#e9edf6 60%,#e3e8f4 100%)',
+    '--bg':'#eef1f7', '--panel':'#ffffff', '--panel2':'#f1f4fa', '--line':'#d5dbe8',
+    '--text':'#1a2230', '--dim':'#5c6a80', '--accent':'#2f6bff', '--accent2':'#7b5bff',
+    '--good':'#12a15f', '--bad':'#e0384e', '--warn':'#c98600' } },
+  purple:{ name:'Royal Purple', icon:'👑', premium:true, vars:{
+    '--body-bg':'#14092b', '--app-grad':'linear-gradient(180deg,#1a0a3a 0%,#2a1155 45%,#3d1a6e 100%)',
+    '--bg':'#14092b', '--panel':'#241148', '--panel2':'#2f1a5c', '--line':'#432a78',
+    '--text':'#f0e9ff', '--dim':'#b8a6e0', '--accent':'#b56bff', '--accent2':'#ff8adf' } },
+  emerald:{ name:'Emerald', icon:'💚', premium:true, vars:{
+    '--body-bg':'#04150f', '--app-grad':'linear-gradient(180deg,#04170f 0%,#082b1d 50%,#0c3a28 100%)',
+    '--bg':'#04150f', '--panel':'#0c2419', '--panel2':'#123123', '--line':'#1c4a35',
+    '--text':'#e6fff2', '--dim':'#8fc9ac', '--accent':'#2fdd8f', '--accent2':'#38c6dd' } },
+  rosegold:{ name:'Rose Gold', icon:'🌹', premium:true, vars:{
+    '--body-bg':'#1c1114', '--app-grad':'linear-gradient(180deg,#231316 0%,#33191d 50%,#40222a 100%)',
+    '--bg':'#1c1114', '--panel':'#2b191d', '--panel2':'#382227', '--line':'#573037',
+    '--text':'#ffeef1', '--dim':'#d6a9b1', '--accent':'#ff9eb5', '--accent2':'#e8b25a' } },
+  crimson:{ name:'Crimson', icon:'🔥', premium:true, vars:{
+    '--body-bg':'#170708', '--app-grad':'linear-gradient(180deg,#1c090a 0%,#2e0d10 50%,#3f1114 100%)',
+    '--bg':'#170708', '--panel':'#280d0f', '--panel2':'#361315', '--line':'#5a2024',
+    '--text':'#ffecec', '--dim':'#d5a1a1', '--accent':'#ff5b5b', '--accent2':'#ffab3d' } },
+  ocean:{ name:'Deep Ocean', icon:'🌊', premium:true, vars:{
+    '--body-bg':'#04121e', '--app-grad':'linear-gradient(180deg,#051627 0%,#062a44 50%,#083a5c 100%)',
+    '--bg':'#04121e', '--panel':'#0a2233', '--panel2':'#0f2e44', '--line':'#194a66',
+    '--text':'#e6f6ff', '--dim':'#8fb9d0', '--accent':'#31b6ff', '--accent2':'#3ff0d0' } },
+  mono:{ name:'AMOLED Black', icon:'⬛', premium:true, vars:{
+    '--body-bg':'#000000', '--app-grad':'linear-gradient(180deg,#000000 0%,#080808 100%)',
+    '--bg':'#000000', '--panel':'#0f0f0f', '--panel2':'#171717', '--line':'#262626',
+    '--text':'#f2f2f2', '--dim':'#8a8a8a', '--accent':'#ffffff', '--accent2':'#9a9a9a' } },
+  sunset:{ name:'Sunset', icon:'🌇', premium:true, vars:{
+    '--body-bg':'#1a0e1e', '--app-grad':'linear-gradient(180deg,#22102a 0%,#3a1436 45%,#5a1f38 100%)',
+    '--bg':'#1a0e1e', '--panel':'#2a1430', '--panel2':'#371b3e', '--line':'#582a54',
+    '--text':'#fff0ec', '--dim':'#d3a7b8', '--accent':'#ff8a5b', '--accent2':'#ff5b9e' } },
+};
+function currentTheme(){ try{ const t=localStorage.getItem('pl_theme'); return (t&&THEMES[t])?t:'default'; }catch(e){ return 'default'; } }
+function applyTheme(key, opts){ opts=opts||{}; const def=THEMES[key]||THEMES.default;
+  if(def.premium && !(typeof isPremium==='function'&&isPremium())){ if(opts.user){ toast('👑 That theme is a Premium perk.'); if(typeof openPremium==='function') openPremium(); } return false; }
+  try{ localStorage.setItem('pl_theme', key); }catch(e){}
+  try{ const root=document.documentElement;
+    // clear any previously-set theme vars, then apply the new set (default → the CSS falls back to the built-in dark look)
+    Object.values(THEMES).forEach(t=>Object.keys(t.vars).forEach(v=>{ try{ root.style.removeProperty(v); }catch(_){}}));
+    Object.keys(def.vars).forEach(v=>{ try{ root.style.setProperty(v, def.vars[v]); }catch(_){}});
+    if(key==='default' && typeof applyEraTheme==='function' && typeof S!=='undefined' && S) applyEraTheme(S.era);   // restore era accent on default
+  }catch(e){}
+  if(opts.user && typeof toast==='function') toast(`${def.icon} ${def.name}`);
+  return true;
+}
+function themeMenu(){ if(typeof closeMenu==='function') closeMenu(); closeModal&&closeModal();
+  const cur=currentTheme(), prem=(typeof isPremium==='function'&&isPremium());
+  openModal({banner:'Appearance', title:'🎨 Theme', icon:'🎨', closable:true,
+    text:`Pick your look. <b>Dark</b> and <b>Light</b> are free for everyone${prem?' · 👑 Premium themes unlocked':' · 👑 the rest are Premium'}.`,
+    choices: Object.keys(THEMES).map(k=>{ const t=THEMES[k]; const locked=t.premium&&!prem; const on=k===cur;
+      return {label:`${on?'✓ ':''}${t.icon} ${t.name}${locked?' 🔒':''}`, alt:!on, fn:()=>{ if(applyTheme(k,{user:true})) themeMenu(); } }; })
+      .concat([{label:'✖ Close', fn:closeModal}]) });
+}
 
 /* ---- iOS-style emoji everywhere ----
    Apple devices already render the latest iOS emoji natively, so we leave them be.
@@ -13771,6 +13833,7 @@ const AGE_GATE_KEY='protean_age_ok';
 function passAgeGate(){ try{ localStorage.setItem(AGE_GATE_KEY,'1'); }catch(e){} const g=document.getElementById('ageGate'); if(g) g.style.display='none'; }
 function failAgeGate(){ const g=document.getElementById('ageGate'); if(g) g.style.display='none'; const b=document.getElementById('ageGateBlock'); if(b) b.style.display='flex'; }
 function checkAgeGate(){ let ok=false; try{ ok=localStorage.getItem(AGE_GATE_KEY)==='1'; }catch(e){ ok=true; } if(!ok){ const g=document.getElementById('ageGate'); if(g) g.style.display='block'; } }
+try{ applyTheme(currentTheme()); }catch(e){}   // 🎨 apply the saved appearance theme on load
 try{ initLang(); }catch(e){}      // apply saved UI language on load
 try{ initHaptics(); }catch(e){}   // delegated tap-feedback + sync the settings toggle label
 try{ checkAgeGate(); }catch(e){}
