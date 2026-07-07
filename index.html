@@ -141,6 +141,7 @@
   /* Relationships panel */
   .people{display:flex;flex-direction:column;gap:10px}
   .person{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+  .person.lover{border-left:3px solid #ff7bb0;background:linear-gradient(90deg,rgba(255,123,176,.08),var(--panel) 42%)}
   .avatar{width:40px;height:40px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff}
   .person .meta{flex:1;min-width:0}
   .person .nm{font-size:14px;font-weight:700}
@@ -6205,32 +6206,36 @@ function render(){
   document.getElementById('lifeView').innerHTML=html||`<div class="empty"><div class="em-ic">🍼</div><div class="em-t">Your story starts here</div><div class="em-s">Press the big <b style="color:var(--good)">+</b> button to live your first year.<br>Every choice writes a line in this book.</div></div>`;
   if(pending && !modalOpen()) showEventModal();   // keep the event modal in sync
 
-  // family tree — living grouped by generation; the departed collected at the bottom
+  // BitLife-style: Love on top, then family, then social circles — the departed collected at the very bottom
   const groups=[
-    {label:'Grandparents',          test:p=>p.alive&&p.fam&&p.gen===-2},
-    {label:'Parents, Aunts & Uncles',test:p=>p.alive&&p.fam&&p.gen===-1&&!p.inlaw&&!p.step},
-    {label:'Your Generation',       test:p=>p.alive&&p.fam&&p.gen===0&&!p.step},
-    {label:'Children & Beyond',     test:p=>p.alive&&p.fam&&p.gen>=1},
+    {label:'❤️ Love',               test:p=>p.alive&&p.romantic, sort:(a,b)=>((b.id===S.spouse)-(a.id===S.spouse))||((b.spark||0)-(a.spark||0))||(b.affinity-a.affinity)},
+    {label:'Parents',               test:p=>p.alive&&p.fam&&p.gen===-1&&/Mother|Father/.test(p.rel)&&!p.inlaw&&!p.step},
+    {label:'Siblings',              test:p=>p.alive&&p.fam&&p.gen===0&&/Brother|Sister/.test(p.rel)&&!p.step},
+    {label:'Children & Grandchildren', test:p=>p.alive&&p.fam&&p.gen>=1},
+    {label:'Grandparents',          test:p=>p.alive&&p.fam&&p.gen<=-2},
+    {label:'Aunts, Uncles & Cousins', test:p=>p.alive&&p.fam&&((p.gen===-1&&/Aunt|Uncle/.test(p.rel))||(p.gen===0&&/Cousin/.test(p.rel)))&&!p.inlaw&&!p.step},
+    {label:'💒 Stepfamily',         test:p=>p.alive&&p.step},
+    {label:'💍 In-Laws',            test:p=>p.alive&&p.inlaw},
+    {label:'🍯 Sugar Arrangements',  test:p=>p.alive&&p.sugar&&!p.romantic},
     {label:'🏫 Classmates',         test:p=>p.alive&&p.classmate},
     {label:'🍎 Faculty',            test:p=>p.alive&&p.teacher},
     {label:'💼 Coworkers',          test:p=>p.alive&&p.coworker},
     {label:'🎯 Coaches, Agents & Mentors', test:p=>p.alive&&(p.coach||p.agent||p.mentor)},
-    {label:'💘 Partners',           test:p=>p.alive&&p.romantic},
-    {label:'💒 Stepfamily',         test:p=>p.alive&&p.step},
     {label:'🏛️ Greek Life',         test:p=>p.alive&&p.greek},
-    {label:'💍 In-Laws',            test:p=>p.alive&&p.inlaw},
-    {label:'🍯 Sugar Arrangements',  test:p=>p.alive&&p.sugar},
-    {label:'Friends & Others',      test:p=>p.alive&&!p.fam&&!p.pet&&!p.classmate&&!p.teacher&&!p.coworker&&!p.romantic&&!p.greek&&!p.coach&&!p.agent&&!p.mentor},
+    {label:'Friends & Others',      test:p=>p.alive&&!p.fam&&!p.pet&&!p.classmate&&!p.teacher&&!p.coworker&&!p.romantic&&!p.greek&&!p.coach&&!p.agent&&!p.mentor&&!p.sugar&&p.rel!=='Ex'},
     {label:'🐾 Pets',               test:p=>p.alive&&p.pet},
-    {label:'⚰️ Late Relationships', test:p=>!p.alive},
+    {label:'⚰️ Late Relationships', test:p=>!p.alive&&!p.pet},
+    {label:'🪦 Late Pets',          test:p=>!p.alive&&p.pet},
   ];
   let ph='';
   for(const g of groups){
     const m=Object.values(S.people).filter(g.test);
-    if(!m.length) continue;
-    const late=g.label.indexOf('Late')>=0;
-    ph+=`<div class="genlabel">${g.label} <span>${late?m.length+' passed':m.length+' living'}</span></div>`+
-        `<div class="people">${m.map(personCard).join('')}</div>`;
+    if(m.length){ if(g.sort)m.sort(g.sort); const late=g.label.indexOf('Late')>=0;
+      ph+=`<div class="genlabel">${g.label} <span>${late?m.length+' passed':m.length+' living'}</span></div>`+
+          `<div class="people">${m.map(personCard).join('')}</div>`; }
+    // 💔 Exes — a nav row right under Love (BitLife-style), shown whenever you have any
+    if(g.label==='❤️ Love'){ const exN=Object.values(S.people).filter(p=>p.alive&&p.rel==='Ex').length;
+      if(exN) ph+=`<div class="people">${hubCard('💔','Exes',`View your ${exN} ex${exN>1?'es':''}`,'exesView()')}</div>`; }
   }
   const _livingPpl=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used)).length;
   const _bffN=Object.values(S.people).filter(p=>p.alive&&p.bestFriend).length;
@@ -9816,13 +9821,24 @@ function relStatus(p){ const a=p.affinity;
 // the card stays minimal — name, who they are, age, and the two bars. The rest opens on tap.
 function personCard(p){
   const col=pbColor(p.affinity);
-  return `<div class="person ${p.alive?'':'dead'}" onclick="openPerson('${p.id}')" style="cursor:pointer">
+  const lover=p.romantic&&p.alive;
+  const spark=(lover&&p.spark!=null&&typeof sparkBand==='function')?` · <span style="color:#ff7bb0">💕 ${sparkBand(p.spark).l}</span>`:'';
+  return `<div class="person ${p.alive?'':'dead'}${lover?' lover':''}" onclick="openPerson('${p.id}')" style="cursor:pointer">
     <div class="avatar" style="background:linear-gradient(135deg,${col},#3a4658)">${p.name[0]}</div>
-    <div class="meta"><div class="nm">${p.name}${p.bestFriend&&p.alive?' 🤝':''}${p.nemesis&&p.alive?' 😈':''}${p.tricks&&p.tricks.length>=3?' 🎓':''}${(typeof emLongDistance==='function'&&emLongDistance(p)&&p.alive)?' 🌍':''}</div>
-      <div class="rl">${p.bestFriend&&p.alive?'Best Friend · ':''}${p.nemesis&&p.alive?'Nemesis · ':''}${p.rel}${p.fam&&p.alive?` · Age ${p.age}`:!p.alive?' · ✝ deceased':''}${(typeof emLongDistance==='function'&&emLongDistance(p)&&p.alive)?` · <span style="color:var(--warn)">${typeof countryFlag==='function'?countryFlag(p.countryOf):'🌍'} abroad</span>`:''}</div>
+    <div class="meta"><div class="nm">${p.name}${lover?' 💗':''}${p.bestFriend&&p.alive?' 🤝':''}${p.nemesis&&p.alive?' 😈':''}${p.tricks&&p.tricks.length>=3?' 🎓':''}${(typeof emLongDistance==='function'&&emLongDistance(p)&&p.alive)?' 🌍':''}</div>
+      <div class="rl">${p.bestFriend&&p.alive?'Best Friend · ':''}${p.nemesis&&p.alive?'Nemesis · ':''}${p.rel}${p.fam&&p.alive?` · Age ${p.age}`:!p.alive?' · ✝ deceased':''}${spark}${(typeof emLongDistance==='function'&&emLongDistance(p)&&p.alive)?` · <span style="color:var(--warn)">${typeof countryFlag==='function'?countryFlag(p.countryOf):'🌍'} abroad</span>`:''}</div>
       ${p.alive?`<div class="rl" style="color:${col};font-weight:700">${relStatus(p)}</div>
       <div class="relbars">${pbar('Relationship',p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}</div>`:''}
     </div></div>`;
+}
+/* 💔 Exes — a quick roster of former flames (they linger in S.people as rel:'Ex'). Pure view; openPerson logs its own opener. */
+function exesView(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
+  const exes=Object.values(S.people).filter(p=>p.alive&&p.rel==='Ex');
+  if(!exes.length){ toast('💔 No exes… yet.'); return; }
+  exes.sort((a,b)=>(b.affinity||0)-(a.affinity||0));
+  openModal({banner:'Relationships', title:'💔 Your Exes', icon:'💔', closable:true,
+    text:`The ones who got away — or got shown the door. ${exes.length} in the rear-view mirror.`,
+    choices: exes.map(p=>({label:`${p.name}`, tip:`${relStatus(p)}${p.affinity>=55?' · still fond of you':p.affinity<25?' · bad blood':''}`, alt:true, fn:()=>{ closeModal(); openPerson(p.id); }})).concat([{label:'✖ Close', fn:closeModal}]) });
 }
 /* ============================================================
    CELEBRITIES & KARMA — meet, befriend, date, marry the famous
