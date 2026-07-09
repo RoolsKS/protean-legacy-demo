@@ -6087,7 +6087,7 @@ function continueAsHeir(id){
   if(heir.eduInvest){ const bonus=clamp(Math.round(heir.eduInvest*2.5),0,22); S.stats.smarts=clamp(S.stats.smarts+bonus); setFlag('privately_educated'); }   // 🎓 a privately-schooled heir starts life sharper (dynasty payoff)
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
   S.money=inheritance; S.peakMoney=Math.max(S.peakMoney||0,inheritance);
-  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.founderPeak=0; S.flipProfit=0; S.ems=null; S._agentEarnings=0; S.endurance=-1; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
+  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.founderPeak=0; S.flipProfit=0; S.ems=null; S._cel=null; S._lastShownMoney=null; S._lastShownAge=null; S._agentEarnings=0; S.endurance=-1; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
   S.rentOwed=0; S.rentMult=1; S.autopayRent=true; S.karma=0; S.landlord=null;
   // 🌍 P4 DIASPORA SPLIT — an heir who grew up ABROAD continues the dynasty from THEIR country;
   // the family re-sorts around them: relatives in the heir's country are near, everyone else is now the long-distance side.
@@ -6185,7 +6185,11 @@ function setTab(t){
 function render(){
   if(!S || S._replaying)return;
   document.getElementById('pname').textContent=`${COUNTRIES[S.country]?COUNTRIES[S.country].flag+' ':''}${S.name}${S.honorific?', '+S.honorific:''}`;   // earned ambition epithet
-  document.getElementById('page').textContent=`Age ${S.age}  ·  ${S.gender==='m'?'♂':'♀'}`;
+  const ageEl=document.getElementById('page');
+  ageEl.textContent=`Age ${S.age}  ·  ${S.gender==='m'?'♂':'♀'}`;
+  // 🍬 age-turn pop + whoosh when the year advances
+  if(_juiceOK() && S._lastShownAge!=null && S.age>S._lastShownAge){ sfx('whoosh'); ageEl.classList.remove('money-pop'); void ageEl.offsetWidth; ageEl.classList.add('money-pop'); }
+  S._lastShownAge=S.age;
   const moneyEl=document.getElementById('pmoney');
   moneyEl.textContent=(S.money<0?'-':'')+cur()+Math.abs(S.money).toLocaleString();
   moneyEl.style.color=S.money<0?'var(--bad)':'var(--good)';
@@ -6194,6 +6198,7 @@ function render(){
     if(_juiceOK() && S._lastShownMoney!=null && gain>=2500){ sfx('coin'); moneyEl.classList.remove('money-pop'); void moneyEl.offsetWidth; moneyEl.classList.add('money-pop');
       try{ const r=moneyEl.getBoundingClientRect(); flyText(`+${cur()}${gain.toLocaleString()}`,'var(--good)', r.left+r.width/2, r.top-6); }catch(_){} }
     S._lastShownMoney=S.money; }
+  try{ juiceMilestones(); }catch(_){}   // 🎉 fire any newly-crossed life milestones
   document.getElementById('pocc').textContent=statusText();
   const av=document.getElementById('pAvatar'); if(av) av.textContent = S.gender==='f'?'👩':'🧑';
   // Wellbeing rows — emoji · label · bar · percent (green when high, amber/red when low)
@@ -13929,6 +13934,27 @@ function winFx(kind, text){ if(!_juiceOK())return;
   else if(kind==='level'){ sfx('levelup'); if(text)flyText(text,'#b9a6ff'); }
   else if(kind==='bad'){ sfx('bad'); }
   else { sfx('good'); if(text)flyText(text,'var(--good)'); } }
+/* 🎉 milestone celebrations — checked from render(), fires once each (flags on the transient S._cel).
+   Centralized so it needs no scattered hooks; UI-only, never runs in replay. */
+function juiceMilestones(){ if(!_juiceOK()||!S||!S.alive) return; S._cel=S._cel||{};
+  const done=k=>S._cel[k], mark=k=>{ S._cel[k]=1; };
+  const fire=(k,title,sub,icon,opts)=>{ if(!done(k)){ mark(k); celebrate(title,sub,icon,opts||{}); } };
+  const nw = (typeof netWorth==='function')?netWorth():(S.money||0);
+  if(nw>=1e6)  fire('nw1m','Millionaire! 💰','Your net worth crossed $1,000,000.','💰',{sfx:'fanfare'});
+  if(nw>=1e7)  fire('nw10m','Multi-Millionaire','Ten million and climbing.','💎');
+  if(nw>=1e8)  fire('nw100m','Nine Figures','$100,000,000. Absurd wealth.','🏦');
+  if(nw>=1e9)  fire('nw1b','BILLIONAIRE 🤑','You joined the three-comma club.','🤑',{count:180});
+  const fame=Math.max(S.fame||0,S.peakFame||0);
+  if(fame>=50) fire('fame50','Famous ⭐','People know your name now.','⭐');
+  if(fame>=90) fire('fame90','A-List Icon 🌟','You\'re one of the most famous people alive.','🌟',{count:160});
+  const foll=(typeof totalFollowers==='function')?totalFollowers():0;
+  if(foll>=1e6) fire('foll1m','A Million Followers 📱','Your following hit seven figures.','📱');
+  const kids=Object.values(S.people||{}).filter(p=>p.alive&&p.fam&&p.gen>=1).length;
+  if(kids>=1)   fire('kid1','A New Life 👶','You became a parent.','👶',{sfx:'good'});
+  if(S.age>=18) fire('age18','All Grown Up 🎂','You\'re an adult now — the world is yours.','🎂',{sfx:'levelup'});
+  if(S.age>=50) fire('age50','Half a Century 🎂','Fifty years lived. Many stories told.','🎂');
+  if(S.age>=100)fire('age100','Centenarian! 🎉','A hundred years old. A rare, remarkable life.','🎉',{count:170});
+}
 /* the core-loop tap: punch + sound, then advance the year */
 function ageUpJuice(btn){ if(_juiceOK()){ sfx('tap'); if(btn){ btn.classList.remove('punch'); void btn.offsetWidth; btn.classList.add('punch'); } } ageUp(); }
 function initSoundLabel(){ try{ const el=document.getElementById('soundMi'); if(el)el.textContent='🔊 Sound: '+(_soundOn?'On':'Off'); }catch(e){} }
