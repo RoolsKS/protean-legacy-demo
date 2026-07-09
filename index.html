@@ -1741,6 +1741,10 @@ function money(d){ S.money=Math.max(overdraftFloor(),Math.round(S.money+d)); if(
 function rep(d){S.rep=clamp(S.rep+d,-100,100)}
 function setFlag(f,v=true){S.flags[f]=v}
 function has(f){return !!S.flags[f]}
+function gainCriminalRecord(){   // 🚔 one door into a criminal record — the achievement fires AT the bust, right beside its story line (not a year later in the milestone scan)
+  const fresh=!has('criminal'); S.flags.criminal=true;
+  if(fresh) unlockAchievement('jailbird','🚔 Rap Sheet','Pick up a criminal record.');
+}
 function rel(id,affD,trustD,note){
   const p=P(id); if(!p)return;
   p.affinity=clamp(p.affinity+affD); p.trust=clamp(p.trust+trustD);
@@ -2837,11 +2841,11 @@ const EVENTS = [
     text:`The games come to the city. The editor offers a purse of silver to any free soul brave — or desperate — enough to fight.`,
     choices:[
       {label:'Fight for glory', tip:'Win coin & fame · risk your life', apply:()=>{
-        if(rng(0,100) < 30 + S.stats.health/4 + (has('talent_sports')?15:0)){ const purse=rng(120,600); money(purse); S.fame=Math.min(100,(S.fame||0)+rng(6,14)); chg('happy',6); ledgerAdd('triumph',16,{note:'Victor in the arena.'}); grantHeirloom('The Gladiator’s Blade','🗡️','weapon'); return {text:`The crowd roared your name as your opponent fell. You leave the sand alive — and ${cur()}${purse} richer. You keep your blade.`,tags:[['good',`Arena victor +${cur()}${purse}`]]}; }
+        if(rng(0,100) < 30 + S.stats.health/4 + (has('talent_sports')?15:0)){ const purse=rng(120,600); money(purse); S.fame=Math.min(100,(S.fame||0)+rng(6,14)); chg('happy',6); ledgerAdd('triumph',16,{note:'Victor in the arena.'}); grantHeirloom('The Gladiator’s Blade','🗡️','weapon'); return {text:`The crowd roared your name as your opponent fell. You leave the sand alive — and ${cur()}${fmn(purse)} richer. You keep your blade.`,tags:[['good',`Arena victor +${cur()}${fmn(purse)}`]]}; }
         chg('health',-rng(20,40)); addTrauma('violence',rng(20,35),'the day the arena nearly killed you'); return {text:`The mob bayed for blood — nearly yours. You were dragged off the sand broken and bleeding, but alive.`,tags:[['bad','Maimed in the arena']]}; }},
       {label:'Bet on the games', tip:'Gamble', apply:()=>{ const stake=Math.min(S.money,rng(20,120)); money(-stake);
-        if(rng(0,100)<45){ const win=stake*rng(2,3); money(win); return {text:`Your champion triumphed! You collect ${cur()}${win}.`,tags:[['good',`Won ${cur()}${win}`]]}; }
-        return {text:`Your fighter fell in the first bout. The coin is gone.`,tags:[['bad',`Lost ${cur()}${stake}`]]}; }},
+        if(rng(0,100)<45){ const win=stake*rng(2,3); money(win); return {text:`Your champion triumphed! You collect ${cur()}${fmn(win)}.`,tags:[['good',`Won ${cur()}${fmn(win)}`]]}; }
+        return {text:`Your fighter fell in the first bout. The coin is gone.`,tags:[['bad',`Lost ${cur()}${fmn(stake)}`]]}; }},
       {label:'Stay well clear', apply:()=>({text:`You watched from afar. Some spectacles are best survived at a distance.`,tags:[['flag','Skipped the games']]})},
     ]})},
 
@@ -2851,12 +2855,12 @@ const EVENTS = [
     text:`Banners snap in the wind. A tournament has come to the realm — jousts, a melee, and a champion's purse of gold.`,
     choices:[
       {label:'Enter the lists', tip:'Glory & gold · risk injury', apply:()=>{
-        if(rng(0,100) < 28 + S.stats.health/4 + S.stats.looks/8 + (has('talent_sports')?15:0)){ const purse=rng(200,900); money(purse); S.fame=Math.min(100,(S.fame||0)+rng(8,16)); chg('happy',7); ledgerAdd('triumph',18,{note:'Champion of the tournament.'}); grantHeirloom('The Champion’s Lance','🏇','trophy'); return {text:`Lance after lance, you unhorsed them all. You are the champion — ${cur()}${purse} and a name that will be sung.`,tags:[['good',`Tournament champion +${cur()}${purse}`]]}; }
+        if(rng(0,100) < 28 + S.stats.health/4 + S.stats.looks/8 + (has('talent_sports')?15:0)){ const purse=rng(200,900); money(purse); S.fame=Math.min(100,(S.fame||0)+rng(8,16)); chg('happy',7); ledgerAdd('triumph',18,{note:'Champion of the tournament.'}); grantHeirloom('The Champion’s Lance','🏇','trophy'); return {text:`Lance after lance, you unhorsed them all. You are the champion — ${cur()}${fmn(purse)} and a name that will be sung.`,tags:[['good',`Tournament champion +${cur()}${fmn(purse)}`]]}; }
         chg('health',-rng(14,30)); addTrauma('injury',rng(10,22),'the joust that nearly broke you'); return {text:`A lance caught you square and the world went white. You woke days later, aching but alive.`,tags:[['bad','Unhorsed & injured']]}; }},
       {label:'Watch from the stands', apply:()=>{ chg('happy',4); return {text:`You cheered the champions and feasted with the crowd. A fine day.`,tags:[['good','Enjoyed the tourney']]}; }},
       {label:'Work the crowd as a cutpurse', tip:'Crime', apply:()=>{ karma(-3);
-        if(rng(0,100)<55){ const take=rng(40,260); money(take); return {text:`Amid the cheering you lifted purse after purse — ${cur()}${take} the richer, and no one the wiser.`,tags:[['bad',`Picked pockets +${cur()}${take}`]]}; }
-        chg('happy',-6); setFlag('criminal'); return {text:`A guard caught your hand in a stranger's purse. You spent the tournament in the stocks, pelted with rotten fruit.`,tags:[['bad','Caught thieving']]}; }},
+        if(rng(0,100)<55){ const take=rng(40,260); money(take); return {text:`Amid the cheering you lifted purse after purse — ${cur()}${fmn(take)} the richer, and no one the wiser.`,tags:[['bad',`Picked pockets +${cur()}${fmn(take)}`]]}; }
+        chg('happy',-6); gainCriminalRecord(); return {text:`A guard caught your hand in a stranger's purse. You spent the tournament in the stocks, pelted with rotten fruit.`,tags:[['bad','Caught thieving']]}; }},
     ]})},
 
 /* Witch-hunt hysteria — late medieval through early industrial */
@@ -2877,11 +2881,11 @@ const EVENTS = [
     text:`Word spreads of fortunes waiting across the ocean. A ship is taking on passengers — and the desperate, and the bold.`,
     choices:[
       {label:'Stake everything and sail', tip:'High risk · high reward', apply:()=>{ const stake=Math.min(S.money, Math.round(S.money*0.6)); money(-stake);
-        if(rng(0,100)<48){ const win=stake*rng(2,4)+rng(200,1000); money(win); chg('happy',8); ledgerAdd('triumph',14,{note:'Made a fortune in the New World.'}); setFlag('emigrated'); grantHeirloom('A New-World Map','🗺️','relic'); return {text:`You crossed the ocean and built something from nothing. You came back — or sent word home — ${cur()}${win} the richer.`,tags:[['good',`New-world fortune +${cur()}${win}`]]}; }
-        chg('health',-rng(6,16)); return {text:`The crossing was brutal and the promised riches a mirage. You scraped your way home with little but stories.`,tags:[['bad',`Lost ${cur()}${stake} on the voyage`]]}; }},
+        if(rng(0,100)<48){ const win=stake*rng(2,4)+rng(200,1000); money(win); chg('happy',8); ledgerAdd('triumph',14,{note:'Made a fortune in the New World.'}); setFlag('emigrated'); grantHeirloom('A New-World Map','🗺️','relic'); return {text:`You crossed the ocean and built something from nothing. You came back — or sent word home — ${cur()}${fmn(win)} the richer.`,tags:[['good',`New-world fortune +${cur()}${fmn(win)}`]]}; }
+        chg('health',-rng(6,16)); return {text:`The crossing was brutal and the promised riches a mirage. You scraped your way home with little but stories.`,tags:[['bad',`Lost ${cur()}${fmn(stake)} on the voyage`]]}; }},
       {label:'Invest in a merchant voyage', tip:'Moderate gamble', apply:()=>{ const stake=Math.min(S.money,rng(50,400)); money(-stake);
-        if(rng(0,100)<55){ const win=Math.round(stake*(1.4+rand())); money(win); return {text:`The ship returned laden with goods. Your share: ${cur()}${win}.`,tags:[['good',`Voyage paid +${cur()}${win}`]]}; }
-        return {text:`The ship never returned. Lost to storm or pirates — and your stake with it.`,tags:[['bad',`Lost ${cur()}${stake}`]]}; }},
+        if(rng(0,100)<55){ const win=Math.round(stake*(1.4+rand())); money(win); return {text:`The ship returned laden with goods. Your share: ${cur()}${fmn(win)}.`,tags:[['good',`Voyage paid +${cur()}${fmn(win)}`]]}; }
+        return {text:`The ship never returned. Lost to storm or pirates — and your stake with it.`,tags:[['bad',`Lost ${cur()}${fmn(stake)}`]]}; }},
       {label:'Stay on solid ground', apply:()=>({text:`You watched the sails shrink on the horizon and kept the life you knew.`,tags:[['flag','Stayed home']]})},
     ]})},
 
@@ -2893,7 +2897,7 @@ const EVENTS = [
       {label:'Join the strike', tip:'Solidarity · risk', apply:()=>{ karma(4);
         if(rng(0,100)<45){ if(S.job){ S.jobPerf=clamp((S.jobPerf||50)-rng(10,25)); } chg('happy',-4); return {text:`You stood at the gates singing — until the foreman's men waded in with clubs. The strike was broken, and the bosses marked your face.`,tags:[['bad','Strike broken']]}; }
         ledgerAdd('triumph',12,{note:'Stood with the workers.'}); chg('happy',5); return {text:`You held the line for weeks — and the owners blinked. Shorter hours, better pay. You helped win it.`,tags:[['good','Strike won']]}; }},
-      {label:'Cross the picket for pay', tip:'Money · shame', apply:()=>{ karma(-3); const cash=rng(40,160); money(cash); S.rep=clamp((S.rep||0)-5,-100,100); return {text:`You took the strikebreaker's coin and walked through the jeering crowd. ${cur()}${cash} — and a name as a scab.`,tags:[['bad',`Strikebreaker +${cur()}${cash}`]]}; }},
+      {label:'Cross the picket for pay', tip:'Money · shame', apply:()=>{ karma(-3); const cash=rng(40,160); money(cash); S.rep=clamp((S.rep||0)-5,-100,100); return {text:`You took the strikebreaker's coin and walked through the jeering crowd. ${cur()}${fmn(cash)} — and a name as a scab.`,tags:[['bad',`Strikebreaker +${cur()}${fmn(cash)}`]]}; }},
       {label:'Stay out of it', apply:()=>({text:`You kept your head down and your opinions to yourself.`,tags:[['flag','Avoided the strike']]})},
     ]})},
 
@@ -2903,11 +2907,11 @@ const EVENTS = [
     text:`Liquor's illegal now — which is exactly why there's money in it. A sharp-dressed bootlegger offers you a cut to move a few crates.`,
     choices:[
       {label:'Run liquor for the mob', tip:'Big money · heat', apply:()=>{ karma(-2);
-        if(rng(0,100)<60){ const cash=rng(300,1400); money(cash); setFlag('bootlegger'); return {text:`You ran the back roads with the headlights off and the trunk full. Easy money — ${cur()}${cash}.`,tags:[['good',`Bootlegging +${cur()}${cash}`]]}; }
-        const fine=rng(100,500); money(-Math.min(S.money,fine)); setFlag('criminal'); setFlag('arrested'); return {text:`The feds were waiting at the county line. You were hauled in — ${cur()}${fine} gone and a record to show for it.`,tags:[['bad','Busted by the feds']]}; }},
+        if(rng(0,100)<60){ const cash=rng(300,1400); money(cash); setFlag('bootlegger'); return {text:`You ran the back roads with the headlights off and the trunk full. Easy money — ${cur()}${fmn(cash)}.`,tags:[['good',`Bootlegging +${cur()}${fmn(cash)}`]]}; }
+        const fine=rng(100,500); money(-Math.min(S.money,fine)); gainCriminalRecord(); setFlag('arrested'); return {text:`The feds were waiting at the county line. You were hauled in — ${cur()}${fmn(fine)} gone and a record to show for it.`,tags:[['bad','Busted by the feds']]}; }},
       {label:'Open your own speakeasy', tip:'Invest', apply:()=>{ const stake=Math.min(S.money,rng(200,800)); money(-stake);
-        if(rng(0,100)<50){ const win=Math.round(stake*(1.6+rand())); money(win); chg('happy',6); return {text:`Jazz, gin and a hidden door. The place was packed every night — you cleared ${cur()}${win}.`,tags:[['good',`Speakeasy boomed +${cur()}${win}`]]}; }
-        return {text:`A raid shut you down inside a month. The stake — and the furniture — went out the door.`,tags:[['bad',`Raided · lost ${cur()}${stake}`]]}; }},
+        if(rng(0,100)<50){ const win=Math.round(stake*(1.6+rand())); money(win); chg('happy',6); return {text:`Jazz, gin and a hidden door. The place was packed every night — you cleared ${cur()}${fmn(win)}.`,tags:[['good',`Speakeasy boomed +${cur()}${fmn(win)}`]]}; }
+        return {text:`A raid shut you down inside a month. The stake — and the furniture — went out the door.`,tags:[['bad',`Raided · lost ${cur()}${fmn(stake)}`]]}; }},
       {label:'Keep it legal', apply:()=>({text:`You smiled, declined, and kept your nose clean. Plenty of ways to enjoy the Twenties sober-ish.`,tags:[['flag','Stayed legal']]})},
     ]})},
 
@@ -2976,8 +2980,8 @@ const EVENTS = [
   build:S=>{ S._ambOpp=S.age; return { yr:`Age ${S.age}`, title:'The Underworld Beckons 🌃',
     text:`A made acquaintance offers you a piece of work — risky, but it's how a name gets feared on these streets.`,
     choices:[
-      {label:'Take the job', tip:'Rep ↑ · heat ↑', apply:()=>{ karma(-3); if(rng(0,100)<62){ const cash=rng(2000,12000); money(cash); ledgerAdd('crime',rng(10,18),{note:'Pulled off a job for the outfit.'}); if(S.underworld){ S.underworld.rep=(S.underworld.rep||0)+rng(6,14); } setFlag('criminal'); return {text:`Clean work. The coin's good (${cur()}${cash.toLocaleString()}) and your name carries weight now.`,tags:[['bad',`Crime +${cur()}${cash.toLocaleString()}`]]}; }
-        setFlag('criminal'); setFlag('arrested'); const fine=rng(500,4000); money(-Math.min(S.money,fine)); return {text:`It went sideways — you were nicked. ${cur()}${fine.toLocaleString()} gone and a record to show for it.`,tags:[['bad','Busted']]}; }},
+      {label:'Take the job', tip:'Rep ↑ · heat ↑', apply:()=>{ karma(-3); if(rng(0,100)<62){ const cash=rng(2000,12000); money(cash); ledgerAdd('crime',rng(10,18),{note:'Pulled off a job for the outfit.'}); if(S.underworld){ S.underworld.rep=(S.underworld.rep||0)+rng(6,14); } gainCriminalRecord(); return {text:`Clean work. The coin's good (${cur()}${cash.toLocaleString()}) and your name carries weight now.`,tags:[['bad',`Crime +${cur()}${cash.toLocaleString()}`]]}; }
+        gainCriminalRecord(); setFlag('arrested'); const fine=rng(500,4000); money(-Math.min(S.money,fine)); return {text:`It went sideways — you were nicked. ${cur()}${fine.toLocaleString()} gone and a record to show for it.`,tags:[['bad','Busted']]}; }},
       {label:'Small-time only', apply:()=>{ karma(-1); const cash=rng(200,1200); money(cash); return {text:`You keep it petty — a little cash, little risk.`,tags:[['bad',`+${cur()}${cash.toLocaleString()}`]]}; }},
       {label:'Walk away', apply:()=>({text:`You walk. That life isn't worth it today.`,tags:[['flag','Walked away']]})},
     ] };}},
@@ -3493,7 +3497,7 @@ const EVENTS = [
     return { yr:`Age ${S.age}`, title:'💎 The Score of a Lifetime',
     text:`Someone brings you a plan for ${job} — the kind of score that sets you up for life, or buries you for it. The take could be enormous. So could the fall.`,
     choices:[
-      {label:'Pull the job', tip:'All or nothing', apply:()=>{ const win=rng(0,100)<38+pers('boldness')/4+S.stats.smarts/6+u.rep/8; karma(-4); setFlag('criminal');
+      {label:'Pull the job', tip:'All or nothing', apply:()=>{ const win=rng(0,100)<38+pers('boldness')/4+S.stats.smarts/6+u.rep/8; karma(-4); gainCriminalRecord();
         if(win){ const take=Math.round(rng(80000,900000)*priceMult()); money(take); u.rep=Math.min(120,u.rep+15); u.heat=clamp(u.heat+30,0,100); ledgerAdd('crime',45,{note:`Pulled off ${job} — a legendary score.`}); unlockAchievement('master_thief','💎 Master Thief','Pull off a major heist.');
           return {text:`Flawless. You walked away with <b>${cur()}${take.toLocaleString()}</b> and a reputation that precedes you everywhere now. A legend is born. 💎`, tags:[['bad',`+${cur()}${take.toLocaleString()} (legendary score)`]]}; }
         const sentence=rng(5,12); u.jailUntil=S.age+sentence; u.heat=clamp(u.heat+10,0,100); addTrauma('prison',rng(30,50),`the decade the big job cost you`); chg('happy',-15);
@@ -3647,7 +3651,7 @@ const EVENTS = [
 { id:'field_trip', once:false, weight:9, when:S=>['primary','high'].includes(S.eduLevel) && S.age>=7 && S.age<=17,
   build:S=>{ const dest=pick(['the natural history museum 🦖','the aquarium 🐠','a working farm 🐄','the state capitol 🏛️','an old gold mine ⛏️','the planetarium 🔭','a chocolate factory 🍫','the fire station 🚒']); const cost=rng(20,200);
     return { yr:`Age ${S.age}`, title:'🚌 Field Trip',
-    text:`Your class at ${S.schoolName} is going to <b>${dest}</b>${(S.schoolPrestige||0)>=64?' — first class, naturally':''}. Permission slip, packed lunch, and a <b>${cur()}${cost}</b> fee. The whole class is buzzing about it.`,
+    text:`Your class at ${S.schoolName} is going to <b>${dest}</b>${(S.schoolPrestige||0)>=64?' — first class, naturally':''}. Permission slip, packed lunch, and a <b>${cur()}${fmn(cost)}</b> fee. The whole class is buzzing about it.`,
     choices:[
       {label:'Go and soak it all in', tip:'Memories are made on the bus', apply:()=>{ if(S.money>0)money(-Math.min(cost,S.money)); chg('happy',rng(3,8)); chg('smarts',rng(1,3));
         const beat=pick([`You got the back seat of the bus — the loud kids' throne.`,`Your best moment: the gift shop, obviously.`,`The tour guide picked YOU to answer a question — and you nailed it.`,`Someone got lost for twenty glorious minutes. Not you.`,`You and a friend narrated the whole thing like a nature documentary.`]);
@@ -4182,9 +4186,9 @@ const EVENTS = [
     text:`You set up a lemonade stand on a hot afternoon. A thirsty crowd gathers. How do you run it?`,
     choices:[
       {label:'Fair prices, big smile', tip:'Honest hustle', apply:()=>{ const m=rng(4,20); money(m); chg('happy',rng(2,5)); driftPers('warmth',1);
-        return {text:`You charm every customer and sell out — <b>${cur()}${m}</b> in the jar, and a lot of happy neighbours.`,tags:[['good',`+${cur()}${m}`]]}; }},
+        return {text:`You charm every customer and sell out — <b>${cur()}${fmn(m)}</b> in the jar, and a lot of happy neighbours.`,tags:[['good',`+${cur()}${fmn(m)}`]]}; }},
       {label:'Charge tourists double', tip:'Sneaky profit', apply:()=>{ const m=rng(15,45); money(m); karma(-2); driftPers('ambition',1);
-        return {text:`You gouge the out-of-towners and rake in <b>${cur()}${m}</b> — a tiny tycoon with a guilty grin.`,tags:[['flag',`+${cur()}${m}`]]}; }},
+        return {text:`You gouge the out-of-towners and rake in <b>${cur()}${fmn(m)}</b> — a tiny tycoon with a guilty grin.`,tags:[['flag',`+${cur()}${fmn(m)}`]]}; }},
       {label:'Give it away for free', tip:'Kindness', apply:()=>{ chg('happy',rng(3,7)); karma(3); driftPers('warmth',2);
         return {text:`You hand out free cups all afternoon. No money — but the whole street loves you.`,tags:[['good','A kind kid']]}; }},
     ]};}},
@@ -4246,11 +4250,11 @@ const EVENTS = [
 /* MONEY — find a wallet */
 { id:'st_wallet', once:false, weight:13, when:S=>S.age>=8&&(S.age-(S._lastSt7||-99)>=4),
   build:S=>{ S._lastSt7=S.age; const cash=rng(40,600); return {yr:`Age ${S.age}`, title:'👛 A Lost Wallet',
-    text:`A fat wallet on the pavement — <b>${cur()}${cash}</b> in cash, an ID with a stranger's tired smile, and a photo of two kids tucked behind the cards.${S.money<100?' You are, at this exact moment, broke.':''} Nobody's watching. What do you do?`,
+    text:`A fat wallet on the pavement — <b>${cur()}${fmn(cash)}</b> in cash, an ID with a stranger's tired smile, and a photo of two kids tucked behind the cards.${S.money<100?' You are, at this exact moment, broke.':''} Nobody's watching. What do you do?`,
     choices:[
-      {label:'Track down the owner', tip:'Return it all', apply:()=>{ karma(5); chg('happy',rng(2,5)); if(rng(0,100)<40){ const r=rng(20,200); money(r); return {text:`You return it untouched. The grateful owner presses <b>${cur()}${r}</b> on you as a reward. Good karma pays.`,tags:[['good',`Honest · +${cur()}${r}`]]}; } return {text:`You return every penny. No reward — just the quiet satisfaction of doing right.`,tags:[['good','Returned it']]}; }},
-      {label:'Keep the cash, ditch the wallet', tip:'Finders keepers', apply:()=>{ money(cash); karma(-4); return {text:`You pocket the <b>${cur()}${cash}</b> and toss the wallet in a bin. Somewhere, someone's having a very bad day.`,tags:[['flag',`+${cur()}${cash}`]]}; }},
-      {label:'Take half, hand it in', tip:'Grey area', apply:()=>{ const half=Math.round(cash/2); money(half); karma(-1); return {text:`You skim <b>${cur()}${half}</b> and hand the rest to a shopkeeper. A little for you, a little for your conscience.`,tags:[['flag',`+${cur()}${half}`]]}; }},
+      {label:'Track down the owner', tip:'Return it all', apply:()=>{ karma(5); chg('happy',rng(2,5)); if(rng(0,100)<40){ const r=rng(20,200); money(r); return {text:`You return it untouched. The grateful owner presses <b>${cur()}${fmn(r)}</b> on you as a reward. Good karma pays.`,tags:[['good',`Honest · +${cur()}${fmn(r)}`]]}; } return {text:`You return every penny. No reward — just the quiet satisfaction of doing right.`,tags:[['good','Returned it']]}; }},
+      {label:'Keep the cash, ditch the wallet', tip:'Finders keepers', apply:()=>{ money(cash); karma(-4); return {text:`You pocket the <b>${cur()}${fmn(cash)}</b> and toss the wallet in a bin. Somewhere, someone's having a very bad day.`,tags:[['flag',`+${cur()}${fmn(cash)}`]]}; }},
+      {label:'Take half, hand it in', tip:'Grey area', apply:()=>{ const half=Math.round(cash/2); money(half); karma(-1); return {text:`You skim <b>${cur()}${fmn(half)}</b> and hand the rest to a shopkeeper. A little for you, a little for your conscience.`,tags:[['flag',`+${cur()}${fmn(half)}`]]}; }},
     ]};}},
 /* MONEY — a scam call */
 { id:'st_scam', once:false, weight:12, when:S=>S.age>=18&&(S.age-(S._lastSt8||-99)>=4),
@@ -4275,7 +4279,7 @@ const EVENTS = [
   build:S=>{ S._lastSt10=S.age; const sym=pick(['a cough that won\'t quit','a strange recurring headache','a weird mole you hadn\'t noticed','a persistent ache in your chest','dizzy spells']); return {yr:`Age ${S.age}`, title:'🩺 A Nagging Symptom',
     text:`You've had <b>${sym}</b> for weeks now. What do you do about it?`,
     choices:[
-      {label:'See a doctor', tip:'Get it checked', apply:()=>{ const cost=rng(40,400); if(S.money>0)money(-Math.min(cost,S.money)); if(rng(0,100)<25){ chg('health',rng(3,8)); return {text:`The doctor catches something early and treats it before it becomes serious. That visit may have saved your life.`,tags:[['good','Caught it early']]}; } chg('happy',rng(1,4)); return {text:`The doctor runs some tests — it's nothing serious. Peace of mind for <b>${cur()}${cost}</b>.`,tags:[['good','All clear']]}; }},
+      {label:'See a doctor', tip:'Get it checked', apply:()=>{ const cost=rng(40,400); if(S.money>0)money(-Math.min(cost,S.money)); if(rng(0,100)<25){ chg('health',rng(3,8)); return {text:`The doctor catches something early and treats it before it becomes serious. That visit may have saved your life.`,tags:[['good','Caught it early']]}; } chg('happy',rng(1,4)); return {text:`The doctor runs some tests — it's nothing serious. Peace of mind for <b>${cur()}${fmn(cost)}</b>.`,tags:[['good','All clear']]}; }},
       {label:'Ignore it, it\'ll pass', tip:'Risky', apply:()=>{ if(rng(0,100)<38){ chg('health',-rng(5,14)); addStress(rng(4,10)); return {text:`It doesn't pass — it gets worse, and by the time you act it's a real problem.`,tags:[['bad','Should\'ve got it checked']]}; } chg('health',rng(0,2)); return {text:`You tough it out and, luckily, it fades on its own this time.`,tags:[['flag','Got lucky']]}; }},
       {label:'Google your symptoms', tip:'Down the rabbit hole', apply:()=>{ addStress(rng(6,14)); chg('happy',-rng(1,4)); return {text:`Three hours of WebMD later, you're convinced you have everything from scurvy to a rare tropical parasite. You sleep terribly.`,tags:[['flag','Cyberchondria']]}; }},
     ]};}},
@@ -4322,7 +4326,7 @@ const EVENTS = [
   build:S=>{ S._lastW2=S.age; const take=rng(8000,60000); return {yr:`Age ${S.age}`, title:'🚗 One Job',
     text:`A guy you know needs a wheelman for "one clean job." Your cut would be <b>${cur()}${take.toLocaleString()}</b>. No violence, he swears. Do you drive?`,
     choices:[
-      {label:'Take the wheel', tip:'Fast money, hard time', apply:()=>{ const u=uw(); if(rng(0,100) < 40 - (u.rep||0)/5){ const sentence=rng(2,6); u.jailUntil=S.age+sentence; u.heat=clamp(u.heat+30,0,100); setFlag('criminal'); addTrauma('prison',rng(20,38),`the years the "one job" cost you`); chg('happy',-rng(8,15)); return {text:`It goes wrong. Silent alarm, a chase, and the law catches up. <b>${sentence} years</b> in ${prisonWord()} for your trouble.`,tags:[['bad',`Prison: ${sentence}yr`]]}; } money(take); u.rep=Math.min(120,(u.rep||0)+rng(4,9)); u.heat=clamp(u.heat+rng(8,18),0,100); setFlag('criminal'); driftPers('boldness',2); return {text:`Clean in, clean out. You pocket <b>${cur()}${take.toLocaleString()}</b> and a little underworld reputation. Nobody saw a thing.`,tags:[['flag',`+${cur()}${take.toLocaleString()}`]]}; }},
+      {label:'Take the wheel', tip:'Fast money, hard time', apply:()=>{ const u=uw(); if(rng(0,100) < 40 - (u.rep||0)/5){ const sentence=rng(2,6); u.jailUntil=S.age+sentence; u.heat=clamp(u.heat+30,0,100); gainCriminalRecord(); addTrauma('prison',rng(20,38),`the years the "one job" cost you`); chg('happy',-rng(8,15)); return {text:`It goes wrong. Silent alarm, a chase, and the law catches up. <b>${sentence} years</b> in ${prisonWord()} for your trouble.`,tags:[['bad',`Prison: ${sentence}yr`]]}; } money(take); u.rep=Math.min(120,(u.rep||0)+rng(4,9)); u.heat=clamp(u.heat+rng(8,18),0,100); gainCriminalRecord(); driftPers('boldness',2); return {text:`Clean in, clean out. You pocket <b>${cur()}${take.toLocaleString()}</b> and a little underworld reputation. Nobody saw a thing.`,tags:[['flag',`+${cur()}${take.toLocaleString()}`]]}; }},
       {label:'Refuse and forget it', tip:'Walk away', apply:()=>{ karma(2); driftPers('discipline',1); return {text:`You tell him to find someone else. Some money isn't worth the cage that comes with it.`,tags:[['good','Turned down the job']]}; }},
       {label:'Tip off the police', tip:'Snitch — risky', apply:()=>{ karma(3); const u=uw(); if((u.rep||0)>0 && rng(0,100)<35){ u.rep=Math.max(0,(u.rep||0)-rng(5,12)); setFlag('marked_snitch'); return {text:`You tip off the cops and the job is busted — but word gets out you talked. The wrong people now have your name.`,tags:[['bad','Marked as a snitch']]}; } return {text:`You quietly warn the police. The job never happens, and no one ever knows it was you.`,tags:[['good','Did the right thing']]}; }},
     ]};}},
@@ -4340,9 +4344,9 @@ const EVENTS = [
   build:S=>{ S._lastW4=S.age; return {yr:`Age ${S.age}`, title:'🚔 Pulled Over',
     text:`Flashing lights. An officer approaches — and you're carrying something you shouldn't be. They haven't searched yet. What's the play?`,
     choices:[
-      {label:'Slip them some cash', tip:'Bribery — a gamble', apply:()=>{ const u=uw(); if(rng(0,100)<45){ const bribe=rng(200,2000); money(-bribe); u.heat=clamp(u.heat-rng(5,15),0,100); return {text:`The bill disappears into a pocket and the officer waves you on. Costly, but you're free.`,tags:[['flag',`Bribed a cop −${cur()}${bribe.toLocaleString()}`]]}; } const sentence=rng(1,3); u.jailUntil=S.age+sentence; setFlag('criminal'); addTrauma('prison',rng(12,24),'trying to bribe the wrong cop'); return {text:`Wrong officer. Attempted bribery on top of everything else — <b>${sentence} years</b> in ${prisonWord()}.`,tags:[['bad',`Prison: ${sentence}yr`]]}; }},
-      {label:'Stay calm and comply', tip:'Play it straight', apply:()=>{ const u=uw(); if(rng(0,100) < 55 - (S.stats.smarts/6)){ const sentence=rng(1,2); u.jailUntil=S.age+sentence; setFlag('criminal'); u.heat=clamp(u.heat-20,0,100); return {text:`They search the car and find it. Nothing you can do now — <b>${sentence} year${sentence>1?'s':''}</b> inside.`,tags:[['bad',`Prison: ${sentence}yr`]]}; } u.heat=clamp(u.heat-rng(3,8),0,100); return {text:`You keep it together, the officer finds nothing incriminating, and you're sent on your way with a warning.`,tags:[['good','Talked your way out']]}; }},
-      {label:'Floor it', tip:'Run — desperate', apply:()=>{ const u=uw(); if(rng(0,100)<80){ const sentence=rng(2,5); u.jailUntil=S.age+sentence; setFlag('criminal'); chg('health',-rng(0,6)); addTrauma('prison',rng(18,32),'the high-speed chase that ended in a cell'); return {text:`A high-speed chase, spike strips, and a very hard stop. Fleeing made it far worse — <b>${sentence} years</b>.`,tags:[['bad',`Prison: ${sentence}yr`]]}; } money(-rng(200,1500)); u.heat=clamp(u.heat+rng(10,25),0,100); return {text:`Somehow you lose them in the backstreets, heart hammering. You ditch the car and vanish — for now.`,tags:[['flag','Outran the law']]}; }},
+      {label:'Slip them some cash', tip:'Bribery — a gamble', apply:()=>{ const u=uw(); if(rng(0,100)<45){ const bribe=rng(200,2000); money(-bribe); u.heat=clamp(u.heat-rng(5,15),0,100); return {text:`The bill disappears into a pocket and the officer waves you on. Costly, but you're free.`,tags:[['flag',`Bribed a cop −${cur()}${bribe.toLocaleString()}`]]}; } const sentence=rng(1,3); u.jailUntil=S.age+sentence; gainCriminalRecord(); addTrauma('prison',rng(12,24),'trying to bribe the wrong cop'); return {text:`Wrong officer. Attempted bribery on top of everything else — <b>${sentence} years</b> in ${prisonWord()}.`,tags:[['bad',`Prison: ${sentence}yr`]]}; }},
+      {label:'Stay calm and comply', tip:'Play it straight', apply:()=>{ const u=uw(); if(rng(0,100) < 55 - (S.stats.smarts/6)){ const sentence=rng(1,2); u.jailUntil=S.age+sentence; gainCriminalRecord(); u.heat=clamp(u.heat-20,0,100); return {text:`They search the car and find it. Nothing you can do now — <b>${sentence} year${sentence>1?'s':''}</b> inside.`,tags:[['bad',`Prison: ${sentence}yr`]]}; } u.heat=clamp(u.heat-rng(3,8),0,100); return {text:`You keep it together, the officer finds nothing incriminating, and you're sent on your way with a warning.`,tags:[['good','Talked your way out']]}; }},
+      {label:'Floor it', tip:'Run — desperate', apply:()=>{ const u=uw(); if(rng(0,100)<80){ const sentence=rng(2,5); u.jailUntil=S.age+sentence; gainCriminalRecord(); chg('health',-rng(0,6)); addTrauma('prison',rng(18,32),'the high-speed chase that ended in a cell'); return {text:`A high-speed chase, spike strips, and a very hard stop. Fleeing made it far worse — <b>${sentence} years</b>.`,tags:[['bad',`Prison: ${sentence}yr`]]}; } money(-rng(200,1500)); u.heat=clamp(u.heat+rng(10,25),0,100); return {text:`Somehow you lose them in the backstreets, heart hammering. You ditch the car and vanish — for now.`,tags:[['flag','Outran the law']]}; }},
     ]};}},
 /* POLITICS — a lobbyist's envelope */
 { id:'w2_lobby', once:false, weight:14, when:S=>S.office&&S.office.inOffice&&(S.age-(S._lastW5||-99)>=2),
@@ -5565,7 +5569,7 @@ function ageUp(){
     if(of && of.joined && of.followers>0 && S.age>=18){
       const price=of.subPrice||10;
       const inc=Math.round(of.followers*price*rng(5,8)/10);   // active-rate × churn baked in
-      if(inc>0){ money(inc); pushLog(`My FanVault subscriptions (${fc(of.followers)} subs × ${cur()}${price}/mo) earned <b>${cur()}${inc.toLocaleString()}</b> this year. 🔞`,[['good',`+${cur()}${inc.toLocaleString()}`]]); }
+      if(inc>0){ money(inc); pushLog(`My FanVault subscriptions (${fc(of.followers)} subs × ${cur()}${fmn(price)}/mo) earned <b>${cur()}${inc.toLocaleString()}</b> this year. 🔞`,[['good',`+${cur()}${inc.toLocaleString()}`]]); }
       ensureWhales();   // top spenders keep spending; gifts pile up waiting to be collected
       if(of.whales) for(const w of of.whales){ w.spent+=rng(80,700); w.gift=(w.gift||0)+rng(40,Math.max(60,Math.round(w.spent/8))); }
     }
@@ -7302,7 +7306,7 @@ function sellBelonging(i){ const b=(S.assets&&S.assets.belongings||[])[i]; if(!b
   // 🕶️ selling STOLEN goods at a public auction can trip a police flag — the higher the value, the bigger the risk
   if(b.contraband){ const crime=(COUNTRIES[S.country]||{}).crime||50;
     const seizeChance = clamp(22 + Math.min(30,(b.value||0)/8000) - crime/5 - (S.karma||0)/12, 6, 70);
-    if(rng(0,100) < seizeChance){ const fine=rng(2000,15000); money(-fine); karma(-4); setFlag('criminal'); setFlag('arrested');
+    if(rng(0,100) < seizeChance){ const fine=rng(2000,15000); money(-fine); karma(-4); gainCriminalRecord(); setFlag('arrested');
       S.assets.belongings.splice(i,1);
       pushLog(`🚔 The auction house ran provenance on my <b>${b.name}</b> — it was flagged <b>stolen</b>. Seized, and ${cur()}${fine.toLocaleString()} in fines.`,[['bad','Contraband seized']]);
       resultModal('Seized!','Provenance Check 🚔','🚔',[`As the bidding opened, an investigator stepped forward: your <b>${b.name}</b> is <b>stolen property</b>. It's <b>seized</b>, you're fined <b>${cur()}${fine.toLocaleString()}</b>, and there's a record now.`,`Contraband is safer fenced quietly than sold in the open.`],()=>setTab('life')); return; }
@@ -7537,12 +7541,12 @@ function copOutcome(how, severe){ closeModal();
     if(rng(0,100)<(severe?22:55)){ money(-ask); karma(-4); setFlag('bribed_cop');
       pushLog(`I slipped the officer ${cur()}${ask.toLocaleString()} and they looked the other way. 🤫`,[['flag','Bribed the cops']]);
       resultModal('The Cops','Handled Quietly','🤫',[`<b>${cur()}${ask.toLocaleString()}</b> made it all disappear. No one needs to know.`],()=>setTab('connections')); }
-    else { const fine=rng(3000,15000); money(-fine); karma(-3); setFlag('criminal'); setFlag('arrested');
+    else { const fine=rng(3000,15000); money(-fine); karma(-3); gainCriminalRecord(); setFlag('arrested');
       pushLog(`I tried to bribe a cop — terrible idea. <b>Arrested</b> for bribery, ${cur()}${fine.toLocaleString()} in fines.`,[['bad','Arrested']]);
       resultModal('The Cops','Arrested!','🚔',[`The officer was <b>not</b> amused — you were <b>arrested</b> for attempted bribery.`,`${cur()}${fine.toLocaleString()} in fines, and now you have a record.`],()=>setTab('connections')); }
     return; }
   // argue
-  if(rng(0,100)<(severe?70:40)){ const fine=rng(2000,10000); money(-fine); karma(-3); setFlag('criminal'); setFlag('arrested'); chg('happy',-6);
+  if(rng(0,100)<(severe?70:40)){ const fine=rng(2000,10000); money(-fine); karma(-3); gainCriminalRecord(); setFlag('arrested'); chg('happy',-6);
     pushLog(`I mouthed off to the cops and got <b>arrested</b>. ${cur()}${fine.toLocaleString()} in fines.`,[['bad','Arrested']]);
     resultModal('The Cops','Arrested!','🚔',[`You argued and it escalated — <b>arrested</b> and hauled off.`,`${cur()}${fine.toLocaleString()} in fines and a record.`],()=>setTab('connections')); }
   else { const fine=rng(500,3000); money(-fine);
@@ -9097,7 +9101,7 @@ function renderLicenses(){ const v=document.getElementById('licensesView'); if(!
     <div class="pf" style="margin-top:4px">Pass the test, pay the fee — then come back to <b>renew</b> before it lapses.${S.flightHours?` · ✈️ ${S.flightHours} flight hrs`:''}</div></div>`;
   h+=`<div class="genlabel">Available</div>`;
   h+=LICENSES.map(l=>{ const st=licStatus(l.k), lic=S.licenses[l.k];
-    const sub = st==='active' ? `✅ Valid until age ${lic.expiresAge}` : st==='expired' ? `⚠️ Expired — tap to renew (${cur()}${l.renew})` : l.test==='none' ? `Apply at the DMV · ${cur()}${l.cost}` : `Take the test · ${cur()}${l.cost}${l.test==='pilot'?'/license':''}`;
+    const sub = st==='active' ? `✅ Valid until age ${lic.expiresAge}` : st==='expired' ? `⚠️ Expired — tap to renew (${cur()}${fmn(l.renew)})` : l.test==='none' ? `Apply at the DMV · ${cur()}${fmn(l.cost)}` : `Take the test · ${cur()}${fmn(l.cost)}${l.test==='pilot'?'/license':''}`;
     const col = st==='active'?'var(--good)':st==='expired'?'var(--bad)':'var(--accent)';
     return `<div class="platrow" onclick="openLicense('${l.k}')">
       <div class="picon" style="background:linear-gradient(135deg,#2a3340,#1b222d)">${l.icon}</div>
@@ -9107,7 +9111,7 @@ function renderLicenses(){ const v=document.getElementById('licensesView'); if(!
   for(const key of ['driveHours','flightHours']){ const tr=TRAINING[key], have=S[key]||0;
     h+=`<div class="platrow" onclick="lessonSchool('${key}')">
       <div class="picon" style="background:linear-gradient(135deg,#2a3340,#1b222d)">${tr.icon}</div>
-      <div class="pinfo"><div class="pn">${tr.name}</div><div class="pf">${cur()}${tr.rate}/hr · <b>${have}</b> hrs logged</div></div><span class="parrow">›</span></div>`;
+      <div class="pinfo"><div class="pn">${tr.name}</div><div class="pf">${cur()}${fmn(tr.rate)}/hr · <b>${have}</b> hrs logged</div></div><span class="parrow">›</span></div>`;
   }
   v.innerHTML=h;
 }
@@ -9118,8 +9122,8 @@ function openLicense(k){ const l=LIC_DEF[k]; const st=licStatus(k);
   if(st==='active'){ resultModal('License', l.name, l.icon, [`Your <b>${l.name}</b> is valid until age <b>${S.licenses[k].expiresAge}</b>.`, `Come back to renew it before then.`], ()=>setTab('licenses')); return; }
   if(st==='expired'){
     openModal({banner:'License', title:`Renew ${l.name}?`, icon:l.icon, closable:true,
-      text:`Your ${l.name} has <b>expired</b>. Renew it for <b>${cur()}${l.renew}</b>?`,
-      choices:[{label:`Renew (${cur()}${l.renew})`, fn:()=>renewLicense(k)},{label:'Not now', alt:true, fn:closeModal}]});
+      text:`Your ${l.name} has <b>expired</b>. Renew it for <b>${cur()}${fmn(l.renew)}</b>?`,
+      choices:[{label:`Renew (${cur()}${fmn(l.renew)})`, fn:()=>renewLicense(k)},{label:'Not now', alt:true, fn:closeModal}]});
     return;
   }
   // not held → you must log the required training hours first
@@ -9140,7 +9144,7 @@ function openLicense(k){ const l=LIC_DEF[k]; const st=licStatus(k);
 }
 function drivingTest(k){ const l=LIC_DEF[k], q=pick(DRIVE_Q);
   openModal({banner:'License', title:'🚗 Driving Test', icon:'🚗', closable:false,
-    text:`The test costs <b>${cur()}${l.cost}</b>.<br><br><b>${q.q}</b>`,
+    text:`The test costs <b>${cur()}${fmn(l.cost)}</b>.<br><br><b>${q.q}</b>`,
     choices: q.a.map((ans,idx)=>({label:ans, alt:idx>0, fn:()=>{ spend(l.cost); resolveLicense(k, idx===q.best); }})) });
 }
 function resolveLicense(k, pass){ const l=LIC_DEF[k]; closeModal();
@@ -9172,11 +9176,11 @@ function lessonSchool(key){ const tr=TRAINING[key];
   if(S.age<16){ toast('🔒 You must be 16 to enroll.'); return; }
   logAct('call',{fn:'lessonSchool',args:[key]});
   openModal({banner:'License', title:`${tr.icon} ${tr.name}`, icon:tr.icon, closable:true,
-    text:`Log ${tr.blurb}. You have <b>${S[key]||0}</b> hours. Lessons are <b>${cur()}${tr.rate}/hour</b>.`,
+    text:`Log ${tr.blurb}. You have <b>${S[key]||0}</b> hours. Lessons are <b>${cur()}${fmn(tr.rate)}/hour</b>.`,
     choices:[
-      {label:`Take 1 hour (${cur()}${tr.rate})`, fn:()=>takeLessons(key,1)},
-      {label:`Take 5 hours (${cur()}${tr.rate*5})`, alt:true, fn:()=>takeLessons(key,5)},
-      {label:`Take 10 hours (${cur()}${tr.rate*10})`, alt:true, fn:()=>takeLessons(key,10)},
+      {label:`Take 1 hour (${cur()}${fmn(tr.rate)})`, fn:()=>takeLessons(key,1)},
+      {label:`Take 5 hours (${cur()}${fmn(tr.rate*5)})`, alt:true, fn:()=>takeLessons(key,5)},
+      {label:`Take 10 hours (${cur()}${fmn(tr.rate*10)})`, alt:true, fn:()=>takeLessons(key,10)},
     ]});
 }
 function takeLessons(key,hrs){ const tr=TRAINING[key], cost=tr.rate*hrs; closeModal();
@@ -9437,7 +9441,7 @@ function personAction(id,action){
   else if(action==='gift'){ const cost=rng(50,500); if(!spend(cost))return; rel(id,+8,+5,'You gave them a gift.');
     const g=pick(['a thoughtful little something','a bunch of their favourite flowers','the treat they always pretend they shouldn\'t have','a book you knew they\'d devour','something handmade, badly, with love','a gift so them it was almost eerie','a keepsake from a place you both love','the exact thing they mentioned wanting once, months ago','a wildly impractical gadget they\'ll adore','concert tickets for a band they thought you\'d forgotten they liked']);
     const react=pick([`They were genuinely touched — you could see it on their face. 🎁`,`"You remembered," they said quietly. That was the whole gift, really.`,`They immediately used it / wore it / displayed it. A hit.`,`They tried to give it back out of politeness, then hugged it instead.`,`They got that rare, unguarded look. Money well spent.`,`They insisted it was "too much" while very much keeping it.`]);
-    lines=[`You surprised ${p.name} with ${g} (${cur()}${cost}).`, react]; }
+    lines=[`You surprised ${p.name} with ${g} (${cur()}${fmn(cost)}).`, react]; }
   else if(action==='givemoney'){ const amt=Math.max(500,Math.round((S.peakMoney||1000)*0.01)); if(!spend(amt))return; rel(id,+12,+8,'You gave them money.');
     const why=pick([`to help with the bills`,`to get them over a rough month`,`"just because," no strings`,`to cover the thing they were too proud to ask about`,`to chase off the debt that was keeping them up at night`,`as a leg-up, not a loan`]);
     const react=pick([`They were grateful and a little emotional — they won't forget this. 💸`,`They welled up and couldn't find the words. You didn't need them to.`,`"I'll pay you back," they insisted. You both knew they wouldn't need to.`,`The relief on their face was worth ten times the amount.`,`They went quiet, squeezed your hand, and that was that.`]);
@@ -9451,10 +9455,10 @@ function personAction(id,action){
   else if(action==='datenight'){ const cost=rng(40,400); if(!spend(cost))return; rel(id,+9,+6,'A romantic night out.'); chg('happy',4);
     ensureSpark(p); p.spark=clamp(p.spark+rng(6,12)); p._datedThisYear=true;   // attention rekindles the spark
     const d=pick(['dinner and a movie','a candlelit dinner','dancing till late','a moonlit walk','a cosy night in']);
-    lines=[`You took ${p.name} out for ${d} (${cur()}${cost}).`,`The spark is very much alive — you both felt it tonight. 💘 (${sparkBand(p.spark).l})`]; }
+    lines=[`You took ${p.name} out for ${d} (${cur()}${fmn(cost)}).`,`The spark is very much alive — you both felt it tonight. 💘 (${sparkBand(p.spark).l})`]; }
   else if(action==='allowance'){ const amt=rng(20,300); if(!spend(amt))return; rel(id,+7,+4,'You gave them an allowance.');
     const react=pick([`Their whole face lit up. 💵`,`They immediately started planning what to blow it on.`,`They pocketed it with the solemn dignity of a tiny CEO.`,`"Best day ever," they declared, sprinting off before you changed your mind.`,`They tried to negotiate for more. You respect the hustle.`]);
-    lines=[`You handed ${p.name} a ${cur()}${amt} allowance.`, react]; }
+    lines=[`You handed ${p.name} a ${cur()}${fmn(amt)} allowance.`, react]; }
   else if(action==='school'){ rel(id,+6,+4,'You helped with their schoolwork.'); chg('smarts',1);
     const subj=pick(['a brutal math worksheet','a science project due tomorrow','an essay they had been dreading','history flashcards','a reading assignment','fractions that had them in tears']);
     const react=pick([`It finally clicked for them — and they're proud of you. 📚`,`You watched the lightbulb go on. Nothing beats that look.`,`They got the top mark and made sure everyone knew you'd helped. 📚`,`Turns out you'd forgotten half of it too — you learned it together, laughing.`,`They hugged you out of nowhere. Homework: unexpectedly wholesome.`]);
@@ -10123,6 +10127,7 @@ function meetCeleb(c,note,affBoost){   // celebs are only added once you actuall
   if(note) c.memory.push({age:S.age,note});
   return fresh;
 }
+function fmn(n){ n=Math.round(+n||0); const s=String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g,','); return (n<0?'-':'')+s; }   // locale-independent thousands commas (display only)
 function fcm(n){ n=Math.max(0,n); if(n>=1e9)return '$'+(n/1e9).toFixed(1)+'B'; if(n>=1e6)return '$'+(n/1e6).toFixed(1)+'M'; if(n>=1e3)return '$'+(n/1e3).toFixed(0)+'K'; return '$'+Math.round(n); }
 function karma(d){ S.karma=clamp((S.karma||0)+d,-100,100);
   if(d>=5) ledgerAdd('charity', d*6, {note:'A genuine act of kindness.'});          // good works → a respected name
@@ -10257,7 +10262,7 @@ function hookupTonight(){
   // clubs are 18+ — minors need a fake ID, and the bouncer might catch it
   if(S.age<18){
     if(!S.fakeID){ resultModal('Nightlife','Carded at the Door','🪪',[`The bouncer cards you and you're <b>${S.age}</b> — no entry.`,`Get a <b>fake ID</b> from the Black Market if you want to risk it.`],()=>setTab('life')); return; }
-    if(rng(0,100)<35){ chg('happy',-4); if(rng(0,100)<30){ setFlag('arrested'); setFlag('criminal'); const fine=rng(200,1500); money(-fine); pushLog(`My fake ID got flagged at the club — <b>detained</b>, ${cur()}${fine.toLocaleString()} fine. 🚔`,[['bad','Fake ID caught']]); resultModal('Nightlife','Fake ID Flagged!','🚔',[`The bouncer spotted the fake and called it in. Detained, fined ${cur()}${fine.toLocaleString()}.`],()=>setTab('life')); }
+    if(rng(0,100)<35){ chg('happy',-4); if(rng(0,100)<30){ setFlag('arrested'); gainCriminalRecord(); const fine=rng(200,1500); money(-fine); pushLog(`My fake ID got flagged at the club — <b>detained</b>, ${cur()}${fine.toLocaleString()} fine. 🚔`,[['bad','Fake ID caught']]); resultModal('Nightlife','Fake ID Flagged!','🚔',[`The bouncer spotted the fake and called it in. Detained, fined ${cur()}${fine.toLocaleString()}.`],()=>setTab('life')); }
       else { pushLog(`The bouncer saw through my fake ID and turned me away. 🚫`,[['flag','Turned away']]); resultModal('Nightlife','Turned Away','🚫',[`The bouncer wasn't buying it. Better luck next time.`],()=>setTab('life')); }
       return; }
   }
@@ -10363,7 +10368,7 @@ function quitAddiction(){ closeModal();
   }
 }
 function doctorCheckup(){ closeModal(); const cost=rng(80,300); if(!spend(cost))return; chg('health',rng(2,6));
-  const scene=pick([`The doctor runs ${S.age>=60?'the full battery — bloods, heart, the works':'the usual tests'} (${cur()}${cost}).`,`Cold stethoscope, blood pressure cuff, the little hammer on the knee (${cur()}${cost}).`,`You read the eye chart, breathe deep, say "ahh" (${cur()}${cost}).`]);
+  const scene=pick([`The doctor runs ${S.age>=60?'the full battery — bloods, heart, the works':'the usual tests'} (${cur()}${fmn(cost)}).`,`Cold stethoscope, blood pressure cuff, the little hammer on the knee (${cur()}${fmn(cost)}).`,`You read the eye chart, breathe deep, say "ahh" (${cur()}${fmn(cost)}).`]);
   const notes=[];
   if(S.age>=55) notes.push(`"At your age, these visits are how you stay ahead of trouble. Keep coming."`);
   if((S.fitness||50)<35) notes.push(`The doctor eyes the chart, then you: "Your fitness is… let's say 'untapped potential.' Move more."`);
@@ -11172,7 +11177,7 @@ function buyContraband(i){ closeModal(); const r=(S._contraband||[])[i]; if(!r)r
   const crime=(COUNTRIES[S.country]||{}).crime||50;
   const bust=rng(0,100) < (20 - crime/5 - (S.karma||0)/12);
   spend(r.price);
-  if(bust){ const fine=rng(1000,9000); money(-fine); karma(-4); setFlag('criminal'); setFlag('arrested');
+  if(bust){ const fine=rng(1000,9000); money(-fine); karma(-4); gainCriminalRecord(); setFlag('arrested');
     pushLog(`🚔 A contraband buy from ${r.m} was a <b>sting</b> — arrested, ${cur()}${fine.toLocaleString()} in fines.`,[['bad','Busted buying contraband']]);
     resultModal('Busted!','Sting Operation','🚔',[`The "${r.name}" deal was a police sting. Arrested and fined <b>${cur()}${fine.toLocaleString()}</b> — and you've a record now.`],()=>setTab('life')); return; }
   const fake = rng(0,100)<32; const fakeFrac = fake?rng(8,22)/100:1;   // contraband is fake far more often than legit shops
@@ -11185,7 +11190,7 @@ function blackMarketBuy(kind, cost){ closeModal();
   const crime=(COUNTRIES[S.country]||{}).crime||50;
   const bust = rng(0,100) < (22 - crime/4 - (S.karma||0)/10);   // safer where crime is high & karma low (you blend in)
   spend(cost);
-  if(bust){ const fine=rng(500,5000); money(-fine); karma(-3); setFlag('criminal'); setFlag('arrested');
+  if(bust){ const fine=rng(500,5000); money(-fine); karma(-3); gainCriminalRecord(); setFlag('arrested');
     pushLog(`I got <b>busted</b> buying ${kind==='fakeid'?'a fake ID':kind==='gun'?'an illegal gun':kind==='beer'?'booze':'drugs'} on the black market — arrested, ${cur()}${fine.toLocaleString()} in fines. 🚔`,[['bad','Arrested']]);
     resultModal('Busted!','Arrested','🚔',[`The deal was a sting. You were <b>arrested</b> and fined <b>${cur()}${fine.toLocaleString()}</b> — and now you have a record.`],()=>setTab('life')); return; }
   let title='Deal Done', line='';
@@ -11628,7 +11633,7 @@ function commitCrime(k){ const u=uw(); let c=CRIMES.find(x=>x.k===k);
   if(inJail()){ toast('You’re locked up.'); return; }
   const skill = (c.smarts? S.stats.smarts/3 : 0) + pers('boldness')/5 + u.rep/8;
   const caught = rng(0,100) < (c.risk + u.heat/4 - skill);
-  if(caught){ u.busts++; u.heat=clamp(u.heat+c.heat,0,100); setFlag('criminal'); setFlag('arrested'); karma(-3); S.rep=clamp((S.rep||0)-5,-100,100);
+  if(caught){ u.busts++; u.heat=clamp(u.heat+c.heat,0,100); gainCriminalRecord(); setFlag('arrested'); karma(-3); S.rep=clamp((S.rep||0)-5,-100,100);
     ledgerAdd('crime', 20+c.rep*2, {note:`Caught committing ${c.name.toLowerCase()}.`});
     // serious/repeat offenses → prison
     const sentence = (c.big?rng(4,9):c.violent?rng(2,5):u.busts>=3?rng(1,4):0);
@@ -11649,7 +11654,7 @@ function commitCrime(k){ const u=uw(); let c=CRIMES.find(x=>x.k===k);
   resultModal('Score!', c.name, c.icon, [`Clean getaway — you scored <b>${cur()}${take.toLocaleString()}</b>.`,`Street rep is now <b>${u.rep}</b>${u.rank<0&&u.rep>=8?` — high enough that a crew might take notice.`:''}`,statBar('🔥 Police Heat',u.heat)],()=>underworldMenu()); }
 function joinCrew(){ const u=uw(); if(u.rank>=0){ closeModal(); return; } closeModal();   // modalpick-covered → no logAct
   if(u.rep<8){ toast('Build more street rep first.'); return; }
-  u.crew=u.crew||genCrew(); u.rank=0; setFlag('criminal'); setFlag('made_man');
+  u.crew=u.crew||genCrew(); u.rank=0; gainCriminalRecord(); setFlag('made_man');
   ledgerAdd('crime', 16, {note:`Got made into ${u.crew}.`});
   pushLog(`🤝 I got <b>made</b> into <b>${u.crew}</b> as an Associate. There's no leaving this life now.`,[['bad',`Joined ${u.crew}`]]);
   resultModal('Made','Welcome to the Family 🤝','🤝',[`<b>${u.crew}</b> took you in as an <b>Associate</b>.`,`Do jobs, build rep, and climb the ranks — Soldier, Enforcer, Capo, Underboss… Boss. But once you're made, you're in for life.`],()=>underworldMenu()); }
@@ -11657,7 +11662,7 @@ function crewJob(){ const u=uw(); if(u.rank<0){ closeModal(); return; } closeMod
   if(inJail()){ toast('You’re locked up.'); return; }
   const rk=UNDERWORLD_RANKS[u.rank]; const violent=rng(0,100)<40+u.rank*6;
   const caught = rng(0,100) < (24 + u.heat/4 - pers('boldness')/5 - u.rep/6);
-  if(caught){ u.busts++; u.heat=clamp(u.heat+12,0,100); setFlag('criminal'); setFlag('arrested'); ledgerAdd('crime',18,{note:`Caught on a job for ${u.crew}.`});
+  if(caught){ u.busts++; u.heat=clamp(u.heat+12,0,100); gainCriminalRecord(); setFlag('arrested'); ledgerAdd('crime',18,{note:`Caught on a job for ${u.crew}.`});
     const sentence=u.rank>=2?rng(2,5):(u.busts>=3?rng(1,3):0);
     if(sentence>0){ u.jailUntil=S.age+sentence; addTrauma('prison',rng(20,38),'the years you lost inside'); chg('happy',-10);
       pushLog(`🚔 A crew job went bad — <b>${sentence} years</b> in prison. ${u.crew} will remember you kept your mouth shut.`,[['bad',`Prison: ${sentence}yr`]]); u.rep=Math.min(120,u.rep+4);
@@ -11683,7 +11688,7 @@ function underworldYear(){ const u=uw();
   if(u.rank>=1){ const passive=Math.round(rng(1000,4000)*u.rank*priceMult()); money(passive);   // a cut of the crew's action
     if(passive>3000) pushLog(`💰 My cut from ${u.crew}'s operations: <b>${cur()}${passive.toLocaleString()}</b>.`,[['bad',`+${cur()}${passive.toLocaleString()} (crew)`]]); }
   if(u.heat>=60 && rng(0,100) < (u.heat-55)/2){   // high heat → a raid/bust
-    setFlag('criminal'); setFlag('arrested'); const sentence=rng(1,4); u.jailUntil=S.age+sentence; u.heat=clamp(u.heat-40,0,100); addTrauma('prison',rng(18,32),'a raid that put you away'); chg('happy',-10);
+    gainCriminalRecord(); setFlag('arrested'); const sentence=rng(1,4); u.jailUntil=S.age+sentence; u.heat=clamp(u.heat-40,0,100); addTrauma('prison',rng(18,32),'a raid that put you away'); chg('happy',-10);
     pushLog(`🚔 The heat caught up with me — a raid, and <b>${sentence} years</b> inside.`,[['bad',`Prison: ${sentence}yr`]]); }
 }
 
@@ -11954,9 +11959,9 @@ function setOFPrice(){ const of=S.sm&&S.sm.platforms.of; if(!of)return;
   logAct('call',{fn:'setOFPrice'});
   const opts=[5,10,15,25,50].filter(p=>p<=OF_MAX_PRICE);
   openModal({banner:'FanVault', title:'Subscription Price', icon:'💲', closable:true,
-    text:`Set your monthly price (max <b>${cur()}${OF_MAX_PRICE}</b>). Higher price = more per sub, but fewer new subs.`,
-    choices: opts.map(p=>({label:`${cur()}${p}/mo${(of.subPrice||10)===p?' ✓':''}`, fn:()=>{
-      of.subPrice=p; closeModal(); toast(`💲 FanVault price set to ${cur()}${p}/mo.`); setTab('social');
+    text:`Set your monthly price (max <b>${cur()}${fmn(OF_MAX_PRICE)}</b>). Higher price = more per sub, but fewer new subs.`,
+    choices: opts.map(p=>({label:`${cur()}${fmn(p)}/mo${(of.subPrice||10)===p?' ✓':''}`, fn:()=>{
+      of.subPrice=p; closeModal(); toast(`💲 FanVault price set to ${cur()}${fmn(p)}/mo.`); setTab('social');
     }})) });
 }
 /* ---- FanVault top spenders ("whales") — court them, collect their gifts, meet them ---- */
@@ -12477,15 +12482,15 @@ const VENUE_EVENTS=[
 ];
 const OVERSEAS=[
   /* real recurring world events at their REAL cadence — multi-year ones live on the world calendar (you WAIT for the edition year) */
-  {id:'worldcup', name:'World Cup Final',       icon:'🏆', country:'br', cost:1200, travel:2500, happy:18, fame:3, period:4},
-  {id:'olympics', name:'Summer Olympics',       icon:'🥇', country:'jp', cost:900,  travel:2200, happy:15, fame:2, period:4},
-  {id:'wolympics',name:'Winter Olympics',       icon:'⛷️', country:'ch', cost:1100, travel:2400, happy:15, fame:2, period:4},
-  {id:'eurofinal',name:'Euro Championship Final',icon:'⚽', country:'de', cost:900,  travel:2100, happy:15, fame:2, period:4},
-  {id:'cricketwc',name:'Cricket World Cup',     icon:'🏏', country:'in', cost:500,  travel:2300, happy:14, fame:2, period:4},
-  {id:'rugbywc',  name:'Rugby World Cup',       icon:'🏉', country:'nz', cost:700,  travel:2800, happy:14, fame:2, period:4},
+  {id:'worldcup', name:'World Cup Final',       icon:'🏆', country:'br', cost:1200, travel:2500, happy:18, fame:3, period:4, phaseOff:0},
+  {id:'olympics', name:'Summer Olympics',       icon:'🥇', country:'jp', cost:900,  travel:2200, happy:15, fame:2, period:4, phaseOff:2},
+  {id:'wolympics',name:'Winter Olympics',       icon:'⛷️', country:'ch', cost:1100, travel:2400, happy:15, fame:2, period:4, phaseOff:1},
+  {id:'eurofinal',name:'Euro Championship Final',icon:'⚽', country:'de', cost:900,  travel:2100, happy:15, fame:2, period:4, phaseOff:2},
+  {id:'cricketwc',name:'Cricket World Cup',     icon:'🏏', country:'in', cost:500,  travel:2300, happy:14, fame:2, period:4, phaseOff:3},
+  {id:'rugbywc',  name:'Rugby World Cup',       icon:'🏉', country:'nz', cost:700,  travel:2800, happy:14, fame:2, period:4, phaseOff:1},
   {id:'expo',     name:'The World Expo',        icon:'🌍', country:'ae', cost:300,  travel:2400, happy:11, fame:1, period:5},
-  {id:'rydercup', name:'The Ryder Cup',         icon:'⛳', country:'uk', cost:800,  travel:2000, happy:12, fame:2, period:2},
-  {id:'biennale', name:'Venice Biennale',       icon:'🎨', country:'it', cost:400,  travel:1900, happy:12, fame:2, period:2},
+  {id:'rydercup', name:'The Ryder Cup',         icon:'⛳', country:'uk', cost:800,  travel:2000, happy:12, fame:2, period:2, phaseOff:1},
+  {id:'biennale', name:'Venice Biennale',       icon:'🎨', country:'it', cost:400,  travel:1900, happy:12, fame:2, period:2, phaseOff:0},
   {id:'superbowl',name:'Super Bowl',            icon:'🏈', country:'us', cost:2000, travel:2000, happy:16, fame:3, period:1},
   {id:'fashion',  name:'Paris Fashion Week',    icon:'👗', country:'fr', cost:1500, travel:1800, happy:14, fame:3, period:1},
   {id:'wimbledon',name:'Wimbledon Final',       icon:'🎾', country:'uk', cost:1300, travel:2000, happy:13, fame:2, period:1},
@@ -12512,9 +12517,20 @@ const OVERSEAS=[
    this menu: if the World Cup last ran two years ago, you wait two more. Randomized per
    dynasty, identical on replay, and it carries across heirs like the economy does. */
 function _evtHash(s){ let h=0; for(let i=0;i<s.length;i++) h=(Math.imul(h,131)+s.charCodeAt(i))>>>0; return h; }
-function marqueePhase(e){ if(!e.period||e.period<=1) return 0; return Math.floor(econHash(_evtHash(e.id)+424242)*e.period)%e.period; }
+function marqueePhase(e){ if(!e.period||e.period<=1) return 0;
+  // 🗓️ SCATTERED like the real calendar: events with a curated phaseOff share one dynasty-random base year B,
+  // then stagger off it (WC year ≠ Olympics year ≠ Cricket year…) so the big editions never all pile into one year
+  if(e.phaseOff!=null){ const B=Math.floor(econHash(0x5EED)*60); return (B+e.phaseOff)%e.period; }
+  return Math.floor(econHash(_evtHash(e.id)+424242)*e.period)%e.period; }
 function marqueeWait(e){ if(!e.period||e.period<=1) return 0; const wy=S.worldYear||0; return (marqueePhase(e)-(wy%e.period)+e.period)%e.period; }   // 0 = ON this year
 function marqueeAttended(e){ return (S._lastMarquee||{})[e.id]===(S.worldYear||0); }   // already went to THIS edition/year
+function marqueeEdition(e){ const wy=S.worldYear||0; if(!e.period||e.period<=1) return wy; return Math.floor((wy-marqueePhase(e)+e.period*1000)/e.period); }   // which edition number this/next is
+function marqueeHost(e){   // 🌍 rotating hosts — the NEXT edition's host is already decided (pure fn of seed+edition, no RNG consumed)
+  const pool=(typeof EVENT_HOSTS!=='undefined'&&EVENT_HOSTS[e.id])||null;
+  if(!pool||pool.length<2) return (pool&&pool[0])||e.country;
+  const ed=marqueeEdition(e)+(marqueeWait(e)>0?1:0);   // if we are between editions, show the UPCOMING host
+  return pool[Math.floor(econHash((_evtHash(e.id)^0x9e3779b9)+ed*7919)*pool.length)%pool.length] || e.country;
+}
 /* ---- Passport — a real multi-step process: photo → office → file → wait → come back to collect ---- */
 let _ppPhoto=null;
 function applyPassport(){
@@ -12584,6 +12600,11 @@ function attendVenue(id){
   logAct('call',{fn:'attendVenue',args:[id]});
   chg('happy',e.happy);
   const lines=[`I went to the ${e.name}!`, `Spent ${cur()}${e.cost.toLocaleString()} · +${e.happy} Happiness.`];
+  // 🌟 fame perks — stars get comped, and crowds notice them
+  if((S.fame||0)>=52 && rng(0,100) < 15+Math.round((S.fame||0)/5)){ money(e.cost);
+    lines.push(`🌟 The venue <b>comped your ticket</b> — having you there is the promotion.`); }
+  else if((S.fame||0)>=32 && rng(0,100)<30){ const f2=Math.round((S.fame||0)*rng(30,90)); if(S.sm&&S.sm.joined){ bumpFollowers(f2); }
+    chg('happy',1); lines.push(`📸 ${typeof FAME_TRAVEL_PERKS!=='undefined'?pick(FAME_TRAVEL_PERKS.mobbed):'People recognized you — a flurry of selfies before you found your seat.'}${S.sm&&S.sm.joined?` (+${fc(f2)} followers)`:''}`); }
   if(e.sport){ const a=rng(0,4), b=rng(0,4);
     lines.push(`Final score: ${a}–${b}. ${a>b?'My team won! 🎉':a===b?"It's a draw.":'My team lost. 😕'}`);
     if(a>b) chg('happy',2);
@@ -12598,7 +12619,7 @@ function attendOverseas(id){
   const wait=marqueeWait(e);
   if(wait>0){ toast(`🗓️ The ${e.name} is not on this year — the next edition is in ${wait} year${wait===1?'':'s'}.`); return; }
   if(marqueeAttended(e)){ toast(`✅ You already went to the ${e.name} this ${e.period>1?'edition':'year'} — the next one is in ${e.period} year${e.period===1?'':'s'}.`); return; }
-  const abroad=e.country!==S.country;
+  const host=marqueeHost(e), abroad=host!==S.country;   // 🌍 this edition's host decides whether YOU are travelling abroad
   if(abroad && !passportValid()){ toast('🛂 You need a passport to travel abroad.'); return; }
   logAct('call',{fn:'attendOverseas',args:[id]});
   if(!abroad){ doTravel(e,false,'economy'); return; }
@@ -12615,12 +12636,20 @@ function doTravel(e,abroad,cls){
   const total=e.cost+travel;
   if(!spend(total))return;
   S._lastMarquee=S._lastMarquee||{}; S._lastMarquee[e.id]=S.worldYear||0;   // 🗓️ mark THIS edition attended (only once you actually paid & went)
-  const comfort={economy:0,business:4,first:9}[cls];
+  // 🌟 fame perk — a recognized face gets bumped up a class for free
+  let clsUp=cls;
+  if(abroad && (S.fame||0)>=40 && cls!=='first' && rng(0,100) < 10+Math.round((S.fame||0)/5)){
+    clsUp = cls==='economy'?'business':'first';
+  }
+  const comfort={economy:0,business:4,first:9}[clsUp];
   chg('happy',e.happy+comfort);
-  const clsTxt={economy:'economy',business:'business class 🥂',first:'first class 👑'}[cls];
+  const clsTxt={economy:'economy',business:'business class 🥂',first:'first class 👑'}[clsUp];
   const lines=[`I ${abroad?`flew ${clsTxt} to experience`:'attended'} ${e.name}.`,
     `Total cost: ${cur()}${total.toLocaleString()} · +${e.happy+comfort} Happiness.`];
+  if(clsUp!==cls) lines.splice(1,0,`🌟 ${typeof FAME_TRAVEL_PERKS!=='undefined'?pick(FAME_TRAVEL_PERKS.upgrade):`The gate agent recognized you — <b>free upgrade</b> to ${clsTxt}.`}`);
   if(S.sm&&S.sm.joined){ const f=(e.fame||1)*rng(800,3000); bumpFollowers(f); lines.push(`+${fc(f)} followers.`); }
+  if((S.fame||0)>=32 && rng(0,100)<35){ const f2=Math.round((S.fame||0)*rng(40,120)); if(S.sm&&S.sm.joined)bumpFollowers(f2); chg('happy',1);
+    lines.push(`📸 ${typeof FAME_TRAVEL_PERKS!=='undefined'?pick(FAME_TRAVEL_PERKS.mobbed):'You were recognized in the crowd — selfies, cheers, a little chaos.'}${S.sm&&S.sm.joined?` (+${fc(f2)} followers)`:''}`); }
   const meetChance={economy:10,business:18,first:32}[cls];
   if(S.celebs && rng(0,100)<meetChance){ const cel=unmetCeleb(); meetCeleb(cel,`Met ${abroad?`flying ${cls} to`:'at'} ${e.name}.`,rng(10,22)); lines.push(`🤩 I met <b>${cel.name}</b> ${cls==='first'?'in the first-class lounge':'on the trip'}!`); }
   pushLog(`I ${abroad?`flew ${cls} to`:'attended'} ${e.name} ${e.icon}. (−${cur()}${total.toLocaleString()})`,[['good',`+${e.happy+comfort} Happiness`]]);
@@ -12644,12 +12673,13 @@ function renderEvents(){
       .map(e=>eventRow(e.icon,e.name,`${cur()}${e.cost.toLocaleString()}`,`attendVenue('${e.id}')`)).join('');
   h+=`<div class="genlabel">Overseas Experiences ✈️</div>`;
   h+=OVERSEAS.slice().sort((a,b)=>marqueeWait(a)-marqueeWait(b) || b.period-a.period).map(e=>{   // what's ON leads; the rarest editions rank first
-    const abroad=e.country!==S.country, tot=e.cost+(abroad?e.travel:0); const wait=marqueeWait(e);
-    const note = wait>0 ? `🗓️ next edition in ${wait} yr${wait===1?'':'s'} · every ${e.period} yrs`
+    const host=marqueeHost(e), abroad=host!==S.country, tot=e.cost+(abroad?e.travel:0); const wait=marqueeWait(e);
+    const hostC=COUNTRIES[host]||COUNTRIES[e.country];
+    const note = wait>0 ? `🗓️ next edition in ${wait} yr${wait===1?'':'s'} · ${hostC.flag} ${hostC.name} · every ${e.period} yrs`
       : marqueeAttended(e) ? `✅ went this ${e.period>1?'edition':'year'}`
       : (abroad&&!passportValid()) ? '🛂 needs passport'
-      : e.period>1 ? `🔴 ON THIS YEAR · every ${e.period} yrs` : `every 1 yr`;
-    return eventRow(e.icon,`${e.name} · ${COUNTRIES[e.country].flag}`,`${cur()}${tot.toLocaleString()}`,`attendOverseas('${e.id}')`,note);
+      : e.period>1 ? `🔴 ON THIS YEAR in ${hostC.flag} ${hostC.name} · every ${e.period} yrs` : `every 1 yr`;
+    return eventRow(e.icon,`${e.name} · ${hostC.flag}`,`${cur()}${tot.toLocaleString()}`,`attendOverseas('${e.id}')`,note);
   }).join('');
   v.innerHTML=h;
 }
@@ -12962,7 +12992,7 @@ function renderGigs(){ const v=document.getElementById('gigsView'); if(!v||!S)re
   h+=`<div class="genlabel">Available Gigs <span>${S.gigs.filter(g=>!g.done).length} open this year</span></div>`;
   h+=S.gigs.map((g,i)=>`<div class="platrow" onclick="${g.done?'':`workGig(${i})`}" style="${g.done?'opacity:.5':''}">
     <div class="picon" style="background:linear-gradient(135deg,#2a3340,#1b222d)">${g.icon}</div>
-    <div class="pinfo"><div class="pn">${g.name}${g.done?' ✓':''}</div><div class="pf">${cur()}${g.rate}+/hour</div></div>
+    <div class="pinfo"><div class="pn">${g.name}${g.done?' ✓':''}</div><div class="pf">${cur()}${fmn(g.rate)}+/hour</div></div>
     <span class="parrow">${g.done?'✓':'›'}</span></div>`).join('');
   v.innerHTML=h;
 }
@@ -15105,7 +15135,7 @@ function schoolTrip(){ if(!S||isLocked())return; if(!['primary','high','college'
   const pool=SCHOOL_TRIPS.slice(), opts=[]; while(opts.length<3 && pool.length){ opts.push(pool.splice(rng(0,pool.length-1),1)[0]); }
   openModal({banner:'School Trip', title:'🚌 Plan a School Trip', icon:'🚌', closable:true,
     text:`Sign the permission slip and pick where the class is headed. There's a small fee — and no telling how the day will go.`,
-    choices: opts.map(t=>({label:`${t.icon} ${t.label}`, tip:`Fee ~${cur()}${t.fee[1]}`, alt:true, fn:()=>doTrip(t.n,t.icon)}))
+    choices: opts.map(t=>({label:`${t.icon} ${t.label}`, tip:`Fee ~${cur()}${fmn(t.fee[1])}`, alt:true, fn:()=>doTrip(t.n,t.icon)}))
       .concat([{label:'‹ Back', fn:()=>{ closeModal(); setTab('school'); }}]) });
 }
 function doTrip(name,icon){ if(!onceYear('school_trip','went on a trip')){ setTab('school'); return; }
@@ -15309,10 +15339,10 @@ function renderSocial(){
   }
   if(sm.active==='of' && S.age>=18){
     const price=plat.subPrice||10;
-    h+=`<div class="genlabel">Subscription <span>${cur()}${price}/mo · max ${cur()}${OF_MAX_PRICE}</span></div>
+    h+=`<div class="genlabel">Subscription <span>${cur()}${fmn(price)}/mo · max ${cur()}${fmn(OF_MAX_PRICE)}</span></div>
       <div class="card" style="padding:13px">
         <div class="pf" style="margin-bottom:8px">FanVault is personal — subscribers want <b>more of you</b>. Charge more per sub, and court your <b>top spenders</b> below.</div>
-        <button class="verifybtn" style="margin:0" onclick="setOFPrice()">💲 Set Subscription Price (now ${cur()}${price}/mo)</button>
+        <button class="verifybtn" style="margin:0" onclick="setOFPrice()">💲 Set Subscription Price (now ${cur()}${fmn(price)}/mo)</button>
       </div>`;
     ensureWhales();
     const whales=(plat.whales||[]).slice().sort((a,b)=>b.spent-a.spent);
@@ -15644,8 +15674,8 @@ const FAME_EVENTS = [
     text:`A company wants your face on their product. The check is fat. The product is... questionable.`,
     choices:[
       {label:'Sign the big deal', tip:'Money now · reputation risk', apply:()=>{ const fee=rng(5000,60000); money(fee); bumpFame(rng(2,5));
-        if(rng(0,100)<25){ karma(-2); bumpFame(-rng(4,8)); ledgerAdd('scandal',10,{note:'Shilled a bad product.'}); return {text:`The product turned out to be a scam. Your fans feel sold to, and they are saying so — loudly. You keep the ${cur()}${fee} though.`,tags:[['bad',`Endorsement backfired +${cur()}${fee}`]]}; }
-        return {text:`You smiled for the camera and cashed ${cur()}${fee}. Easy money.`,tags:[['good',`Endorsement +${cur()}${fee}`]]}; }},
+        if(rng(0,100)<25){ karma(-2); bumpFame(-rng(4,8)); ledgerAdd('scandal',10,{note:'Shilled a bad product.'}); return {text:`The product turned out to be a scam. Your fans feel sold to, and they are saying so — loudly. You keep the ${cur()}${fmn(fee)} though.`,tags:[['bad',`Endorsement backfired +${cur()}${fmn(fee)}`]]}; }
+        return {text:`You smiled for the camera and cashed ${cur()}${fmn(fee)}. Easy money.`,tags:[['good',`Endorsement +${cur()}${fmn(fee)}`]]}; }},
       {label:'Hold out for a brand you believe in', tip:'Integrity · slower money', apply:()=>{ karma(2); bumpFame(rng(2,5)); chg('happy',3); return {text:`You turned down the cash and waited for the right fit. Your fans respect the line you drew.`,tags:[['good','Kept your integrity']]}; }},
       {label:'Refuse all sponsorships', apply:()=>({text:`No logos, no strings. You keep your name your own.`,tags:[['flag','Stayed unsponsored']]})},
     ]})},
@@ -15656,7 +15686,7 @@ const FAME_EVENTS = [
     text:`Fame opens doors — a studio hands you the mic. Everyone with a following seems to release a track sooner or later.`,
     choices:[
       {label:'Pour your heart into it', tip:'Craft · could soar or flop', apply:()=>{ const cost=Math.min(S.money,rng(500,4000)); money(-cost);
-        if(rng(0,100)<50){ bumpFame(rng(8,15)); const roy=rng(2000,25000); money(roy); chg('happy',7); ledgerAdd('triumph',12,{note:'Released a hit single.'}); return {text:`The track climbs the charts. Royalties roll in — ${cur()}${roy} and counting.`,tags:[['good',`Hit single +${cur()}${roy}`]]}; }
+        if(rng(0,100)<50){ bumpFame(rng(8,15)); const roy=rng(2000,25000); money(roy); chg('happy',7); ledgerAdd('triumph',12,{note:'Released a hit single.'}); return {text:`The track climbs the charts. Royalties roll in — ${cur()}${fmn(roy)} and counting.`,tags:[['good',`Hit single +${cur()}${fmn(roy)}`]]}; }
         bumpFame(-rng(1,4)); return {text:`The song sank without a ripple. The critics were, briefly, cruel.`,tags:[['bad','The single flopped']]}; }},
       {label:'Chase a cheap viral gimmick', tip:'Fast · shallow', apply:()=>{
         if(rng(0,100)<55){ bumpFame(rng(5,10)); return {text:`It is dumb, it is catchy, and it is stuck in everyone's head for a week.`,tags:[['good','Cheap viral hit']]}; }
@@ -15669,9 +15699,9 @@ const FAME_EVENTS = [
     text:`A director offers you a role in a real film. It could be a career-maker — or a flop with your name above the title.`,
     choices:[
       {label:'Take the challenging lead', tip:'Prestige · pressure', apply:()=>{
-        if(rng(0,100)<52){ bumpFame(rng(10,18)); const pay=rng(10000,120000); money(pay); chg('happy',8); ledgerAdd('triumph',16,{note:'Acclaimed film role.'}); return {text:`The performance stuns. Awards buzz, a ${cur()}${pay} payday, and a whole new tier of fame.`,tags:[['good',`Breakout role +${cur()}${pay}`]]}; }
-        bumpFame(-rng(4,9)); const pay=rng(5000,40000); money(pay); return {text:`The film bombed and the reviews name-checked you specifically. At least the ${cur()}${pay} cleared.`,tags:[['bad',`Box-office flop +${cur()}${pay}`]]}; }},
-      {label:'Take an easy paycheck role', tip:'Safe money', apply:()=>{ const pay=rng(8000,50000); money(pay); bumpFame(rng(2,5)); return {text:`A forgettable part in a forgettable movie. The ${cur()}${pay} is real enough.`,tags:[['good',`Paycheck role +${cur()}${pay}`]]}; }},
+        if(rng(0,100)<52){ bumpFame(rng(10,18)); const pay=rng(10000,120000); money(pay); chg('happy',8); ledgerAdd('triumph',16,{note:'Acclaimed film role.'}); return {text:`The performance stuns. Awards buzz, a ${cur()}${fmn(pay)} payday, and a whole new tier of fame.`,tags:[['good',`Breakout role +${cur()}${fmn(pay)}`]]}; }
+        bumpFame(-rng(4,9)); const pay=rng(5000,40000); money(pay); return {text:`The film bombed and the reviews name-checked you specifically. At least the ${cur()}${fmn(pay)} cleared.`,tags:[['bad',`Box-office flop +${cur()}${fmn(pay)}`]]}; }},
+      {label:'Take an easy paycheck role', tip:'Safe money', apply:()=>{ const pay=rng(8000,50000); money(pay); bumpFame(rng(2,5)); return {text:`A forgettable part in a forgettable movie. The ${cur()}${fmn(pay)} is real enough.`,tags:[['good',`Paycheck role +${cur()}${fmn(pay)}`]]}; }},
     ]})},
 
 /* Write a memoir / book */
@@ -15680,9 +15710,9 @@ const FAME_EVENTS = [
     text:`A publisher wants your life story. The question is how much of it you are willing to tell.`,
     choices:[
       {label:'Spill every secret', tip:'Sells · burns bridges', apply:()=>{ karma(-2); const adv=rng(5000,80000); money(adv);
-        if(rng(0,100)<70){ bumpFame(rng(8,15)); ledgerAdd('scandal',9,{note:'Tell-all memoir.'}); return {text:`The tell-all flies off shelves — ${cur()}${adv} and a scandal a chapter. Some old friends will never speak to you again.`,tags:[['bad',`Tell-all bestseller +${cur()}${adv}`]]}; }
-        bumpFame(rng(3,7)); return {text:`It sold, but the lawsuits over what you wrote may cost more than the ${cur()}${adv} advance.`,tags:[['bad',`Memoir + legal trouble`]]}; }},
-      {label:'Keep it classy and guarded', tip:'Respectable', apply:()=>{ const adv=rng(4000,50000); money(adv); bumpFame(rng(4,8)); karma(1); return {text:`A gracious, careful book. Well reviewed, ${cur()}${adv} banked, no bridges burned.`,tags:[['good',`Memoir published +${cur()}${adv}`]]}; }},
+        if(rng(0,100)<70){ bumpFame(rng(8,15)); ledgerAdd('scandal',9,{note:'Tell-all memoir.'}); return {text:`The tell-all flies off shelves — ${cur()}${fmn(adv)} and a scandal a chapter. Some old friends will never speak to you again.`,tags:[['bad',`Tell-all bestseller +${cur()}${fmn(adv)}`]]}; }
+        bumpFame(rng(3,7)); return {text:`It sold, but the lawsuits over what you wrote may cost more than the ${cur()}${fmn(adv)} advance.`,tags:[['bad',`Memoir + legal trouble`]]}; }},
+      {label:'Keep it classy and guarded', tip:'Respectable', apply:()=>{ const adv=rng(4000,50000); money(adv); bumpFame(rng(4,8)); karma(1); return {text:`A gracious, careful book. Well reviewed, ${cur()}${fmn(adv)} banked, no bridges burned.`,tags:[['good',`Memoir published +${cur()}${fmn(adv)}`]]}; }},
     ]})},
 
 /* A single post goes viral */
@@ -15716,8 +15746,8 @@ const FAME_EVENTS = [
       {label:'Give every fan real time', tip:'Draining · beloved', apply:()=>{ chg('energy',-8); chg('happy',6); karma(2); bumpFame(rng(3,7)); return {text:`You stayed until the last person left, and meant every hug. Word spreads that you are the real deal.`,tags:[['good','Beloved by the base']]}; }},
       {label:'Speed-run the line', tip:'Efficient · cooler', apply:()=>{ bumpFame(rng(1,3)); return {text:`Handshake, photo, next. You cleared the room fast. A few fans left a little deflated.`,tags:[['flag','Kept it brief']]}; }},
       {label:'Charge for premium photos', tip:'Money · optics', apply:()=>{ const take=rng(2000,15000); money(take); karma(-1);
-        if(rng(0,100)<35){ bumpFame(-rng(2,5)); ledgerAdd('scandal',5,{note:'Charged fans steep prices.'}); return {text:`The ticket prices leaked and fans felt fleeced. You made ${cur()}${take}, and a few think less of you.`,tags:[['bad',`Cashed in +${cur()}${take}`]]}; }
-        return {text:`The premium packages sold out. ${cur()}${take} richer, no harm done.`,tags:[['good',`Meet-and-greet +${cur()}${take}`]]}; }},
+        if(rng(0,100)<35){ bumpFame(-rng(2,5)); ledgerAdd('scandal',5,{note:'Charged fans steep prices.'}); return {text:`The ticket prices leaked and fans felt fleeced. You made ${cur()}${fmn(take)}, and a few think less of you.`,tags:[['bad',`Cashed in +${cur()}${fmn(take)}`]]}; }
+        return {text:`The premium packages sold out. ${cur()}${fmn(take)} richer, no harm done.`,tags:[['good',`Meet-and-greet +${cur()}${fmn(take)}`]]}; }},
     ]})},
 
 /* Collab with a bigger star */
@@ -15783,7 +15813,7 @@ const FAME_EVENTS = [
   build:S=>({ yr:`Age ${S.age}`, title:'The Charity Gala 🎗️',
     text:`You are invited to headline a glittering charity gala. Do good, be seen doing good — the line between the two is thin tonight.`,
     choices:[
-      {label:'Give big and mean it', tip:'Money · karma · fame', apply:()=>{ const gift=Math.min(S.money,rng(3000,40000)); money(-gift); karma(4); bumpFame(rng(5,10)); ledgerAdd('charity',16,{note:'Headlined a charity gala.'}); return {text:`You wrote a real check and said something true from the podium. The room stood, and the coverage glowed.`,tags:[['good',`Gave ${cur()}${gift} to charity`]]}; }},
+      {label:'Give big and mean it', tip:'Money · karma · fame', apply:()=>{ const gift=Math.min(S.money,rng(3000,40000)); money(-gift); karma(4); bumpFame(rng(5,10)); ledgerAdd('charity',16,{note:'Headlined a charity gala.'}); return {text:`You wrote a real check and said something true from the podium. The room stood, and the coverage glowed.`,tags:[['good',`Gave ${cur()}${fmn(gift)} to charity`]]}; }},
       {label:'Show up for the photos only', tip:'Cheap · risky optics', apply:()=>{ bumpFame(rng(2,5));
         if(rng(0,100)<35){ karma(-2); bumpFame(-rng(2,6)); ledgerAdd('scandal',6,{note:'Empty charity gesture exposed.'}); return {text:`Someone noticed you pledged nothing and posed for everything. The word hypocrite is trending.`,tags:[['bad','Called out as a phony']]}; }
         return {text:`You worked the step-and-repeat, smiled at the cause, and slipped out early.`,tags:[['flag','Just there for the optics']]}; }},
@@ -15807,7 +15837,7 @@ const FAME_EVENTS = [
   build:S=>({ yr:`Age ${S.age}`, title:'Someone Is Watching 👁️',
     text:`Letters, then gifts, then a face you keep seeing outside. A stalker has fixed on you, and the fear is starting to live in your chest.`,
     choices:[
-      {label:'Hire private security', tip:'Costly · peace of mind', apply:()=>{ const cost=Math.min(S.money,rng(5000,40000)); money(-cost); chg('happy',2); return {text:`A team now shadows you everywhere. The freedom is gone, but so is the man on the corner. Cost: ${cur()}${cost}.`,tags:[['good',`Hired security -${cur()}${cost}`]]}; }},
+      {label:'Hire private security', tip:'Costly · peace of mind', apply:()=>{ const cost=Math.min(S.money,rng(5000,40000)); money(-cost); chg('happy',2); return {text:`A team now shadows you everywhere. The freedom is gone, but so is the man on the corner. Cost: ${cur()}${fmn(cost)}.`,tags:[['good',`Hired security -${cur()}${fmn(cost)}`]]}; }},
       {label:'Go to the police', tip:'Slow · public', apply:()=>{
         if(rng(0,100)<55){ chg('happy',-2); return {text:`A restraining order, eventually. It helps. The paperwork made the news, which did not.`,tags:[['flag','Restraining order']]}; }
         chg('happy',-6); addTrauma('fear',rng(12,24),'the stalker who would not stop'); return {text:`The order did not hold them back. You barely sleep now.`,tags:[['bad','Living in fear']]}; }},
@@ -15825,7 +15855,7 @@ const FAME_EVENTS = [
         if(rng(0,100)<60){ bumpFame(-rng(1,4)); chg('happy',-3); return {text:`You owned what was true and denied what was not, calmly. The story loses its teeth within a week.`,tags:[['good','Defused it gracefully']]}; }
         bumpFame(-rng(3,7)); chg('happy',-5); return {text:`Your honesty just gave the story more oxygen. It runs another cycle.`,tags:[['bad','Kept the story alive']]}; }},
       {label:'Threaten to sue', tip:'Aggressive · Streisand risk', apply:()=>{ const cost=Math.min(S.money,rng(3000,25000)); money(-cost);
-        if(rng(0,100)<40){ return {text:`The lawyers made it quietly disappear. ${cur()}${cost} well spent.`,tags:[['good','Buried it']]}; }
+        if(rng(0,100)<40){ return {text:`The lawyers made it quietly disappear. ${cur()}${fmn(cost)} well spent.`,tags:[['good','Buried it']]}; }
         bumpFame(-rng(4,9)); ledgerAdd('scandal',8,{note:'Lawsuit amplified an ex tell-all.'}); return {text:`The lawsuit only made everyone read the story twice. Spectacular own goal.`,tags:[['bad','Made it worse']]}; }},
       {label:'Say nothing at all', tip:'Dignified · slow burn', apply:()=>{ chg('happy',-4); return {text:`You gave no comment and let it die of boredom. It took a while, and it stung the whole time.`,tags:[['flag','Rode out the storm']]}; }},
     ]})},
@@ -15864,7 +15894,7 @@ const FAME_EVENTS = [
       {label:'Get ahead of it, own the story', tip:'Brave · reclaims control', apply:()=>{ karma(1);
         if(rng(0,100)<58){ bumpFame(rng(2,7)); chg('happy',-4); return {text:`You spoke first, framed it as the violation it was, and the sympathy swung your way.`,tags:[['good','Reclaimed the narrative']]}; }
         bumpFame(-rng(3,8)); chg('happy',-7); addTrauma('humiliation',rng(10,22),'the leak'); return {text:`Even owning it, the humiliation is total. You feel exposed for months.`,tags:[['bad','Deeply exposed']]}; }},
-      {label:'Lawyer up and scrub the web', tip:'Costly · partial', apply:()=>{ const cost=Math.min(S.money,rng(5000,50000)); money(-cost); chg('happy',-5); return {text:`Takedown notices fly. Most copies vanish; the internet keeps a few forever. Cost: ${cur()}${cost}.`,tags:[['bad',`Scrubbed what you could -${cur()}${cost}`]]}; }},
+      {label:'Lawyer up and scrub the web', tip:'Costly · partial', apply:()=>{ const cost=Math.min(S.money,rng(5000,50000)); money(-cost); chg('happy',-5); return {text:`Takedown notices fly. Most copies vanish; the internet keeps a few forever. Cost: ${cur()}${fmn(cost)}.`,tags:[['bad',`Scrubbed what you could -${cur()}${fmn(cost)}`]]}; }},
       {label:'Say nothing and hide', tip:'Avoidant', apply:()=>{ chg('happy',-8); bumpFame(-rng(4,9)); addTrauma('humiliation',rng(12,26),'the leak you never addressed'); return {text:`You vanished and let it rage without you. The silence ate at you worse than the video.`,tags:[['bad','Retreated in shame']]}; }},
     ]})},
 
@@ -15877,8 +15907,8 @@ const FAME_EVENTS = [
         if(rng(0,100)<62){ bumpFame(rng(2,6)); chg('happy',2); return {text:`You posted the headline with three crying-laughing faces and everyone laughed with you.`,tags:[['good','Laughed it off']]}; }
         return {text:`The joke did not fully land. A few people believed the lie anyway.`,tags:[['flag','Half-believed']]}; }},
       {label:'Sue for defamation', tip:'Costly · vindicating', apply:()=>{ const cost=Math.min(S.money,rng(4000,30000)); money(-cost);
-        if(rng(0,100)<50){ const won=rng(10000,120000); money(won); karma(1); return {text:`You won in court. A retraction, an apology, and ${cur()}${won} in damages.`,tags:[['good',`Won the lawsuit +${cur()}${won}`]]}; }
-        chg('happy',-4); return {text:`The case dragged for a year and settled for nothing. Only the lawyers won.`,tags:[['bad',`Sued and lost -${cur()}${cost}`]]}; }},
+        if(rng(0,100)<50){ const won=rng(10000,120000); money(won); karma(1); return {text:`You won in court. A retraction, an apology, and ${cur()}${fmn(won)} in damages.`,tags:[['good',`Won the lawsuit +${cur()}${fmn(won)}`]]}; }
+        chg('happy',-4); return {text:`The case dragged for a year and settled for nothing. Only the lawyers won.`,tags:[['bad',`Sued and lost -${cur()}${fmn(cost)}`]]}; }},
       {label:'Let it slide', apply:()=>({text:`You have learned that outrage is what they want. You gave them none.`,tags:[['flag','Ignored the rag']]})},
     ]})},
 
@@ -15898,7 +15928,7 @@ const FAME_EVENTS = [
   build:S=>({ yr:`Age ${S.age}`, title:'Nowhere to Hide 🔒',
     text:`You cannot buy coffee without it being filmed. Every meal, every mood, every bad haircut is content now. You miss being no one.`,
     choices:[
-      {label:'Buy a compound and vanish', tip:'Costly · isolating', apply:()=>{ const cost=Math.min(S.money,rng(20000,200000)); money(-cost); chg('happy',5); bumpFame(-rng(2,5)); return {text:`Walls, gates, quiet. You bought your privacy back for ${cur()}${cost}. It is peaceful, and it is lonely.`,tags:[['good',`Bought privacy -${cur()}${cost}`]]}; }},
+      {label:'Buy a compound and vanish', tip:'Costly · isolating', apply:()=>{ const cost=Math.min(S.money,rng(20000,200000)); money(-cost); chg('happy',5); bumpFame(-rng(2,5)); return {text:`Walls, gates, quiet. You bought your privacy back for ${cur()}${fmn(cost)}. It is peaceful, and it is lonely.`,tags:[['good',`Bought privacy -${cur()}${fmn(cost)}`]]}; }},
       {label:'Make peace with the fishbowl', tip:'Acceptance', apply:()=>{ chg('happy',-3); return {text:`You decided to stop fighting it. Some days that costs you nothing. Some days it costs you everything.`,tags:[['flag','Living in the fishbowl']]}; }},
       {label:'Lash out at the cameras', tip:'Cathartic · costly', apply:()=>{ karma(-2); bumpFame(-rng(3,7)); chg('happy',2); ledgerAdd('scandal',8,{note:'Meltdown over lost privacy.'}); return {text:`You finally screamed at a lens. It felt incredible for four seconds and terrible for four weeks of coverage.`,tags:[['bad','Public meltdown']]}; }},
     ]})},
@@ -15934,8 +15964,8 @@ const FAME_EVENTS = [
     choices:[
       {label:'Fire the yes-men, find real friends', tip:'Wise · humbling', apply:()=>{ karma(3); chg('happy',6); bumpFame(-rng(1,4)); return {text:`You cleared out the entourage and kept the two people who knew you before. Smaller, truer, better.`,tags:[['good','Popped the bubble']]}; }},
       {label:'Live like a demanding diva', tip:'Indulgent · costly', apply:()=>{ const cost=Math.min(S.money,rng(10000,80000)); money(-cost); karma(-2); chg('happy',3);
-        if(rng(0,100)<40){ bumpFame(-rng(4,10)); ledgerAdd('scandal',10,{note:'Diva behavior went public.'}); return {text:`A leaked list of your outrageous demands became a punchline. ${cur()}${cost} spent looking ridiculous.`,tags:[['bad','Diva demands exposed']]}; }
-        return {text:`You lived like royalty and dared anyone to complain. ${cur()}${cost} lighter, and insulated from every consequence. So far.`,tags:[['flag','Living like a diva']]}; }},
+        if(rng(0,100)<40){ bumpFame(-rng(4,10)); ledgerAdd('scandal',10,{note:'Diva behavior went public.'}); return {text:`A leaked list of your outrageous demands became a punchline. ${cur()}${fmn(cost)} spent looking ridiculous.`,tags:[['bad','Diva demands exposed']]}; }
+        return {text:`You lived like royalty and dared anyone to complain. ${cur()}${fmn(cost)} lighter, and insulated from every consequence. So far.`,tags:[['flag','Living like a diva']]}; }},
     ]})},
 
 /* Scandal at the peak — pure gamble to stay relevant */
@@ -16002,8 +16032,8 @@ const COLLEGE_LIFE=[
   build:S=>({ yr:`Age ${S.age}`, title:'Internship Season 💼',
     text:`Recruiters are on campus. A good internship could set up your whole career — but the good ones are brutally competitive.`,
     choices:[
-      {label:'Chase a top-tier internship', tip:'Prestige · long odds', apply:()=>{ if(rng(0,100) < 22 + S.grades/3 + S.stats.smarts/6){ setFlag('internship'); const pay=rng(2000,9000); money(pay); chg('happy',rng(3,6)); gainFame(rng(0,2)); return {text:`You land a coveted internship and earn ${cur()}${pay} over the summer. This will open doors for years.`,tags:[['good',`Elite internship +${cur()}${pay}`]]}; } chg('happy',-rng(1,4)); return {text:`Rejection after rejection. The dream internships slip away — but you learned how to interview.`,tags:[['bad','Internships rejected']]}; }},
-      {label:'Take a solid local internship', tip:'Realistic · paid', apply:()=>{ setFlag('internship'); const pay=rng(1000,4000); money(pay); chg('smarts',rng(1,3)); return {text:`You take a steady internship close to home. Real experience, a real paycheck of ${cur()}${pay}, no drama.`,tags:[['good',`Interned +${cur()}${pay}`]]}; }},
+      {label:'Chase a top-tier internship', tip:'Prestige · long odds', apply:()=>{ if(rng(0,100) < 22 + S.grades/3 + S.stats.smarts/6){ setFlag('internship'); const pay=rng(2000,9000); money(pay); chg('happy',rng(3,6)); gainFame(rng(0,2)); return {text:`You land a coveted internship and earn ${cur()}${fmn(pay)} over the summer. This will open doors for years.`,tags:[['good',`Elite internship +${cur()}${fmn(pay)}`]]}; } chg('happy',-rng(1,4)); return {text:`Rejection after rejection. The dream internships slip away — but you learned how to interview.`,tags:[['bad','Internships rejected']]}; }},
+      {label:'Take a solid local internship', tip:'Realistic · paid', apply:()=>{ setFlag('internship'); const pay=rng(1000,4000); money(pay); chg('smarts',rng(1,3)); return {text:`You take a steady internship close to home. Real experience, a real paycheck of ${cur()}${fmn(pay)}, no drama.`,tags:[['good',`Interned +${cur()}${fmn(pay)}`]]}; }},
       {label:'Skip it and relax this summer', apply:()=>{ chg('happy',rng(2,5)); return {text:`You take the summer off. Rested, sure — but your resume stays thin.`,tags:[['flag','No internship']]}; }},
     ]})},
 
@@ -16099,7 +16129,7 @@ const COLLEGE_LIFE=[
     text:`Your transcript is glowing. The registrar names you to the <b>Dean's List</b> for the term.`,
     choices:[
       {label:'Celebrate the win', apply:()=>{ setFlag('deans_list'); chg('happy',rng(3,6)); gainFame(rng(0,2)); S.popularity=clamp((S.popularity||50)+rng(1,3)); return {text:`You made the Dean's List. Your family beams, your resume shines, and you let yourself feel proud.`,tags:[['good','Deans List']]}; }},
-      {label:'Push for a scholarship', tip:'Turn grades into money', apply:()=>{ setFlag('deans_list'); if(rng(0,100) < 45 + S.grades/4){ const g=rng(2000,8000); money(g); return {text:`You leverage the honor into a merit scholarship worth ${cur()}${g}. Grades that pay.`,tags:[['good',`Scholarship +${cur()}${g}`]]}; } chg('happy',rng(1,3)); return {text:`No scholarship this round, but the Dean's List still looks great on paper.`,tags:[['good','Deans List']]}; }},
+      {label:'Push for a scholarship', tip:'Turn grades into money', apply:()=>{ setFlag('deans_list'); if(rng(0,100) < 45 + S.grades/4){ const g=rng(2000,8000); money(g); return {text:`You leverage the honor into a merit scholarship worth ${cur()}${fmn(g)}. Grades that pay.`,tags:[['good',`Scholarship +${cur()}${fmn(g)}`]]}; } chg('happy',rng(1,3)); return {text:`No scholarship this round, but the Dean's List still looks great on paper.`,tags:[['good','Deans List']]}; }},
     ]};}},
 
 /* --- Campus protest ---------------------------------------------------- */
@@ -16145,7 +16175,7 @@ const COLLEGE_LIFE=[
   build:S=>{ S._lastCL10=S.age; const gig=pick(['barista at the campus cafe','library desk assistant','dorm resident advisor','lab equipment steward','tour guide for prospective students']); return { yr:`Age ${S.age}`, title:'A Campus Job 🧾',
     text:`You could pick up work as a <b>${gig}</b>. Money and experience — at the cost of study time.`,
     choices:[
-      {label:'Take the job', tip:'Income · less free time', apply:()=>{ const pay=rng(1500,5000); money(pay); chg('happy',-rng(0,2)); if(rng(0,100)<30){ S.grades=clamp(S.grades-rng(1,4)); return {text:`You earn ${cur()}${pay} working as a ${gig}, though the hours nibble at your grades.`,tags:[['good',`Campus job +${cur()}${pay}`]]}; } S.popularity=clamp((S.popularity||50)+rng(1,3)); return {text:`You balance it well — ${cur()}${pay} earned and a bunch of new campus friends.`,tags:[['good',`Campus job +${cur()}${pay}`]]}; }},
+      {label:'Take the job', tip:'Income · less free time', apply:()=>{ const pay=rng(1500,5000); money(pay); chg('happy',-rng(0,2)); if(rng(0,100)<30){ S.grades=clamp(S.grades-rng(1,4)); return {text:`You earn ${cur()}${fmn(pay)} working as a ${gig}, though the hours nibble at your grades.`,tags:[['good',`Campus job +${cur()}${fmn(pay)}`]]}; } S.popularity=clamp((S.popularity||50)+rng(1,3)); return {text:`You balance it well — ${cur()}${fmn(pay)} earned and a bunch of new campus friends.`,tags:[['good',`Campus job +${cur()}${fmn(pay)}`]]}; }},
       {label:'Focus on studies instead', apply:()=>{ chg('smarts',rng(0,2)); return {text:`You skip the job to protect your grades and your sanity.`,tags:[['flag','Studies first']]}; }},
     ]};}},
 
@@ -16174,8 +16204,8 @@ const COLLEGE_LIFE=[
   build:S=>({ yr:`Age ${S.age}`, title:'The Dorm-Room Startup 🚀',
     text:`You and a couple of classmates have an idea you cannot stop thinking about. Do you actually try to build it?`,
     choices:[
-      {label:'Build it — go all in', tip:'High risk · high reward', apply:()=>{ setFlag('campus_startup'); const c=rng(500,3000); money(-Math.min(S.money>0?S.money:0,c)); S.grades=clamp(S.grades-rng(1,5)); if(rng(0,100) < 18 + S.stats.smarts/6){ const win=rng(8000,60000); money(win); gainFame(rng(2,5)); return {text:`Against all odds, it works. You pull in ${cur()}${win} and a taste of what you could become.`,tags:[['good',`Startup hit +${cur()}${win}`]]}; } chg('happy',-rng(1,4)); return {text:`It flames out and eats your savings and your GPA — but you learned more than any class taught you.`,tags:[['bad','Startup flopped']]}; }},
-      {label:'Enter the campus pitch contest', tip:'Test the waters', apply:()=>{ if(rng(0,100) < 30 + S.stats.smarts/8){ setFlag('campus_startup'); const win=rng(1000,10000); money(win); gainFame(rng(1,3)); return {text:`You pitch it at the campus incubator and win ${cur()}${win} in seed funding. Game on.`,tags:[['good',`Won pitch +${cur()}${win}`]]}; } chg('happy',-rng(0,3)); return {text:`The judges pass, but the feedback is gold. You file the idea away for later.`,tags:[['flag','Pitched and learned']]}; }},
+      {label:'Build it — go all in', tip:'High risk · high reward', apply:()=>{ setFlag('campus_startup'); const c=rng(500,3000); money(-Math.min(S.money>0?S.money:0,c)); S.grades=clamp(S.grades-rng(1,5)); if(rng(0,100) < 18 + S.stats.smarts/6){ const win=rng(8000,60000); money(win); gainFame(rng(2,5)); return {text:`Against all odds, it works. You pull in ${cur()}${fmn(win)} and a taste of what you could become.`,tags:[['good',`Startup hit +${cur()}${fmn(win)}`]]}; } chg('happy',-rng(1,4)); return {text:`It flames out and eats your savings and your GPA — but you learned more than any class taught you.`,tags:[['bad','Startup flopped']]}; }},
+      {label:'Enter the campus pitch contest', tip:'Test the waters', apply:()=>{ if(rng(0,100) < 30 + S.stats.smarts/8){ setFlag('campus_startup'); const win=rng(1000,10000); money(win); gainFame(rng(1,3)); return {text:`You pitch it at the campus incubator and win ${cur()}${fmn(win)} in seed funding. Game on.`,tags:[['good',`Won pitch +${cur()}${fmn(win)}`]]}; } chg('happy',-rng(0,3)); return {text:`The judges pass, but the feedback is gold. You file the idea away for later.`,tags:[['flag','Pitched and learned']]}; }},
       {label:'Keep it a daydream', apply:()=>{ return {text:`You let the idea stay an idea and focus on your degree.`,tags:[['flag','Let it go']]}; }},
     ]})},
 
@@ -16277,7 +16307,7 @@ const EVENTS_WAVE4 = [
     text:`Fat with cash and cards, a lost wallet lies right at your feet. Nobody is around.`,
     choices:[
       { label:'Turn it in to a grown-up', tip:'Honest', apply:()=>{ setFlag('w4_foundcash'); karma(5); chg('happy',3); if(rng(0,100)<55){ money(10); return {text:`The owner was so grateful they pressed a reward into your hand. Doing right feels good — and paid off.`, tags:[['good','Honest kid rewarded']]}; } return {text:`You handed it in without a second thought. Your parents beam with pride.`, tags:[['good','Did the right thing']]}; } },
-      { label:'Keep the cash, ditch the wallet', tip:'Sneaky', apply:()=>{ setFlag('w4_foundcash'); karma(-4); const take=rng(15,45); money(take); chg('happy',2); return {text:`You pocket ${cur()}${take} and toss the rest in a hedge. It buys a lot of candy — and a small guilty knot in your stomach.`, tags:[['bad',`Kept ${cur()}${take}`]]}; } },
+      { label:'Keep the cash, ditch the wallet', tip:'Sneaky', apply:()=>{ setFlag('w4_foundcash'); karma(-4); const take=rng(15,45); money(take); chg('happy',2); return {text:`You pocket ${cur()}${fmn(take)} and toss the rest in a hedge. It buys a lot of candy — and a small guilty knot in your stomach.`, tags:[['bad',`Kept ${cur()}${fmn(take)}`]]}; } },
       { label:'Leave it exactly where it is', apply:()=>{ setFlag('w4_foundcash'); return {text:`Not your problem, not your wallet. You walk on.`, tags:[['flag','Walked away']]}; } },
     ] }) },
 
@@ -16350,8 +16380,8 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'Now Hiring 🍔',
     text:`The burger place down the street is hiring. Minimum wage, grease smell, a paper hat — but it is your own money.`,
     choices:[
-      { label:'Take the job and grind', tip:'Money · time', apply:()=>{ setFlag('w4_firstjob'); const pay=rng(40,90); money(pay); chg('smarts',2); chg('happy',-2); setFlag('work_ethic'); return {text:`Weekends behind the fryer. You earn ${cur()}${pay} and something harder to spell: a work ethic.`, tags:[['good',`First paycheck +${cur()}${pay}`]]}; } },
-      { label:'Negotiate for weekend-only shifts', tip:'Balanced', apply:()=>{ setFlag('w4_firstjob'); if(rng(0,100)<50){ const pay=rng(25,55); money(pay); chg('happy',1); return {text:`The manager likes your nerve and gives you the deal. ${cur()}${pay} and your weeknights free.`, tags:[['good',`Smart hustle +${cur()}${pay}`]]}; } return {text:`The manager says take the shifts or leave them. You leave them.`, tags:[['flag','Walked away']]}; } },
+      { label:'Take the job and grind', tip:'Money · time', apply:()=>{ setFlag('w4_firstjob'); const pay=rng(40,90); money(pay); chg('smarts',2); chg('happy',-2); setFlag('work_ethic'); return {text:`Weekends behind the fryer. You earn ${cur()}${fmn(pay)} and something harder to spell: a work ethic.`, tags:[['good',`First paycheck +${cur()}${fmn(pay)}`]]}; } },
+      { label:'Negotiate for weekend-only shifts', tip:'Balanced', apply:()=>{ setFlag('w4_firstjob'); if(rng(0,100)<50){ const pay=rng(25,55); money(pay); chg('happy',1); return {text:`The manager likes your nerve and gives you the deal. ${cur()}${fmn(pay)} and your weeknights free.`, tags:[['good',`Smart hustle +${cur()}${fmn(pay)}`]]}; } return {text:`The manager says take the shifts or leave them. You leave them.`, tags:[['flag','Walked away']]}; } },
       { label:'Skip it — enjoy being young', apply:()=>{ setFlag('w4_firstjob'); chg('happy',4); return {text:`Plenty of time to work later. You spend the summer being sixteen.`, tags:[['flag','Stayed a kid']]}; } },
     ] }) },
 
@@ -16359,7 +16389,7 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'A Guy Who Knows a Guy 🪪',
     text:`Someone at school can get you a fake ID for forty bucks. Says it "totally works, trust me."`,
     choices:[
-      { label:'Buy one', tip:'Risky · illegal', apply:()=>{ setFlag('w4_fakeid'); money(-40); karma(-2); if(rng(0,100)<55){ chg('happy',4); setFlag('had_fakeid'); return {text:`It scans, somehow. For a while you feel invincible and years older than you are.`, tags:[['bad','Got in everywhere']]}; } chg('happy',-6); setFlag('criminal'); return {text:`The bouncer took one look, confiscated it, and called your parents. Mortifying.`, tags:[['bad','Busted']]}; } },
+      { label:'Buy one', tip:'Risky · illegal', apply:()=>{ setFlag('w4_fakeid'); money(-40); karma(-2); if(rng(0,100)<55){ chg('happy',4); setFlag('had_fakeid'); return {text:`It scans, somehow. For a while you feel invincible and years older than you are.`, tags:[['bad','Got in everywhere']]}; } chg('happy',-6); gainCriminalRecord(); return {text:`The bouncer took one look, confiscated it, and called your parents. Mortifying.`, tags:[['bad','Busted']]}; } },
       { label:'Talk friends out of it', tip:'Responsible', apply:()=>{ setFlag('w4_fakeid'); karma(3); chg('smarts',2); return {text:`You point out it is a felony for a beer. Half of them listen. You save at least one kid a record.`, tags:[['good','Voice of reason']]}; } },
       { label:'Hard pass', apply:()=>{ setFlag('w4_fakeid'); chg('smarts',1); return {text:`Not worth it. You will be twenty-one soon enough.`, tags:[['flag','Passed']]}; } },
     ] }) },
@@ -16377,7 +16407,7 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'Fifteen Seconds of Fame 📱',
     text:`A clip of you — dancing, falling, or doing something ridiculous — is climbing fast online. It is at 200,000 views and rising.`,
     choices:[
-      { label:'Lean in and post more', tip:'Chase fame', apply:()=>{ setFlag('w4_viral'); if(rng(0,100)<45){ S.fame=Math.min(100,(S.fame||0)+rng(6,14)); const cash=rng(50,300); money(cash); chg('happy',6); return {text:`You ride the wave, gain a following, and land a small brand deal worth ${cur()}${cash}. Micro-famous.`, tags:[['good',`Went viral +${cur()}${cash}`]]}; } chg('happy',-5); return {text:`The follow-ups flopped and the comments turned cruel. Fame is a fickle friend.`, tags:[['bad','Flash in the pan']]}; } },
+      { label:'Lean in and post more', tip:'Chase fame', apply:()=>{ setFlag('w4_viral'); if(rng(0,100)<45){ S.fame=Math.min(100,(S.fame||0)+rng(6,14)); const cash=rng(50,300); money(cash); chg('happy',6); return {text:`You ride the wave, gain a following, and land a small brand deal worth ${cur()}${fmn(cash)}. Micro-famous.`, tags:[['good',`Went viral +${cur()}${fmn(cash)}`]]}; } chg('happy',-5); return {text:`The follow-ups flopped and the comments turned cruel. Fame is a fickle friend.`, tags:[['bad','Flash in the pan']]}; } },
       { label:'Delete it and lay low', tip:'Privacy', apply:()=>{ setFlag('w4_viral'); chg('happy',2); return {text:`You pull the plug before it spirals. In a month, nobody remembers. Peace restored.`, tags:[['flag','Killed it early']]}; } },
       { label:'Turn it into a joke about yourself', tip:'Self-aware', apply:()=>{ setFlag('w4_viral'); chg('happy',4); chg('smarts',2); return {text:`You post a laughing reaction to your own clip. Everyone loves a good sport. The trolls lose interest.`, tags:[['good','Owned it']]}; } },
     ] }) },
@@ -16440,8 +16470,8 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'The Side Hustle 👟',
     text:`You spot a way to make money: reselling limited sneakers, flipping thrift finds, running a snack stand at school. A little capital, a lot of nerve.`,
     choices:[
-      { label:'Go all in with your savings', tip:'High risk', apply:()=>{ setFlag('w4_hustle'); const stake=Math.min(S.money,rng(40,120)); money(-stake); if(rng(0,100)<52){ const win=Math.round(stake*(1.8+rand())); money(win); chg('smarts',4); setFlag('young_hustler'); return {text:`You buy low, sell high, and clear ${cur()}${win}. A tiny entrepreneur is born.`, tags:[['good',`Flipped it +${cur()}${win}`]]}; } chg('happy',-4); return {text:`The market turned and you are stuck with a closet full of stock nobody wants. Lesson learned the hard way.`, tags:[['bad',`Lost ${cur()}${stake}`]]}; } },
-      { label:'Start tiny and reinvest', tip:'Slow build', apply:()=>{ setFlag('w4_hustle'); const stake=Math.min(S.money,rng(10,30)); money(-stake); const win=Math.round(stake*(1.3+rand()*0.6)); money(win); chg('smarts',3); return {text:`Small bets, steady flips. You turn ${cur()}${stake} into ${cur()}${win}. Not glamorous — but it works.`, tags:[['good',`Steady gains +${cur()}${win}`]]}; } },
+      { label:'Go all in with your savings', tip:'High risk', apply:()=>{ setFlag('w4_hustle'); const stake=Math.min(S.money,rng(40,120)); money(-stake); if(rng(0,100)<52){ const win=Math.round(stake*(1.8+rand())); money(win); chg('smarts',4); setFlag('young_hustler'); return {text:`You buy low, sell high, and clear ${cur()}${fmn(win)}. A tiny entrepreneur is born.`, tags:[['good',`Flipped it +${cur()}${fmn(win)}`]]}; } chg('happy',-4); return {text:`The market turned and you are stuck with a closet full of stock nobody wants. Lesson learned the hard way.`, tags:[['bad',`Lost ${cur()}${fmn(stake)}`]]}; } },
+      { label:'Start tiny and reinvest', tip:'Slow build', apply:()=>{ setFlag('w4_hustle'); const stake=Math.min(S.money,rng(10,30)); money(-stake); const win=Math.round(stake*(1.3+rand()*0.6)); money(win); chg('smarts',3); return {text:`Small bets, steady flips. You turn ${cur()}${fmn(stake)} into ${cur()}${fmn(win)}. Not glamorous — but it works.`, tags:[['good',`Steady gains +${cur()}${fmn(win)}`]]}; } },
       { label:'Keep it a hobby, not a business', apply:()=>{ setFlag('w4_hustle'); chg('happy',2); return {text:`You decide money and fun should stay separate. No pressure, just play.`, tags:[['flag','Kept it fun']]}; } },
     ] }) },
 
@@ -16469,7 +16499,7 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'Cover For Me 🤫',
     text:`Your boss made a costly mistake and quietly asks you to take the blame — "just this once" — hinting at a promotion if you do.`,
     choices:[
-      { label:'Take the fall for the promise', tip:'Gamble on loyalty', apply:()=>{ setFlag('w4_workmoral'); karma(-2); if(rng(0,100)<45){ const raise=rng(200,900); money(raise); chg('happy',3); return {text:`You eat the blame. Months later the boss delivers — a raise worth ${cur()}${raise}. Grimy, but it paid.`, tags:[['bad',`Loyalty rewarded +${cur()}${raise}`]]}; } chg('happy',-8); setFlag('scapegoat'); return {text:`You took the fall — and the promotion never came. The boss barely remembers your name now.`, tags:[['bad','Used and discarded']]}; } },
+      { label:'Take the fall for the promise', tip:'Gamble on loyalty', apply:()=>{ setFlag('w4_workmoral'); karma(-2); if(rng(0,100)<45){ const raise=rng(200,900); money(raise); chg('happy',3); return {text:`You eat the blame. Months later the boss delivers — a raise worth ${cur()}${fmn(raise)}. Grimy, but it paid.`, tags:[['bad',`Loyalty rewarded +${cur()}${fmn(raise)}`]]}; } chg('happy',-8); setFlag('scapegoat'); return {text:`You took the fall — and the promotion never came. The boss barely remembers your name now.`, tags:[['bad','Used and discarded']]}; } },
       { label:'Refuse and tell the truth', tip:'Integrity · risk', apply:()=>{ setFlag('w4_workmoral'); karma(4); if(rng(0,100)<50){ chg('happy',4); setFlag('principled'); return {text:`You calmly decline and let the truth stand. Leadership notices your spine. Respect earned.`, tags:[['good','Kept your integrity']]}; } chg('happy',-5); return {text:`The boss freezes you out for months. Doing right was not free — but you can look in the mirror.`, tags:[['flag','Paid a price']]}; } },
       { label:'Document everything quietly', tip:'Strategic', apply:()=>{ setFlag('w4_workmoral'); chg('smarts',3); return {text:`You keep a careful paper trail and stay noncommittal. If this ever blows up, you are covered.`, tags:[['good','Watched your back']]}; } },
     ] }) },
@@ -16478,7 +16508,7 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'The Ticket 🎰',
     text:`A gas station lottery ticket in your pocket, a life-changing jackpot on the sign. It is almost certainly a waste of two dollars.`,
     choices:[
-      { label:'Buy a handful of tickets', tip:'Long shot', apply:()=>{ setFlag('w4_lotto'); money(-10); const roll=rng(0,1000); if(roll<3){ const jack=rng(50000,500000); money(jack); chg('happy',20); setFlag('lottery_winner'); return {text:`Impossibly — YOU WIN. ${cur()}${jack} lands in your account. The odds meant nothing tonight.`, tags:[['good',`JACKPOT +${cur()}${jack}`]]}; } if(roll<120){ const small=rng(20,200); money(small); chg('happy',4); return {text:`A minor win! ${cur()}${small} back. Enough to feel lucky, not enough to quit your job.`, tags:[['good',`Small win +${cur()}${small}`]]}; } return {text:`Nothing. Ten dollars of paper, straight to the bin. As expected.`, tags:[['bad','Lost ten bucks']]}; } },
+      { label:'Buy a handful of tickets', tip:'Long shot', apply:()=>{ setFlag('w4_lotto'); money(-10); const roll=rng(0,1000); if(roll<3){ const jack=rng(50000,500000); money(jack); chg('happy',20); setFlag('lottery_winner'); return {text:`Impossibly — YOU WIN. ${cur()}${fmn(jack)} lands in your account. The odds meant nothing tonight.`, tags:[['good',`JACKPOT +${cur()}${fmn(jack)}`]]}; } if(roll<120){ const small=rng(20,200); money(small); chg('happy',4); return {text:`A minor win! ${cur()}${fmn(small)} back. Enough to feel lucky, not enough to quit your job.`, tags:[['good',`Small win +${cur()}${fmn(small)}`]]}; } return {text:`Nothing. Ten dollars of paper, straight to the bin. As expected.`, tags:[['bad','Lost ten bucks']]}; } },
       { label:'Buy one and dream', tip:'Cheap thrill', apply:()=>{ setFlag('w4_lotto'); money(-2); chg('happy',2); return {text:`One ticket, one evening of "what if I won." It loses — but the daydream was worth two dollars.`, tags:[['flag','Bought a daydream']]}; } },
       { label:'Keep your money', tip:'Sensible', apply:()=>{ setFlag('w4_lotto'); chg('smarts',1); return {text:`The house always wins, you remind yourself, and pocket the two dollars.`, tags:[['flag','Passed on it']]}; } },
     ] }) },
@@ -16487,8 +16517,8 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'You Have Been Served ⚖️',
     text:`You slipped on an unmarked wet floor at a big store and hurt your back. A lawyer says you have a real case — but suing means months of stress.`,
     choices:[
-      { label:'Sue the store', tip:'Payout · hassle', apply:()=>{ setFlag('w4_lawsuit'); chg('happy',-3); if(rng(0,100)<55){ const settle=rng(3000,25000); money(settle); chg('happy',5); return {text:`After a grinding year, they settle for ${cur()}${settle}. Vindicated — and paid.`, tags:[['good',`Settled +${cur()}${settle}`]]}; } money(-rng(500,2000)); return {text:`The case collapsed and you are out the legal fees. Sometimes the little guy just loses.`, tags:[['bad','Lost the case']]}; } },
-      { label:'Accept a quick quiet settlement', tip:'Fast · smaller', apply:()=>{ setFlag('w4_lawsuit'); const quick=rng(1500,6000); money(quick); return {text:`You take their fast offer of ${cur()}${quick} and skip the drama. A bird in the hand.`, tags:[['good',`Quick cash +${cur()}${quick}`]]}; } },
+      { label:'Sue the store', tip:'Payout · hassle', apply:()=>{ setFlag('w4_lawsuit'); chg('happy',-3); if(rng(0,100)<55){ const settle=rng(3000,25000); money(settle); chg('happy',5); return {text:`After a grinding year, they settle for ${cur()}${fmn(settle)}. Vindicated — and paid.`, tags:[['good',`Settled +${cur()}${fmn(settle)}`]]}; } money(-rng(500,2000)); return {text:`The case collapsed and you are out the legal fees. Sometimes the little guy just loses.`, tags:[['bad','Lost the case']]}; } },
+      { label:'Accept a quick quiet settlement', tip:'Fast · smaller', apply:()=>{ setFlag('w4_lawsuit'); const quick=rng(1500,6000); money(quick); return {text:`You take their fast offer of ${cur()}${fmn(quick)} and skip the drama. A bird in the hand.`, tags:[['good',`Quick cash +${cur()}${fmn(quick)}`]]}; } },
       { label:'Let it go', tip:'Peace of mind', apply:()=>{ setFlag('w4_lawsuit'); karma(2); chg('happy',2); return {text:`You decide your health and your peace matter more than a payout. You heal and move on.`, tags:[['flag','Walked away']]}; } },
     ] }) },
 
@@ -16514,8 +16544,8 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'The Pitch 💡',
     text:`You have an idea you cannot shake and a chance to pitch it to a room of investors. Your savings could seed it — or fund the rent.`,
     choices:[
-      { label:'Bet big on your idea', tip:'Founder energy', apply:()=>{ setFlag('w4_pitch'); const stake=Math.min(S.money,rng(2000,10000)); money(-stake); if(rng(0,100) < 35 + S.stats.smarts/6){ const raise=stake*rng(3,8)+rng(5000,30000); money(raise); chg('happy',10); setFlag('founder'); return {text:`They loved it. Term sheet signed — ${cur()}${raise} in funding. You are officially a founder.`, tags:[['good',`Funded +${cur()}${raise}`]]}; } chg('happy',-6); return {text:`Polite nods, no checks. The savings you sank into the demo are gone. Back to the drawing board.`, tags:[['bad',`Pitch flopped -${cur()}${stake}`]]}; } },
-      { label:'Pitch it but keep your day job', tip:'Hedged', apply:()=>{ setFlag('w4_pitch'); if(rng(0,100)<40){ const raise=rng(3000,15000); money(raise); chg('happy',6); return {text:`You land a modest angel check of ${cur()}${raise} while keeping the paycheck. Best of both worlds.`, tags:[['good',`Angel round +${cur()}${raise}`]]}; } chg('happy',-2); return {text:`No bite this time, but you learned a ton and risked nothing you could not afford. On to the next.`, tags:[['flag','Lived to pitch again']]}; } },
+      { label:'Bet big on your idea', tip:'Founder energy', apply:()=>{ setFlag('w4_pitch'); const stake=Math.min(S.money,rng(2000,10000)); money(-stake); if(rng(0,100) < 35 + S.stats.smarts/6){ const raise=stake*rng(3,8)+rng(5000,30000); money(raise); chg('happy',10); setFlag('founder'); return {text:`They loved it. Term sheet signed — ${cur()}${fmn(raise)} in funding. You are officially a founder.`, tags:[['good',`Funded +${cur()}${fmn(raise)}`]]}; } chg('happy',-6); return {text:`Polite nods, no checks. The savings you sank into the demo are gone. Back to the drawing board.`, tags:[['bad',`Pitch flopped -${cur()}${fmn(stake)}`]]}; } },
+      { label:'Pitch it but keep your day job', tip:'Hedged', apply:()=>{ setFlag('w4_pitch'); if(rng(0,100)<40){ const raise=rng(3000,15000); money(raise); chg('happy',6); return {text:`You land a modest angel check of ${cur()}${fmn(raise)} while keeping the paycheck. Best of both worlds.`, tags:[['good',`Angel round +${cur()}${fmn(raise)}`]]}; } chg('happy',-2); return {text:`No bite this time, but you learned a ton and risked nothing you could not afford. On to the next.`, tags:[['flag','Lived to pitch again']]}; } },
       { label:'Keep the idea in your notebook', tip:'Safe', apply:()=>{ setFlag('w4_pitch'); chg('happy',-1); return {text:`Maybe someday. The idea goes back in the drawer, alongside all the others.`, tags:[['flag','Shelved it']]}; } },
     ] }) },
 
@@ -16541,8 +16571,8 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'The Unexpected Check 📬',
     text:`A distant relative you barely knew has passed and left you a surprise inheritance. The lawyer names a number that makes you sit down.`,
     choices:[
-      { label:'Invest it wisely', tip:'Future-focused', apply:()=>{ setFlag('w4_windfall'); const sum=rng(8000,40000); money(sum); chg('smarts',3); setFlag('nest_egg'); return {text:`You resist the splurge and put ${cur()}${sum} to work. Your future self will be very grateful.`, tags:[['good',`Inherited & invested +${cur()}${sum}`]]}; } },
-      { label:'Treat yourself, then save the rest', tip:'Balanced', apply:()=>{ setFlag('w4_windfall'); const sum=rng(8000,40000); money(sum); chg('happy',7); return {text:`One glorious splurge, then the rest safely banked. You honor the gift by actually enjoying some of it.`, tags:[['good',`Windfall +${cur()}${sum}`]]}; } },
+      { label:'Invest it wisely', tip:'Future-focused', apply:()=>{ setFlag('w4_windfall'); const sum=rng(8000,40000); money(sum); chg('smarts',3); setFlag('nest_egg'); return {text:`You resist the splurge and put ${cur()}${fmn(sum)} to work. Your future self will be very grateful.`, tags:[['good',`Inherited & invested +${cur()}${fmn(sum)}`]]}; } },
+      { label:'Treat yourself, then save the rest', tip:'Balanced', apply:()=>{ setFlag('w4_windfall'); const sum=rng(8000,40000); money(sum); chg('happy',7); return {text:`One glorious splurge, then the rest safely banked. You honor the gift by actually enjoying some of it.`, tags:[['good',`Windfall +${cur()}${fmn(sum)}`]]}; } },
       { label:'Give a big chunk to charity', tip:'Generous', apply:()=>{ setFlag('w4_windfall'); const sum=rng(6000,25000); money(sum); karma(6); chg('happy',5); return {text:`You keep some and donate the rest in the relative's name. It feels like the truest way to remember them.`, tags:[['good','Gave it forward']]}; } },
     ] }) },
 
@@ -16550,7 +16580,7 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'Urgent: Action Required 📧',
     text:`A frantic message says your account is compromised — click here, verify your details, or lose everything. It looks alarmingly official.`,
     choices:[
-      { label:'Panic and click the link', tip:'Dangerous', apply:()=>{ setFlag('w4_scam'); if(rng(0,100)<50){ const loss=rng(200,3000); money(-Math.min(S.money,loss)); chg('happy',-7); return {text:`It was a scam. By the time you realized, ${cur()}${loss} was gone. A brutal, expensive lesson.`, tags:[['bad',`Scammed -${cur()}${loss}`]]}; } chg('happy',-3); return {text:`You clicked, then froze and closed everything just in time. Heart pounding, but wallet intact. Barely.`, tags:[['flag','Close call']]}; } },
+      { label:'Panic and click the link', tip:'Dangerous', apply:()=>{ setFlag('w4_scam'); if(rng(0,100)<50){ const loss=rng(200,3000); money(-Math.min(S.money,loss)); chg('happy',-7); return {text:`It was a scam. By the time you realized, ${cur()}${fmn(loss)} was gone. A brutal, expensive lesson.`, tags:[['bad',`Scammed -${cur()}${fmn(loss)}`]]}; } chg('happy',-3); return {text:`You clicked, then froze and closed everything just in time. Heart pounding, but wallet intact. Barely.`, tags:[['flag','Close call']]}; } },
       { label:'Verify through the real channel', tip:'Smart', apply:()=>{ setFlag('w4_scam'); karma(1); chg('smarts',3); return {text:`You ignore the link and call the company directly. Confirmed: a scam. You dodged it clean.`, tags:[['good','Saw through it']]}; } },
       { label:'Report it and warn others', tip:'Good citizen', apply:()=>{ setFlag('w4_scam'); karma(3); chg('smarts',2); return {text:`You report the scam and post a warning. A few people message to say you saved them. Small hero energy.`, tags:[['good','Warned the herd']]}; } },
     ] }) },
@@ -16570,7 +16600,7 @@ const EVENTS_WAVE4 = [
     choices:[
       { label:'Commit every weekend', tip:'Selfless', apply:()=>{ setFlag('w4_volunteer'); karma(6); chg('happy',6); setFlag('community_pillar'); return {text:`You show up, week after week. The regulars learn your name. You have never felt more useful.`, tags:[['good','Gave your time']]}; } },
       { label:'Help occasionally', tip:'Balanced', apply:()=>{ setFlag('w4_volunteer'); karma(3); chg('happy',3); return {text:`You pitch in when you can. Not a saint, just a decent person doing a decent thing.`, tags:[['good','Lent a hand']]}; } },
-      { label:'Donate money instead of time', tip:'Practical', apply:()=>{ setFlag('w4_volunteer'); const gift=Math.min(S.money,rng(50,400)); money(-gift); karma(4); return {text:`You cannot spare the hours, so you write a check for ${cur()}${gift}. It buys a lot of blankets.`, tags:[['good',`Donated ${cur()}${gift}`]]}; } },
+      { label:'Donate money instead of time', tip:'Practical', apply:()=>{ setFlag('w4_volunteer'); const gift=Math.min(S.money,rng(50,400)); money(-gift); karma(4); return {text:`You cannot spare the hours, so you write a check for ${cur()}${fmn(gift)}. It buys a lot of blankets.`, tags:[['good',`Donated ${cur()}${fmn(gift)}`]]}; } },
     ] }) },
 
 { id:'w4_reunion', once:true, weight:44, when:S=>S.age>=28 && S.age<=55 && !has('w4_reunion'),
@@ -16586,8 +16616,8 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'To Buy or Not to Buy 🏠',
     text:`You have scraped together enough for a down payment. Buying means roots and a mortgage; renting means freedom and no equity.`,
     choices:[
-      { label:'Buy a home', tip:'Roots · debt', apply:()=>{ setFlag('w4_buyrent'); const down=Math.min(S.money,rng(2000,15000)); money(-down); chg('happy',6); setFlag('homeowner'); return {text:`Keys in hand, ${cur()}${down} down. It is yours — leaky faucets, rising equity, and all. Home.`, tags:[['good','Bought a home']]}; } },
-      { label:'Keep renting and invest the difference', tip:'Flexible', apply:()=>{ setFlag('w4_buyrent'); if(rng(0,100)<55){ const gain=rng(500,4000); money(gain); chg('smarts',2); return {text:`You stay mobile and invest what you did not spend on a roof. The market is kind: +${cur()}${gain}.`, tags:[['good',`Invested +${cur()}${gain}`]]}; } chg('happy',-2); return {text:`You stay renting, but the market dipped and rent went up. Freedom has a price too.`, tags:[['flag','Stayed flexible']]}; } },
+      { label:'Buy a home', tip:'Roots · debt', apply:()=>{ setFlag('w4_buyrent'); const down=Math.min(S.money,rng(2000,15000)); money(-down); chg('happy',6); setFlag('homeowner'); return {text:`Keys in hand, ${cur()}${fmn(down)} down. It is yours — leaky faucets, rising equity, and all. Home.`, tags:[['good','Bought a home']]}; } },
+      { label:'Keep renting and invest the difference', tip:'Flexible', apply:()=>{ setFlag('w4_buyrent'); if(rng(0,100)<55){ const gain=rng(500,4000); money(gain); chg('smarts',2); return {text:`You stay mobile and invest what you did not spend on a roof. The market is kind: +${cur()}${fmn(gain)}.`, tags:[['good',`Invested +${cur()}${fmn(gain)}`]]}; } chg('happy',-2); return {text:`You stay renting, but the market dipped and rent went up. Freedom has a price too.`, tags:[['flag','Stayed flexible']]}; } },
       { label:'Buy a fixer-upper cheap', tip:'Gamble', apply:()=>{ setFlag('w4_buyrent'); const cost=Math.min(S.money,rng(1500,8000)); money(-cost); if(rng(0,100)<50){ chg('happy',4); chg('smarts',3); setFlag('homeowner'); return {text:`Sweat equity and a lot of YouTube tutorials turn a wreck into a home worth double. Genius.`, tags:[['good','Flipped a fixer']]}; } money(-rng(1000,5000)); chg('happy',-5); return {text:`The "cheap" house hid mold, bad wiring, and a cracked foundation. A money pit.`, tags:[['bad','Money pit']]}; } },
     ] }) },
 
@@ -16595,8 +16625,8 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'A Sure Thing 📈',
     text:`A friend swears a certain coin, stock, or startup is about to explode. "Get in now," they say, eyes a little too wide.`,
     choices:[
-      { label:'Go big', tip:'High risk', apply:()=>{ setFlag('w4_tip'); const stake=Math.min(S.money,rng(500,6000)); money(-stake); if(rng(0,100)<38){ const win=Math.round(stake*(2+rand()*4)); money(win); chg('happy',8); return {text:`It mooned. You cash out ${cur()}${win}, heart pounding. This time, the wild bet paid.`, tags:[['good',`Hit big +${cur()}${win}`]]}; } chg('happy',-7); return {text:`It cratered within a month. ${cur()}${stake} vaporized. Your "friend" stops answering calls.`, tags:[['bad',`Wiped out -${cur()}${stake}`]]}; } },
-      { label:'Invest only what you can lose', tip:'Measured', apply:()=>{ setFlag('w4_tip'); const stake=Math.min(S.money,rng(100,800)); money(-stake); if(rng(0,100)<42){ const win=Math.round(stake*(1.8+rand()*2)); money(win); chg('happy',4); return {text:`A modest bet, a modest win: +${cur()}${win}. Small enough to sleep at night.`, tags:[['good',`Careful gain +${cur()}${win}`]]}; } chg('happy',-2); return {text:`Lost the small stake, learned the lesson cheap. No harm done.`, tags:[['flag','Small loss']]}; } },
+      { label:'Go big', tip:'High risk', apply:()=>{ setFlag('w4_tip'); const stake=Math.min(S.money,rng(500,6000)); money(-stake); if(rng(0,100)<38){ const win=Math.round(stake*(2+rand()*4)); money(win); chg('happy',8); return {text:`It mooned. You cash out ${cur()}${fmn(win)}, heart pounding. This time, the wild bet paid.`, tags:[['good',`Hit big +${cur()}${fmn(win)}`]]}; } chg('happy',-7); return {text:`It cratered within a month. ${cur()}${fmn(stake)} vaporized. Your "friend" stops answering calls.`, tags:[['bad',`Wiped out -${cur()}${fmn(stake)}`]]}; } },
+      { label:'Invest only what you can lose', tip:'Measured', apply:()=>{ setFlag('w4_tip'); const stake=Math.min(S.money,rng(100,800)); money(-stake); if(rng(0,100)<42){ const win=Math.round(stake*(1.8+rand()*2)); money(win); chg('happy',4); return {text:`A modest bet, a modest win: +${cur()}${fmn(win)}. Small enough to sleep at night.`, tags:[['good',`Careful gain +${cur()}${fmn(win)}`]]}; } chg('happy',-2); return {text:`Lost the small stake, learned the lesson cheap. No harm done.`, tags:[['flag','Small loss']]}; } },
       { label:'Politely decline', tip:'Skeptical', apply:()=>{ setFlag('w4_tip'); chg('smarts',2); return {text:`If it were a sure thing, they would not be telling you. You keep your money.`, tags:[['flag','Passed on the tip']]}; } },
     ] }) },
 
@@ -16613,7 +16643,7 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'The Wrong Words 🍺',
     text:`A drunk stranger at the bar shoves you, spills your drink, and gets in your face looking for a fight. The whole room goes quiet.`,
     choices:[
-      { label:'Swing back', tip:'Aggressive', apply:()=>{ setFlag('w4_barfight'); karma(-2); if(rng(0,100) < 40 + S.fitness/6){ chg('happy',3); chg('fitness',1); return {text:`One clean hit and they crumple. The bar erupts. You are hauled out, but you won — this round.`, tags:[['bad','Won the brawl']]}; } chg('health',-rng(8,20)); money(-rng(50,300)); setFlag('criminal'); return {text:`You lost — badly. A broken nose, a night in a cell, and a fine. Not your finest hour.`, tags:[['bad','Beaten and booked']]}; } },
+      { label:'Swing back', tip:'Aggressive', apply:()=>{ setFlag('w4_barfight'); karma(-2); if(rng(0,100) < 40 + S.fitness/6){ chg('happy',3); chg('fitness',1); return {text:`One clean hit and they crumple. The bar erupts. You are hauled out, but you won — this round.`, tags:[['bad','Won the brawl']]}; } chg('health',-rng(8,20)); money(-rng(50,300)); gainCriminalRecord(); return {text:`You lost — badly. A broken nose, a night in a cell, and a fine. Not your finest hour.`, tags:[['bad','Beaten and booked']]}; } },
       { label:'Defuse it with words', tip:'Cool', apply:()=>{ setFlag('w4_barfight'); if(rng(0,100)<55){ chg('smarts',2); chg('happy',2); return {text:`You buy them a drink and crack a joke. The tension pops like a bubble. The bartender nods, impressed.`, tags:[['good','Talked it down']]}; } chg('health',-rng(4,10)); return {text:`They were too far gone to reason with and threw the first punch anyway. You cover up and take a few.`, tags:[['bad','Talk failed']]}; } },
       { label:'Walk out', tip:'Wise', apply:()=>{ setFlag('w4_barfight'); chg('smarts',2); return {text:`You leave your drink and your pride and walk into the cool night air. Nothing to prove to a stranger.`, tags:[['good','Walked away']]}; } },
     ] }) },
@@ -16633,7 +16663,7 @@ const EVENTS_WAVE4 = [
     choices:[
       { label:'Take the old dog home', tip:'Big heart', apply:()=>{ setFlag('w4_dog'); money(-rng(100,400)); karma(4); chg('happy',8); setFlag('dog_owner'); return {text:`You choose the one nobody else would. Those last good years you give each other are worth every penny and every chewed shoe.`, tags:[['good','Gave a home']]}; } },
       { label:'Adopt a young energetic puppy instead', tip:'Long haul', apply:()=>{ setFlag('w4_dog'); money(-rng(200,600)); chg('happy',6); chg('fitness',3); setFlag('dog_owner'); return {text:`A bundle of chaos and joy joins your life. Muddy paws, morning walks, and a decade of loyalty ahead.`, tags:[['good','New best friend']]}; } },
-      { label:'Just donate and walk out', tip:'Not ready', apply:()=>{ setFlag('w4_dog'); const gift=Math.min(S.money,rng(20,100)); money(-gift); karma(2); return {text:`You are not ready for a pet, but you leave ${cur()}${gift} for the shelter. That corner kennel haunts you a little.`, tags:[['flag','Donated instead']]}; } },
+      { label:'Just donate and walk out', tip:'Not ready', apply:()=>{ setFlag('w4_dog'); const gift=Math.min(S.money,rng(20,100)); money(-gift); karma(2); return {text:`You are not ready for a pet, but you leave ${cur()}${fmn(gift)} for the shelter. That corner kennel haunts you a little.`, tags:[['flag','Donated instead']]}; } },
     ] }) },
 
 /* ============================ ELDER (60+) ============================ */
@@ -16687,7 +16717,7 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'What to Leave Behind 🎁',
     text:`You have more than you will spend now. The question of what to do with it — and what mark to leave — keeps you up at night.`,
     choices:[
-      { label:'Endow a scholarship or fund', tip:'Enduring', apply:()=>{ setFlag('w4_legacygift'); const gift=Math.min(S.money,rng(2000,20000)); money(-gift); karma(7); chg('happy',7); setFlag('philanthropist'); return {text:`You put ${cur()}${gift} toward a fund in your name. Long after you are gone, strangers will benefit. That is a kind of forever.`, tags:[['good','Built a legacy']]}; } },
+      { label:'Endow a scholarship or fund', tip:'Enduring', apply:()=>{ setFlag('w4_legacygift'); const gift=Math.min(S.money,rng(2000,20000)); money(-gift); karma(7); chg('happy',7); setFlag('philanthropist'); return {text:`You put ${cur()}${fmn(gift)} toward a fund in your name. Long after you are gone, strangers will benefit. That is a kind of forever.`, tags:[['good','Built a legacy']]}; } },
       { label:'Give it to family while you can watch them enjoy it', tip:'Immediate joy', apply:()=>{ setFlag('w4_legacygift'); const gift=Math.min(S.money,rng(1000,12000)); money(-gift); chg('happy',8); karma(3); return {text:`You give it now, not in a will — a house down-payment, a debt erased — and you get to SEE their relief. Priceless.`, tags:[['good','Gave with warm hands']]}; } },
       { label:'Hold onto it for security', tip:'Prudent', apply:()=>{ setFlag('w4_legacygift'); chg('happy',1); return {text:`You keep your cushion. Old age is unpredictable, and there is peace in a full account.`, tags:[['flag','Kept your cushion']]}; } },
     ] }) },
