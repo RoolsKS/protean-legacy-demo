@@ -497,7 +497,7 @@
 
   <div id="topbar">
     <button class="ham" onclick="openMenu()">☰</button>
-    <div class="brand"><span class="logo-slot" id="logoSlot">🧬</span><span class="tt">PROTEAN LEGACY</span></div>
+    <div class="brand" onclick="devTap()"><span class="logo-slot" id="logoSlot">🧬</span><span class="tt">PROTEAN LEGACY</span></div>
     <button class="premium-badge" onclick="openPremium()">PREMIUM</button>
   </div>
 
@@ -13851,6 +13851,53 @@ const AGE_GATE_KEY='protean_age_ok';
 function passAgeGate(){ try{ localStorage.setItem(AGE_GATE_KEY,'1'); }catch(e){} const g=document.getElementById('ageGate'); if(g) g.style.display='none'; }
 function failAgeGate(){ const g=document.getElementById('ageGate'); if(g) g.style.display='none'; const b=document.getElementById('ageGateBlock'); if(b) b.style.display='flex'; }
 function checkAgeGate(){ let ok=false; try{ ok=localStorage.getItem(AGE_GATE_KEY)==='1'; }catch(e){ ok=true; } if(!ok){ const g=document.getElementById('ageGate'); if(g) g.style.display='block'; } }
+/* ============================================================
+   🛠️ DEV CONSOLE — a hidden debug panel (à la BitLife's SRDebugger). Tap the title 7× to open.
+   Pure dev/UI tooling: the info readout is harmless; the cheat buttons mutate S OUTSIDE the action
+   tape, which by design makes the run un-replayable → the server rejects it, so cheats can't touch
+   the leaderboard. We also stamp S._dev so it's honestly flagged. None of this runs during replay.
+   ============================================================ */
+const APP_VERSION='0.3.24';
+let _devTaps=0, _devTimer=null;
+function devTap(){ _devTaps++; if(_devTimer){ try{clearTimeout(_devTimer);}catch(_){} } try{ _devTimer=setTimeout(()=>{_devTaps=0;},2500); }catch(_){}
+  if(_devTaps>=7){ _devTaps=0; try{ openDevConsole(); }catch(e){} } }
+function _devTaint(){ if(S){ S._dev=true; setFlag&&setFlag('used_dev_console'); } }
+function _mem(){ try{ return navigator.deviceMemory?navigator.deviceMemory+' GB':'—'; }catch(e){ return '—'; } }
+function _plat(){ try{ const ua=navigator.userAgent||''; if(/Android/.test(ua))return 'Android'; if(/iPhone|iPad|iPod/.test(ua))return 'iOS'; if(/Windows/.test(ua))return 'Windows'; if(/Mac/.test(ua))return 'macOS'; if(/Linux/.test(ua))return 'Linux'; return 'Web'; }catch(e){ return 'Web'; } }
+function openDevConsole(){ if(typeof closeMenu==='function')closeMenu(); closeModal&&closeModal();
+  const wrap=(typeof Capacitor!=='undefined')?'Capacitor (native wrap)':'Browser';
+  const s=S||{};
+  const info=`<div style="text-align:left;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.7;color:var(--dim)">
+    <b style="color:var(--text)">▎BUILD</b><br>
+    App&nbsp;Version: <span style="color:var(--text)">${APP_VERSION}</span> · Engine: <span style="color:var(--text)">vanilla JS</span><br>
+    Runtime: <span style="color:var(--text)">${wrap}</span> · Premium: <span style="color:var(--text)">${(typeof isPremium==='function'&&isPremium())?'✓':'✗'}</span> · Theme: <span style="color:var(--text)">${(typeof currentTheme==='function')?currentTheme():'default'}</span><br>
+    <b style="color:var(--text)">▎DEVICE</b><br>
+    Platform: <span style="color:var(--text)">${_plat()}</span> · CPU&nbsp;cores: <span style="color:var(--text)">${(navigator.hardwareConcurrency||'—')}</span> · Memory: <span style="color:var(--text)">${_mem()}</span><br>
+    Resolution: <span style="color:var(--text)">${screen.width}×${screen.height}</span> · Viewport: <span style="color:var(--text)">${innerWidth}×${innerHeight}</span> · DPR: <span style="color:var(--text)">${(window.devicePixelRatio||1)}</span><br>
+    Language: <span style="color:var(--text)">${(navigator.language||'—')}</span> · Online: <span style="color:var(--text)">${navigator.onLine?'✓':'✗'}</span><br>
+    <b style="color:var(--text)">▎SAVE / RNG</b><br>
+    ${s.name?`Character: <span style="color:var(--text)">${s.name}</span>, age <span style="color:var(--text)">${s.age}</span>, gen <span style="color:var(--text)">${s.legacyGen||1}</span><br>`:'<span>No active life.</span><br>'}
+    ${s.seed!=null?`Seed: <span style="color:var(--text)">${s.seed}</span> · RNG&nbsp;state: <span style="color:var(--text)">${s._rng}</span> · Tape: <span style="color:var(--text)">${(s.actions||[]).length}</span> acts<br>`:''}
+    ${s.name?`Money: <span style="color:var(--text)">${cur()}${(s.money||0).toLocaleString()}</span> · People: <span style="color:var(--text)">${Object.keys(s.people||{}).length}</span> · Alive: <span style="color:var(--text)">${s.alive?'✓':'✗'}</span><br>`:''}
+    ${s._dev?`<span style="color:var(--bad)">⚠️ DEV-TAINTED — this run can't post to the leaderboard.</span>`:`<span style="color:var(--good)">✓ Clean run (leaderboard-eligible).</span>`}
+  </div>`;
+  const live=!!(S&&!isLocked());
+  const choices=[
+    ...(live?[
+      {label:'💰 +$1,000,000', fn:()=>{ money(1000000); _devTaint(); render(); openDevConsole(); }},
+      {label:'⭐ Max stats & fitness', fn:()=>{ S.stats={health:100,happy:100,smarts:100,looks:100}; S.fitness=100; _devTaint(); render(); openDevConsole(); }},
+      {label:'🎂 Age +5 (raw jump)', fn:()=>{ S.age=(S.age||0)+5; _devTaint(); render(); openDevConsole(); }},
+      {label:'⚡ Refill energy & clear yearly cooldowns', fn:()=>{ S.energy=100; S._actsUsed=[]; S._mbReps={}; _devTaint(); render(); openDevConsole(); }},
+      {label:'🩹 Full heal', fn:()=>{ S.stats.health=100; if(S.mind)S.mind.stress=0; S.illnesses=[]; _devTaint(); render(); openDevConsole(); }},
+      {label:'💀 Kill character', fn:()=>{ _devTaint(); S.stats.health=0; closeModal(); if(typeof die==='function')die(); }},
+    ]:[]),
+    {label:`👑 Toggle Premium (now ${(typeof isPremium==='function'&&isPremium())?'ON':'OFF'})`, alt:true, fn:()=>{ if(typeof setPremium==='function')setPremium(!(isPremium())); openDevConsole(); }},
+    {label:'📋 Copy save JSON to clipboard', alt:true, fn:()=>{ try{ const t=S._party;S._party=null; navigator.clipboard.writeText(JSON.stringify(S)); S._party=t; toast('📋 Save copied.'); }catch(e){ toast('Clipboard blocked.'); } openDevConsole(); }},
+    {label:'🧪 Run self-check (determinism note)', alt:true, fn:()=>{ toast(S&&S._dev?'⚠️ Run is dev-tainted — replay will diverge.':'✓ Untampered — replay-valid.'); openDevConsole(); }},
+    {label:'✖ Close', alt:true, fn:closeModal},
+  ];
+  openModal({banner:'Dev Console', title:'🛠️ Dev Console', icon:'🛠️', closable:true, text:info, choices});
+}
 try{ applyTheme(currentTheme()); }catch(e){}   // 🎨 apply the saved appearance theme on load
 try{ initLang(); }catch(e){}      // apply saved UI language on load
 try{ initHaptics(); }catch(e){}   // delegated tap-feedback + sync the settings toggle label
