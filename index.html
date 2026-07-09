@@ -1718,7 +1718,7 @@ function firstFamilyInit(){
   const goodness=rng(-60,85);
   S.potus={ id:p.id, name:p.name, relation:actualRel, title:'President', party:pick(POTUS_PARTIES),
     approval: clamp(50 + Math.round(goodness/4) + rng(-12,12), 20, 88),
-    goodness, inOffice:true, term:1, yearsInOffice:rng(0,3),
+    goodness, inOffice:true, term:1, yearsInOffice:0, endYear:rng(9,18),   // stays in office through much of your childhood/teens, then leaves
     codeName: pick(POTUS_CODENAMES), secretService:true };
   setFlag('secret_service'); S.hood='an affluent';
 }
@@ -1729,12 +1729,15 @@ function potusYear(){
     const pull=(pt.goodness/2 - (pt.approval-50))/6;
     pt.approval=clamp(Math.round(pt.approval + pull + rng(-7,7)), 8, 96);
     if((S.fame||0)<45) bumpFame(rng(2,5));                                     // first family are household names while they serve
-    const maxTerm = pt.term>=2 ? 8 : (rand()<0.5?4:8);
-    if(pt.yearsInOffice>=maxTerm || (rand()<0.06 && pt.approval<32)){
-      if(pt.term<2 && pt.approval>=48 && pt.yearsInOffice<=4 && rand()<0.7){ pt.term=2; pushLog(`🗳️ ${pt.name} won <b>re-election</b> — another term in the highest office.`,[['good','Re-elected']]); }
-      else { pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job='former President';
-        pushLog(`🏛️ ${pt.name}'s time in office has <b>ended</b>. The motorcades thin, the world moves on — but you will always be a former first-family member.`,[['echo','The term ends']]);
-        setFlag('former_first_family'); }
+    // a mid-run re-election beat (once), then the term runs until roughly your teen years — or ends early if they are deeply unpopular
+    if(!pt._reelected && pt.yearsInOffice>=4 && S.age < (pt.endYear||14)-1){
+      if(pt.approval>=44){ pt._reelected=true; pt.term=2; pushLog(`🗳️ ${pt.name} won <b>re-election</b> — another term in the highest office.`,[['good','Re-elected']]); }
+      else { pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job='former President'; setFlag('former_first_family');
+        pushLog(`🗳️ ${pt.name} <b>lost re-election</b>. The family packs up the residence; the motorcades thin.`,[['bad','Voted out']]); }
+    }
+    if(pt.inOffice && (S.age>=(pt.endYear||14) || (pt.approval<24 && rand()<0.12))){
+      pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job='former President'; setFlag('former_first_family');
+      pushLog(`🏛️ ${pt.name}'s time in office has <b>ended</b>. The motorcades thin, the world moves on — but you will always be a former first-family member.`,[['echo','The term ends']]);
     }
   } else {
     pt.postYears=(pt.postYears||0)+1;
@@ -19245,6 +19248,1012 @@ const INVITE_EVENTS=[
 
 try{ EVENTS.push(...FAME_PERK_EVENTS, ...INVITE_EVENTS); }catch(e){}
 /* ===== end fame content ===== */
+
+/* ===== 🏛️ PRESIDENTIAL FAMILY event packs (scenarios + threats) ===== */
+/* ============================================================
+   PRESIDENTIAL-FAMILY EVENT PACK  (ids: ff_*)
+   Plugs into the First-Family origin system:
+     S.potus = { name, party, approval(0-100), goodness(-100..100),
+                 relation, inOffice, term, codeName, secretService }
+   Gating conventions used below:
+     IN OFFICE  → when:S=> S.potus && S.potus.inOffice
+     HIGH APPRV → S.potus.approval>=55   (public adores the family)
+     LOW  APPRV → S.potus.approval<40    (protests, threats, blame)
+     POST-TERM  → has('first_family') && S.potus && !S.potus.inOffice
+   apply() handlers are replay-safe: they only mutate S + use seeded
+   rng()/rand()/pick(), and NEVER touch the DOM.
+   ============================================================ */
+const POTUS_EVENTS = [
+
+/* ---------- PERKS & GLAMOUR ---------- */
+
+/* A state dinner for a visiting head of state */
+{ id:'ff_state_dinner', once:true, weight:9, when:S=> S.potus && S.potus.inOffice && S.age>=8,
+  build:S=>({ yr:`Age ${S.age}`, title:'A State Dinner 🍽️',
+    text:`The State Dining Room glitters with crystal and gold. Tonight ${S.potus.name} hosts a visiting head of state, and you have a seat at the family table — cameras everywhere, protocol officers hovering.`,
+    choices:[
+      {label:'Charm the whole room', tip:`Poise · fame`, apply:()=>{ bumpFame(rng(5,10)); chg('happy',5);
+        if(rng(0,100)<70){ ledgerAdd('triumph',10,{note:'Charmed a visiting head of state.'}); rel('potus',6,4,'Made the family proud at the state dinner.'); return {text:`You worked the table like a diplomat twice your age — a joke here, perfect manners there. By dessert the foreign delegation adored you, and ${S.potus.name} beamed.`,tags:[['good','Charmed the room']]}; }
+        return {text:`You smiled and said all the right things. The evening went off without a hitch — one more polished night under the lights.`,tags:[['good','A flawless evening']]}; }},
+      {label:'Sneak extra desserts to the kitchen staff', tip:`Sweet · low-key`, apply:()=>{ karma(2); chg('happy',6); rel('potus',0,0,'');
+        return {text:`You slipped away from the protocol and spent half the night trading jokes with the pastry chefs, pockets full of petit fours. The staff will remember the kid who treated them like people.`,tags:[['good','Beloved by the staff']]}; }},
+      {label:'Get bored and act out', tip:`Risky · press bait`, apply:()=>{ chg('happy',3); bumpFame(rng(3,7));
+        if(rng(0,100)<55){ S.rep=clamp((S.rep||0)-6,-100,100); ledgerAdd('scandal',8,{note:'Embarrassed the family at a state dinner.'}); rel('potus',-6,-3,'Embarrassed the family in front of a foreign leader.'); return {text:`You yawned theatrically, checked your phone, and mumbled through the toast. A photographer caught it all. "FIRST KID SNUBS ALLY," runs the headline by morning.`,tags:[['bad','A diplomatic embarrassment']]}; }
+        return {text:`You slouched and rolled your eyes, but nobody important noticed. The evening survived your boredom.`,tags:[['flag','Bored at the banquet']]}; }},
+    ]})},
+
+/* Air Force One somewhere */
+{ id:'ff_air_force_one', once:true, weight:9, when:S=> S.potus && S.potus.inOffice && S.age>=6,
+  build:S=>({ yr:`Age ${S.age}`, title:'Aboard Air Force One ✈️',
+    text:`The great blue-and-white jet waits on the tarmac. There is a private stateroom, a conference room, beds, a medical suite, and staff who materialize the moment you want anything. You are flying with ${S.potus.name} on official business.`,
+    choices:[
+      {label:'Explore every inch of the plane', tip:`Wide-eyed wonder`, apply:()=>{ chg('happy',8); chg('smarts',2); bumpFame(rng(2,5));
+        return {text:`You found the cockpit, the press cabin, the ovens that bake fresh cookies at 35,000 feet. A steward pinned a set of Air Force One wings on you. Some kids get a school trip; you get this.`,tags:[['good','Air Force One wings']]}; }},
+      {label:'Do your homework in the stateroom', tip:`Dutiful`, apply:()=>{ chg('smarts',4); rel('potus',3,2,'Studied hard on the flight.');
+        return {text:`While aides briefed ${S.potus.name} next door, you spread your books across the polished table and actually got ahead. The strangest study hall in the world.`,tags:[['good','Studied at 35,000 ft']]}; }},
+      {label:'Take a private call with a movie star two seats away', tip:`Surreal networking`, apply:()=>{ bumpFame(rng(4,8)); chg('happy',6); setFlag('af1_connections');
+        return {text:`A celebrity was hitching a ride to a summit. Three hours in the sky and you traded numbers like old friends. Your world is not most people's world.`,tags:[['good','Sky-high connections']]}; }},
+    ]})},
+
+/* Marine One to school */
+{ id:'ff_marine_one_school', once:true, weight:8, when:S=> S.potus && S.potus.inOffice && S.age>=10 && S.age<=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Helicopter Run 🚁',
+    text:`Running late, an aide floats an outrageous idea: take Marine One. The green-and-white chopper can set you down blocks from school. Every kid on the block would see.`,
+    choices:[
+      {label:'Take the helicopter', tip:`Unforgettable · a spectacle`, apply:()=>{ chg('happy',7); bumpFame(rng(4,9));
+        if(rng(0,100)<50){ S.rep=clamp((S.rep||0)-3,-100,100); return {text:`You clattered down onto the field as classmates pressed to the windows. Half of them were awestruck; half muttered about the kid who thinks the rules are for other people.`,tags:[['good','Arrived by Marine One']]}; }
+        return {text:`Rotor wash flattened the grass and you stepped out like something from a film. For one morning, you were the most famous kid in the country.`,tags:[['good','Made an entrance']]}; }},
+      {label:'Ask for a normal car instead', tip:`Craves ordinary`, apply:()=>{ chg('happy',3); rel('potus',2,3,'Just wanted to feel normal.');
+        return {text:`You told the aide you would rather roll up in the black SUV like a slightly-less-strange kid. Even that draws stares — but at least it is quieter.`,tags:[['flag','Chose the low-key ride']]}; }},
+    ]})},
+
+/* Meet a foreign royal / global star at the WH */
+{ id:'ff_meet_royal', once:true, weight:8, when:S=> S.potus && S.potus.inOffice && S.age>=7,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Visitor in the East Room 👑',
+    text:`A foreign royal — and, the same week, a global pop star — pass through the White House. You are told you may meet one of them for a few minutes.`,
+    choices:[
+      {label:'Curtsy for the royal', tip:`Poise · prestige`, apply:()=>{ bumpFame(rng(4,8)); chg('smarts',2); ledgerAdd('triumph',8,{note:'Received by visiting royalty.'});
+        return {text:`You got the protocol exactly right — the slight bow, the "Your Majesty," the steady eye contact. The royal was charmed and sent a gift the next morning. Something to tell your grandchildren.`,tags:[['good','Received by royalty']]}; }},
+      {label:'Fangirl over the pop star', tip:`Joy · maybe viral`, apply:()=>{ chg('happy',9); bumpFame(rng(6,11));
+        if(rng(0,100)<45){ setFlag('celeb_photo_viral'); return {text:`You forgot every ounce of composure, got the selfie, and the star posted it to a hundred million followers. Overnight you are the most-tagged kid in the country.`,tags:[['good','Viral with a superstar']]}; }
+        return {text:`You babbled, got the autograph, and floated for a week. Some perks of this life are just pure, uncomplicated joy.`,tags:[['good','Met your idol']]}; }},
+      {label:'Play it cool with both', tip:`Composed`, apply:()=>{ bumpFame(rng(2,5)); chg('happy',3);
+        return {text:`You shook hands, made small talk, and let neither the crown nor the fame rattle you. Aides noted the poise. You are learning to wear this life.`,tags:[['good','Unflappable']]}; }},
+    ]})},
+
+/* The White House Easter Egg Roll */
+{ id:'ff_easter_roll', once:true, weight:7, when:S=> S.potus && S.potus.inOffice && S.age>=4 && S.age<=14,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Easter Egg Roll 🥚',
+    text:`Thirty thousand people flood the South Lawn for the annual Easter Egg Roll. There are wooden eggs, a giant bunny, and a bank of cameras aimed straight at the family.`,
+    choices:[
+      {label:'Host a game for the visiting kids', tip:`Warm · public`, apply:()=>{ karma(3); bumpFame(rng(3,7)); chg('happy',6); ledgerAdd('charity',6,{note:'Hosted kids at the Egg Roll.'});
+        return {text:`You knelt in the grass and ran the egg race yourself, cheering on kids who had waited hours in line. The photos of you laughing with them lead the evening news.`,tags:[['good','A darling of the Egg Roll']]}; }},
+      {label:'Hide from the cameras', tip:`Overwhelmed`, apply:()=>{ chg('happy',-2); addTrauma('public',6,'the year the crowd felt like too much');
+        return {text:`Thirty thousand strangers and a wall of lenses was simply too much. You spent most of it behind a hedge with your detail. Not every kid is built for a crowd this size.`,tags:[['flag','Hid from the crowd']]}; }},
+    ]})},
+
+/* Halloween at the White House */
+{ id:'ff_halloween', once:true, weight:7, when:S=> S.potus && S.potus.inOffice && S.age>=4 && S.age<=16,
+  build:S=>({ yr:`Age ${S.age}`, title:'Halloween on Pennsylvania Avenue 🎃',
+    text:`The residence is decked out in cobwebs and pumpkins, and the North Portico is handing candy to hundreds of costumed local kids. You get to pick your own costume, no budget, no limits.`,
+    choices:[
+      {label:'Go all-out with a jaw-dropping costume', tip:`Fun · press-friendly`, apply:()=>{ chg('happy',7); bumpFame(rng(3,7));
+        return {text:`The White House costume department built you something museum-grade. Every outlet ran the photo. For one night the scrutiny felt like a spotlight you actually wanted.`,tags:[['good','Best costume in the country']]}; }},
+      {label:'Hand out candy to the visiting kids yourself', tip:`Sweet · grounding`, apply:()=>{ karma(2); chg('happy',5); rel('potus',2,2,'Shared a warm family night.');
+        return {text:`You stood at the door for two hours dropping candy into pillowcases, watching kids gape at where they were standing. It reminded you this house belongs to all of them, not just you.`,tags:[['good','Handed out the candy']]}; }},
+    ]})},
+
+/* Code name reveal */
+{ id:'ff_codename', once:true, weight:9, when:S=> S.potus && S.potus.inOffice && S.age>=8,
+  build:S=>({ yr:`Age ${S.age}`, title:'Your Code Name 🎧',
+    text:`The Secret Service assigns every protectee a code name — all sharing the first letter of the president's. An agent finally tells you the one crackling over the radios whenever you move. It is yours now, for life.`,
+    choices:[
+      {label:'Wear it like a badge of honor', tip:`Identity · fame`, apply:()=>{ const c=pick(['Radiance','Rosebud','Twinkle','Turquoise','Lark','Sundance','Prospect','Comet','Scorpion','Skywalker','Rhapsody','Ranger','Sunburst','Snowbird','Pioneer','Halo']); S.codeName=c; setFlag('secret_service'); if(S.potus) S.potus.secretService=true; bumpFame(rng(3,6)); chg('happy',4);
+        return {text:`"${c}." That is what the agents call you on the net — a word that will follow you in dry declassified memos decades from now. You kind of love it.`,tags:[['good',`Code name: ${c}`]]}; }},
+      {label:'Find the whole thing a little sinister', tip:`Uneasy`, apply:()=>{ const c=pick(['Radiance','Rosebud','Twinkle','Lark','Prospect','Comet','Ranger','Halo','Snowbird','Pioneer']); S.codeName=c; setFlag('secret_service'); if(S.potus) S.potus.secretService=true; addTrauma('surveillance',6,'the day you realized you were a code word'); chg('happy',-2);
+        return {text:`"${c}," they call you — because your real name on an open radio is a target. You are eight, or eighteen, and you are already a thing to be guarded. It settles on you strangely.`,tags:[['flag',`Code name: ${c}`]]}; }},
+    ]})},
+
+/* Residence staff spoil you */
+{ id:'ff_residence_staff', once:true, weight:7, when:S=> S.potus && S.potus.inOffice && S.age>=5,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Residence Staff 🛎️',
+    text:`Ninety people run the residence — ushers, chefs, florists, valets. They have quietly learned your favorite meal, remade your bed with hospital corners, and left your preferred snacks in the family kitchen. It is a level of care that is easy to take for granted.`,
+    choices:[
+      {label:'Treat them like family and learn their names', tip:`Grounded · karma`, apply:()=>{ karma(4); chg('happy',4); rel('potus',1,1,''); setFlag('kind_to_staff'); ledgerAdd('charity',6,{note:'Treated the residence staff with respect.'});
+        return {text:`You learned every name, asked about their kids, thanked the pastry chef by hand. When your family eventually leaves, the ushers will say you were one of the kind ones. That reputation outlives an administration.`,tags:[['good','Beloved by the household']]}; }},
+      {label:'Ring the bell for everything', tip:`Spoiled · easy`, apply:()=>{ chg('happy',6); S.rep=clamp((S.rep||0)-2,-100,100); setFlag('spoiled_firstkid');
+        return {text:`Midnight grilled cheese? Done. Laundry folded before you noticed it was dirty? Done. You get very, very used to a life where problems dissolve before you feel them. It will not always be like this.`,tags:[['flag','Grew used to the good life']]}; }},
+    ]})},
+
+/* Magazine cover as "the first kid" */
+{ id:'ff_magazine_cover', once:true, weight:8, when:S=> S.potus && S.potus.inOffice && S.age>=12,
+  build:S=>({ yr:`Age ${S.age}`, title:'The First Kid, On Newsstands 📸',
+    text:`A glossy magazine wants you on the cover — a whole feature on growing up in the world's most-watched house. Your parents leave the choice to you.`,
+    choices:[
+      {label:'Do the cover and own your story', tip:`Fame · exposure`, apply:()=>{ bumpFame(rng(8,15)); chg('happy',4);
+        if(rng(0,100)<40){ S.rep=clamp((S.rep||0)-5,-100,100); return {text:`The cover was stunning and the interview went national. But one offhand line got twisted into a week of takes, and you learned that even your own story stops being yours the moment it prints.`,tags:[['bad','The story got away from you']]}; }
+        ledgerAdd('triumph',8,{note:'Graced a national magazine cover.'}); return {text:`The photos were gorgeous, the quotes were exactly yours, and for once you controlled the frame. Millions of readers saw the version of you that you chose.`,tags:[['good','A star turn on the cover']]}; }},
+      {label:'Decline and guard your privacy', tip:`Protective`, apply:()=>{ chg('happy',2); setFlag('guards_privacy'); rel('potus',2,3,'Chose privacy over publicity.');
+        return {text:`You said no. There is precious little of your life the world does not already own; you decided to keep this piece. The magazine ran a stock photo and a shrug of a caption instead.`,tags:[['flag','Kept it private']]}; }},
+    ]})},
+
+/* Personal aide handles your life */
+{ id:'ff_personal_aide', once:true, weight:6, when:S=> S.potus && S.potus.inOffice && S.age>=13,
+  build:S=>({ yr:`Age ${S.age}`, title:'Your Own Aide 📋',
+    text:`A young, sharp West Wing staffer is assigned to you personally — schedule, homework reminders, press questions, even fielding which "friends" are really friends. They are good at the job and quickly indispensable.`,
+    choices:[
+      {label:'Lean on them completely', tip:`Easy · dependent`, apply:()=>{ chg('happy',4); chg('smarts',-1); setFlag('has_handler');
+        return {text:`Your aide runs your life like a small campaign, and it works beautifully. You also slowly forget how to book your own dentist. Convenience has a quiet cost.`,tags:[['flag','Life on autopilot']]}; }},
+      {label:'Become genuine friends with them', tip:`Loyalty`, apply:()=>{ rel('aide',8,6,'Your loyal personal aide.'); chg('happy',5); setFlag('aide_friend');
+        return {text:`In a house full of people who see the office before they see you, your aide sees you. That friendship becomes one of the truest things you have in these years.`,tags:[['good','A true friend inside the bubble']]}; }},
+      {label:'Insist on doing things yourself', tip:`Independence`, apply:()=>{ chg('smarts',3); chg('happy',2); setFlag('fierce_independence');
+        return {text:`You thanked the aide and quietly did your own homework, made your own calls, kept your own calendar. You will leave this house knowing how to run a life. Not every first kid can say that.`,tags:[['good','Kept your independence']]}; }},
+    ]})},
+
+/* Tour the Situation Room */
+{ id:'ff_situation_room', once:true, weight:6, when:S=> S.potus && S.potus.inOffice && S.age>=12,
+  build:S=>({ yr:`Age ${S.age}`, title:'Inside the Situation Room 🗺️',
+    text:`On a quiet Sunday, ${S.potus.name} walks you down to the Situation Room — the windowless nerve center under the West Wing, screens dark, chairs empty. Few people your age will ever stand here.`,
+    choices:[
+      {label:'Ask serious questions about how it works', tip:`Curious · smarts`, apply:()=>{ chg('smarts',5); rel('potus',4,3,'Shared a rare quiet moment.'); setFlag('seen_the_sitroom');
+        return {text:`You asked about the screens, the secure lines, the decisions made in this room at three in the morning. ${S.potus.name} answered every one. You left understanding the weight your family carries a little better.`,tags:[['good','A civics lesson few ever get']]}; }},
+      {label:'Feel the terrible weight of the place', tip:`Sobering`, apply:()=>{ chg('happy',-2); addTrauma('burden',8,'the day the job stopped being abstract');
+        return {text:`Standing where wars are ordered and hostages counted, the glamour fell away. This is where your parent's real job lives — and where, on the worst nights, the whole family holds its breath.`,tags:[['flag','Felt the weight of the office']]}; }},
+    ]})},
+
+/* ---------- THE MICROSCOPE ---------- */
+
+/* Paparazzi blow up something ordinary */
+{ id:'ff_paparazzi', once:true, weight:9, when:S=> S.potus && S.potus.inOffice && S.age>=11,
+  build:S=>({ yr:`Age ${S.age}`, title:'Caught on Camera 📷',
+    text:`You did the most ordinary thing in the world — grabbed a burger, wore a band tee, laughed too loud on a curb. A long lens caught it, and now it is a story with a headline and a thousand hot takes.`,
+    choices:[
+      {label:'Ignore it and refuse to react', tip:`Dignified`, apply:()=>{ chg('happy',-2); setFlag('thick_skinned'); bumpFame(rng(2,4));
+        return {text:`You said nothing, changed nothing, and let the cycle burn itself out in a day. You are learning the hardest first-kid skill: that silence is armor.`,tags:[['flag','Rose above it']]}; }},
+      {label:'Clap back online', tip:`Satisfying · risky`, apply:()=>{ bumpFame(rng(5,10)); chg('happy',3);
+        if(rng(0,100)<50){ S.rep=clamp((S.rep||0)-6,-100,100); ledgerAdd('scandal',6,{note:'Feuded publicly with the press.'}); return {text:`Your comeback was funny and it went everywhere — which meant the story lived three more days and dragged your parent's press office into cleanup. Winning the joke, losing the peace.`,tags:[['bad','Fed the fire']]}; }
+        return {text:`Your one perfect line disarmed the whole thing. Even the reporters laughed. Rare that the first kid wins the round.`,tags:[['good','Won the round']]}; }},
+      {label:'Let it get to you', tip:`Human`, apply:()=>{ chg('happy',-6); addTrauma('public',10,'the day a burger became national news');
+        return {text:`It should not sting — it is a burger — but it does. You cannot buy a snack without it being evidence in some argument you never joined. The exhaustion of it settles into your bones.`,tags:[['bad','Worn down by the lens']]}; }},
+    ]})},
+
+/* A post becomes national news */
+{ id:'ff_viral_post', once:true, weight:8, when:S=> S.potus && S.potus.inOffice && S.age>=13,
+  build:S=>({ yr:`Age ${S.age}`, title:'One Post, National News 📱',
+    text:`You fired off a quick post — a meme, an opinion, a joke you would have made to any friend. Because of who your parent is, it is now a chyron on three networks and a question at the press briefing.`,
+    choices:[
+      {label:'Stand by what you said', tip:`Principled · polarizing`, apply:()=>{ bumpFame(rng(6,12));
+        if(S.potus.approval>=55){ chg('happy',3); return {text:`With the country warm on your family, standing firm read as authentic. Half the internet made you a hero; the briefing room moved on by noon.`,tags:[['good','Stood your ground']]}; }
+        S.rep=clamp((S.rep||0)-7,-100,100); ledgerAdd('scandal',8,{note:'A viral post became a political headache.'}); rel('potus',-4,-2,'Made the press office scramble.'); return {text:`With your parent already underwater, your post became ammunition. Pundits demanded ${S.potus.name} disavow you. Standing firm cost the family a very long week.`,tags:[['bad','A viral headache']]}; }},
+      {label:'Delete it and apologize', tip:`Safe · deflating`, apply:()=>{ chg('happy',-3); setFlag('walked_it_back');
+        return {text:`You deleted it, posted the careful non-apology the comms team drafted, and watched a piece of your own voice get sanded off for the good of the poll numbers. This is the deal you did not sign.`,tags:[['flag','Walked it back']]}; }},
+    ]})},
+
+/* A bad grade leaks */
+{ id:'ff_grade_leak', once:true, weight:7, when:S=> S.potus && S.potus.inOffice && S.age>=12 && S.age<=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Grade That Leaked 📄',
+    text:`Someone at school — a classmate, a parent, who knows — leaked a photo of a rough report card. A failing mark that any teenager might get is suddenly a national talking point about "the family that runs the country."`,
+    choices:[
+      {label:'Buckle down and fix it for real', tip:`Growth · smarts`, apply:()=>{ chg('smarts',5); chg('happy',-2); ledgerAdd('triumph',5,{note:'Turned a bad grade around under public scrutiny.'});
+        return {text:`Humiliating as it was, you used it. Tutors, late nights, the works. By term's end you had turned the grade around — and learned that the microscope can, sometimes, be a forge.`,tags:[['good','Turned it around']]}; }},
+      {label:'Rage at the classmate who leaked it', tip:`Justified · messy`, apply:()=>{ chg('happy',-4); karma(-1);
+        if(rng(0,100)<50){ S.rep=clamp((S.rep||0)-4,-100,100); return {text:`You confronted them in the hallway and it got loud — and someone filmed that too. Now there are two stories. The bubble turns even your anger into content.`,tags:[['bad','A hallway scene, filmed']]}; }
+        return {text:`You found the leaker and let them have it, privately and precisely. It changed nothing about the headlines, but it lanced something in you.`,tags:[['flag','Confronted the leaker']]}; }},
+      {label:'Let the family fixers handle it', tip:`Protected · numbing`, apply:()=>{ setFlag('has_handler'); chg('happy',-2);
+        return {text:`The comms team put out a line about "respecting the privacy of a minor." The story faded. You did not have to lift a finger — which is exactly the strange, weightless part.`,tags:[['flag','Let the machine handle it']]}; }},
+    ]})},
+
+/* Cannot have a normal date — agents everywhere */
+{ id:'ff_no_normal_date', once:true, weight:8, when:S=> S.potus && S.potus.inOffice && S.age>=15,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Date With a Detail 🕶️',
+    text:`You finally worked up the nerve to ask someone out. There is one wrinkle: two armed agents will sit three tables away, the restaurant was swept an hour early, and a motorcade idles out front. Romance, first-family style.`,
+    choices:[
+      {label:'Go anyway and make it work', tip:`Brave · sweet`, apply:()=>{ chg('happy',6); rel('date',6,4,'A brave first date under guard.');
+        if(rng(0,100)<55){ setFlag('found_someone_real'); return {text:`Your date took one look at the agents, laughed, and decided you were worth it. You talked for hours and forgot the suits in the corner. Rare and real.`,tags:[['good','A real connection']]}; }
+        return {text:`It was sweet and a little stiff — hard to be vulnerable with earpieces watching. But you both tried, and trying counted for something.`,tags:[['good','An awkward, tender night']]}; }},
+      {label:'Ditch the detail for one hour', tip:`Reckless · dangerous`, apply:()=>{ chg('happy',4); karma(-1); addTrauma('danger',6,'the night you slipped your protection');
+        if(rng(0,100)<40){ setFlag('security_incident'); bumpFame(rng(4,8)); return {text:`You slipped out a side door for a taste of freedom — and a passerby recognized you, filmed you, and the agents found you in a panic. It became a story about a "security lapse," and your detail got chewed out for your choice.`,tags:[['bad','A security scare']]}; }
+        return {text:`For one glorious hour you walked the street like anyone else, unwatched, unphotographed. Then guilt about the agents you scared drove you back. Freedom, it turns out, is complicated for you.`,tags:[['flag','Stole an hour of freedom']]}; }},
+      {label:'Give up on dating for now', tip:`Lonely`, apply:()=>{ chg('happy',-5); addTrauma('isolation',8,'the loneliness inside the bubble');
+        return {text:`You canceled. It is too much — the sweeps, the leaks, the impossibility of anyone getting close without the whole country watching. You will wait until you are just a person again. If you ever are.`,tags:[['bad','Chose loneliness']]}; }},
+    ]})},
+
+/* Classmates treat you differently */
+{ id:'ff_classmates', once:true, weight:7, when:S=> S.potus && S.potus.inOffice && S.age>=9 && S.age<=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Kid Everyone Knows 🎒',
+    text:`At school you are not just a classmate — you are a headline with a backpack. Some kids suck up, some keep their distance, and you can never quite tell who likes you and who likes the access.`,
+    choices:[
+      {label:'Find the friends who forget who you are', tip:`Real bonds`, apply:()=>{ chg('happy',5); rel('friend',7,6,'A friend who treats you normally.'); setFlag('true_friends');
+        return {text:`A couple of kids genuinely did not care about the motorcade. They roasted you like anyone else and never once asked for a White House tour. You held onto them for dear life.`,tags:[['good','Found real friends']]}; }},
+      {label:'Enjoy the popularity while it lasts', tip:`Fun · hollow`, apply:()=>{ chg('happy',3); bumpFame(rng(2,5)); setFlag('rode_the_fame');
+        return {text:`You let the crowd orbit you and it was fun — parties, invitations, everyone laughing at your jokes. Some nights, though, you wonder how many would stick around once your family moves out.`,tags:[['flag','Rode the popularity']]}; }},
+      {label:'Withdraw and trust no one', tip:`Guarded · lonely`, apply:()=>{ chg('happy',-4); addTrauma('isolation',7,'trusting no one at school'); setFlag('walled_off');
+        return {text:`You decided everyone had an angle and stopped letting anyone in. Safer, maybe. But the walls you built to survive this house are the ones you will spend years learning to take down.`,tags:[['bad','Walled yourself off']]}; }},
+    ]})},
+
+/* A "friend" sells a story */
+{ id:'ff_friend_sells_story', once:true, weight:8, when:S=> S.potus && S.potus.inOffice && S.age>=13,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Friend Sells You Out 💔',
+    text:`Someone you trusted — a real friend, you thought — took private texts, an old photo, an embarrassing story, and sold the lot to a tabloid for a five-figure check. It runs this weekend under your face.`,
+    choices:[
+      {label:'Cut them off cold and move on', tip:`Boundaries`, apply:()=>{ chg('happy',-5); addTrauma('betrayal',12,'the friend who sold you'); rel('friend',-20,-30,'Sold your secrets to a tabloid.'); setFlag('betrayed_by_friend');
+        return {text:`You blocked their number and never spoke to them again. It is a specific kind of wound — learning your friendship had a price tag — and it will make you slower to trust for years.`,tags:[['bad','Betrayed and hardened']]}; }},
+      {label:'Publicly forgive them', tip:`Grace · karma`, apply:()=>{ karma(4); chg('happy',-2); bumpFame(rng(3,6)); ledgerAdd('charity',5,{note:'Publicly forgave a betrayal.'});
+        return {text:`You put out a short, gracious note wishing them well and refusing to feed the pile-on. The internet, briefly, was stunned into decency. It cost you nothing and told the world exactly who you are.`,tags:[['good','Answered with grace']]}; }},
+      {label:'Have the family lawyers destroy them', tip:`Ruthless · costly`, apply:()=>{ karma(-4); money(-Math.min(S.money,rng(2000,8000))); chg('happy',-1); ledgerAdd('feud',10,{note:'Ruined a former friend in court.'});
+        return {text:`You unleashed the family's lawyers and buried them in filings until the check they cashed looked like the worst decision of their life. Justice, of a sort. It did not make you feel clean.`,tags:[['bad','Crushed the traitor']]}; }},
+    ]})},
+
+/* ---------- APPROVAL-DRIVEN: HIGH ---------- */
+
+/* Crowds cheer you (high approval) */
+{ id:'ff_crowds_cheer', once:true, weight:8, when:S=> S.potus && S.potus.inOffice && S.potus.approval>=55 && S.age>=8,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Crowd Loves You 🎉',
+    text:`${S.potus.name}'s approval is soaring, and the goodwill spills onto you. You step out of the motorcade at a public event and the crowd actually cheers — your name, on hand-painted signs.`,
+    choices:[
+      {label:'Wade in and work the rope line', tip:`Beloved · fame`, apply:()=>{ bumpFame(rng(6,12)); chg('happy',7); karma(2); ledgerAdd('triumph',8,{note:'Adored by the public at the height of the term.'});
+        return {text:`You shook every hand, hugged the kids, signed the signs. People will tell their grandchildren they met you. Riding the high of a beloved administration is its own kind of magic.`,tags:[['good','A crowd favorite']]}; }},
+      {label:'Stay humble and deflect to the president', tip:`Gracious`, apply:()=>{ bumpFame(rng(3,6)); rel('potus',4,3,'Deflected the love to the president.'); karma(1);
+        return {text:`You smiled and kept pointing at your parent — "they're the one who earned it." The humility played beautifully, and ${S.potus.name} noticed you had their back.`,tags:[['good','Humble in the spotlight']]}; }},
+    ]})},
+
+/* Gifts pour in (high approval) */
+{ id:'ff_gifts_pour', once:true, weight:7, when:S=> S.potus && S.potus.inOffice && S.potus.approval>=55 && S.age>=6,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Mountain of Gifts 🎁',
+    text:`The mailroom is overflowing. With the country adoring your family, admirers, companies, and foreign well-wishers have sent presents by the truckload — some sweet, some dazzlingly expensive. Ethics rules say most of the valuable ones cannot be kept.`,
+    choices:[
+      {label:'Keep the heartfelt handmade ones', tip:`Warm · karma`, apply:()=>{ karma(3); chg('happy',5); setFlag('kept_the_kind_gifts');
+        return {text:`You waved off the jewelry and the electronics and kept the crayon drawings, the friendship bracelets, the letter from a kid who said you made them feel seen. Those you will keep forever.`,tags:[['good','Treasured the true gifts']]}; }},
+      {label:'Donate everything to children’s hospitals', tip:`Generous`, apply:()=>{ karma(5); bumpFame(rng(4,8)); ledgerAdd('charity',12,{note:'Donated a flood of gifts to sick kids.'}); chg('happy',4);
+        return {text:`You had the whole haul boxed up and sent to children's wards across the country. The story of it did more good for the family's name than any of the gifts could have done for you.`,tags:[['good','Gave it all away']]}; }},
+      {label:'Quietly keep a few of the pricey ones', tip:`Risky · greedy`, apply:()=>{ money(rng(1500,6000)); karma(-3); setFlag('kept_lavish_gifts');
+        if(rng(0,100)<35){ S.rep=clamp((S.rep||0)-6,-100,100); ledgerAdd('scandal',8,{note:'Kept lavish gifts against ethics rules.'}); return {text:`You held back a watch and a designer bag the rules said to log and return. When an ethics reporter found out, "FIRST KID POCKETS GIFTS" was not the headline your parent needed.`,tags:[['bad','Caught keeping the loot']]}; }
+        return {text:`A couple of the finer things quietly never made it to the gift log. Nobody noticed. You told yourself everyone would have done the same.`,tags:[['flag','Kept a few for yourself']]}; }},
+    ]})},
+
+/* Beloved at school (high approval) */
+{ id:'ff_beloved_school', once:true, weight:6, when:S=> S.potus && S.potus.inOffice && S.potus.approval>=55 && S.age>=9 && S.age<=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Hero in the Hallways 🌟',
+    text:`With the country warm on your family, school is a glow. Teachers brag about having you in class, you got voted onto everything without running, and the yearbook wants you on the cover.`,
+    choices:[
+      {label:'Use the goodwill to do something kind', tip:`Leadership · karma`, apply:()=>{ karma(4); bumpFame(rng(3,6)); chg('happy',5); ledgerAdd('charity',6,{note:'Turned school popularity into a good cause.'});
+        return {text:`You cashed the popularity in for a canned-food drive and a fund for a sick classmate, and the whole school followed your lead. Turns out a beloved name can move a crowd toward something good.`,tags:[['good','Led with the goodwill']]}; }},
+      {label:'Just enjoy being adored', tip:`Fun`, apply:()=>{ chg('happy',6); bumpFame(rng(2,5));
+        return {text:`For once the attention was pure warmth, not scrutiny. You let yourself simply enjoy it, knowing full well the wind can turn.`,tags:[['good','Basked in it']]}; }},
+    ]})},
+
+/* ---------- APPROVAL-DRIVEN: LOW ---------- */
+
+/* Protesters outside your school (low approval) */
+{ id:'ff_protesters_school', once:true, weight:9, when:S=> S.potus && S.potus.inOffice && S.potus.approval<40 && S.age>=10 && S.age<=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'Protesters at the Gates 📢',
+    text:`${S.potus.name}'s approval has cratered, and this morning a crowd of protesters is massed outside your school — signs, chants, some of them aimed squarely at your family name. You have to walk past them to get to class.`,
+    choices:[
+      {label:'Hold your head high and walk through', tip:`Composed · hard`, apply:()=>{ chg('happy',-4); addTrauma('public',10,'walking through a crowd that hated your family'); setFlag('faced_the_mob'); karma(1);
+        return {text:`You looked straight ahead, chin level, and walked the gauntlet without flinching. Inside, your hands would not stop shaking. Nobody teaches a kid how to be hated for something a parent decided.`,tags:[['flag','Faced the crowd']]}; }},
+      {label:'Try to talk with a few of them', tip:`Brave · risky`, apply:()=>{ chg('happy',-2); bumpFame(rng(3,7));
+        if(rng(0,100)<45){ karma(3); ledgerAdd('triumph',6,{note:'Faced down hostile protesters with grace.'}); return {text:`You stopped, actually listened to a couple of them, and the tension cracked. A photo of you nodding at a furious stranger went viral as a rare moment of grace. Even critics gave you that.`,tags:[['good','Disarmed them with grace']]}; }
+        S.rep=clamp((S.rep||0)-4,-100,100); addTrauma('public',12,'the day a crowd turned on you'); return {text:`You tried to engage and it went badly — they shouted you down, a sign was thrown, and your detail hustled you inside. The clip of you being screamed at played all day.`,tags:[['bad','Shouted down']]}; }},
+      {label:'Skip school and stay home', tip:`Safe · isolating`, apply:()=>{ chg('happy',-3); chg('smarts',-1); addTrauma('isolation',8,'hiding from the anger at your family');
+        return {text:`You could not face it. You stayed behind the gates and did the day's work over video, alone. Safer — but the world getting to decide when you can leave your own house is its own kind of prison.`,tags:[['bad','Hid from the anger']]}; }},
+    ]})},
+
+/* Screamed at in public (low approval) */
+{ id:'ff_screamed_at', once:true, weight:8, when:S=> S.potus && S.potus.inOffice && S.potus.approval<40 && S.age>=12,
+  build:S=>({ yr:`Age ${S.age}`, title:'Confronted in Public 😠',
+    text:`You were just out running an errand when a stranger recognized you, got in your face, and started screaming about everything they blame ${S.potus.name} for. A phone is already up, filming. A crowd is gathering.`,
+    choices:[
+      {label:'Stay calm and let your detail extract you', tip:`Trained · safe`, apply:()=>{ chg('happy',-4); addTrauma('public',9,'a stranger screaming in your face'); setFlag('learned_the_drill');
+        return {text:`You did exactly what the agents drilled — no reaction, no words, let them wall you off and walk you out. The clip is ugly but you gave it no fuel. This is the muscle you never wanted to build.`,tags:[['flag','Stayed calm']]}; }},
+      {label:'Fire back at them', tip:`Cathartic · viral`, apply:()=>{ chg('happy',2); bumpFame(rng(5,10)); karma(-2);
+        S.rep=clamp((S.rep||0)-7,-100,100); ledgerAdd('scandal',7,{note:'Blew up at a heckler on camera.'}); return {text:`You snapped and gave it right back, and every word was captured in 4K. "FIRST KID LOSES IT" trended for two days and handed your parent's opponents a gift. It felt good for about four seconds.`,tags:[['bad','Lost your cool on camera']]}; }},
+      {label:'Break down once you are safe', tip:`Human · poignant`, apply:()=>{ chg('happy',-7); addTrauma('public',13,'the day the hatred finally cracked you'); rel('potus',3,4,'Leaned on family after a hard day.');
+        return {text:`You held it together until the car door shut, and then you came apart. You are a kid, and someone hates you for a job you did not take. That night ${S.potus.name} held you and, for once, had no speech ready.`,tags:[['bad','It finally cracked you']]}; }},
+    ]})},
+
+/* Blamed for the president's choices (low approval) */
+{ id:'ff_blamed', once:true, weight:7, when:S=> S.potus && S.potus.inOffice && S.potus.approval<40 && S.age>=13,
+  build:S=>({ yr:`Age ${S.age}`, title:'Guilty by Last Name ⚖️',
+    text:`A policy ${S.potus.name} pushed has hurt a lot of people, and the anger is looking for a target. Because you share the name and the face, strangers online have decided you are fair game — as if a teenager set the agenda.`,
+    choices:[
+      {label:'Publicly break with the policy', tip:`Honest · a family rift`, apply:()=>{ bumpFame(rng(6,11)); rel('potus',-8,-4,'Broke publicly with the president over policy.'); ledgerAdd('scandal',8,{note:'Split publicly from the president.'});
+        return {text:`You said, out loud, that you disagreed with your own parent. The internet was stunned; some called it brave, some called it betrayal. At home, dinner was very, very quiet for a long time.`,tags:[['bad','Split from the president']]}; }},
+      {label:'Defend your parent loyally', tip:`Loyal · costly`, apply:()=>{ rel('potus',6,4,'Stood by the president under fire.'); chg('happy',-3);
+        if(S.potus.goodness<0){ karma(-3); S.rep=clamp((S.rep||0)-6,-100,100); return {text:`You went out and defended the policy, and the hate only intensified — because this time the policy really was indefensible. Loyalty tied your name to your parent's worst decision.`,tags:[['bad','Defended the indefensible']]}; }
+        karma(1); return {text:`You stood by your parent and made the human case behind the headlines. It did not move the numbers, but ${S.potus.name} will never forget that you did not flinch when it counted.`,tags:[['flag','Stood by your parent']]}; }},
+      {label:'Refuse to engage at all', tip:`Neutral`, apply:()=>{ chg('happy',-2); setFlag('stayed_out_of_politics');
+        return {text:`You are not the president. You did not vote for the policy. You are a kid who wants to be left alone — so you said nothing and let them yell at an empty chair.`,tags:[['flag','Stayed out of it']]}; }},
+    ]})},
+
+/* Teacher fails you out of spite (low approval) */
+{ id:'ff_teacher_spite', once:true, weight:6, when:S=> S.potus && S.potus.inOffice && S.potus.approval<40 && S.age>=11 && S.age<=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Teacher’s Grudge 🍎',
+    text:`One of your teachers loathes ${S.potus.name} and has decided to take it out on you — nitpicking your work, a failing grade you did not earn, cutting remarks in front of the class. It is unfair, and everyone can see it.`,
+    choices:[
+      {label:'Report them and let it be investigated', tip:`Just · public`, apply:()=>{ bumpFame(rng(3,6)); chg('happy',-2);
+        if(rng(0,100)<60){ ledgerAdd('triumph',5,{note:'Fought unfair treatment and won.'}); return {text:`You documented everything and took it to the administration. The grade was overturned and the teacher quietly reassigned. Sometimes the system works — even for the kid everyone assumes has it easy.`,tags:[['good','Justice served']]}; }
+        S.rep=clamp((S.rep||0)-3,-100,100); return {text:`You reported it and the story leaked as "FIRST KID GETS TEACHER FIRED." The truth did not matter; you looked like the powerful one bullying a public-school teacher. You cannot win the optics.`,tags:[['bad','Twisted into a scandal']]}; }},
+      {label:'Endure it and out-work the grudge', tip:`Resilient · smarts`, apply:()=>{ chg('smarts',4); chg('happy',-3); addTrauma('injustice',7,'the teacher who hated you for your name'); karma(1);
+        return {text:`You put your head down and made your work so undeniable that even a spiteful grade could not stick. It cost you sleep and a piece of your faith in fairness, but you came out sharper.`,tags:[['good','Out-worked the grudge']]}; }},
+      {label:'Have your parent make one phone call', tip:`Power · ugly`, apply:()=>{ karma(-3); setFlag('pulled_strings'); chg('happy',1);
+        return {text:`One call from the White House and the teacher folded overnight. Problem solved — but you felt the exact moment you reached for the power you swore you would never use, and it changed how you saw yourself.`,tags:[['bad','Pulled the strings']]}; }},
+    ]})},
+
+/* ---------- POLITICS SPILLOVER ---------- */
+
+/* The president faces impeachment / scandal */
+{ id:'ff_impeachment', once:true, weight:8, when:S=> S.potus && S.potus.inOffice && S.age>=13,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Reckoning 📰',
+    text:`It has engulfed everything: ${S.potus.name} is facing impeachment. Reporters camp on the lawn, the residence is heavy with lawyers and grim aides, and your family is living inside a slow-motion crisis on every screen in the country.`,
+    choices:[
+      {label:'Stand beside the family, united', tip:`Loyal`, apply:()=>{ rel('potus',7,5,'Stood with the family through the crisis.'); chg('happy',-4); addTrauma('crisis',12,'the impeachment year');
+        if(S.potus.goodness>=0){ karma(2); ledgerAdd('triumph',6,{note:'Stood by an unfairly-hounded president.'}); return {text:`You believed your parent was being railroaded, and you showed up — at the hearings, on the steps, in the family photo that said we are together. Win or lose, you did not abandon them.`,tags:[['good','Stood united']]}; }
+        return {text:`You stood by your parent even as the evidence mounted, because they are your parent. Blood over headlines. It is not a clean choice, and you know it — but you could not do otherwise.`,tags:[['flag','Family over everything']]}; }},
+      {label:'Quietly distance yourself', tip:`Self-preserving`, apply:()=>{ chg('happy',-3); rel('potus',-6,-3,'Pulled away during the scandal.'); setFlag('distanced_from_scandal');
+        return {text:`You stopped appearing, stopped commenting, let a careful gap open between your name and the mess. Smart, maybe. But your parent noticed the empty seat, and that silence will echo for years.`,tags:[['flag','Kept your distance']]}; }},
+      {label:'It shatters your image of your parent', tip:`Poignant · painful`, apply:()=>{ chg('happy',-8); addTrauma('disillusion',15,'learning who your parent really was'); rel('potus',-10,-8,'The scandal broke your trust.'); if(S.potus.goodness<0) karma(1);
+        return {text:`Buried in the coverage was the truth, and it was worse than you let yourself believe. The parent you idolized did the thing they are accused of. Something in you closed that will not open again easily.`,tags:[['bad','Disillusioned']]}; }},
+    ]})},
+
+/* A policy the president passed affects YOU */
+{ id:'ff_policy_affects_you', once:true, weight:6, when:S=> S.potus && S.potus.inOffice && S.age>=14,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Law Hits Home 📜',
+    text:`${S.potus.name} just signed a sweeping new law — and to everyone's surprise, it lands directly on your own life. A rule about student data, or social media age limits, or something that reshapes exactly the world you live in as a young person.`,
+    choices:[
+      {label:'Become a public advocate for it', tip:`Aligned · fame`, apply:()=>{ bumpFame(rng(6,11)); rel('potus',5,3,'Championed the president’s law.'); chg('happy',3);
+        if(S.potus.goodness>=0){ karma(3); ledgerAdd('triumph',7,{note:'Advocated for a genuinely good law.'}); return {text:`You knew the policy from the inside — you live it — and you made that case everywhere. Young people listened to one of their own, and the law was better for having a real face behind it.`,tags:[['good','A credible young voice']]}; }
+        karma(-2); return {text:`You went to bat for the policy hard, all message discipline and talking points. It played well with the base and terribly with people your age, who saw a first kid shilling for a law that hurts them.`,tags:[['flag','Toed the family line']]}; }},
+      {label:'Tell your parent it is wrong — privately', tip:`Honest · intimate`, apply:()=>{ rel('potus',3,5,'Gave the president honest counsel.'); chg('smarts',2);
+        if(rng(0,100)<45){ ledgerAdd('triumph',6,{note:'Changed a policy from the inside.'}); return {text:`You sat your parent down and explained, from lived experience, exactly where the law went wrong. To your shock, they listened — and a revision quietly followed. Few people ever get that ear.`,tags:[['good','Shaped it from within']]}; }
+        return {text:`You made your case at the dinner table, calm and specific. ${S.potus.name} heard you out and disagreed — but respected that you came to them first instead of the cameras.`,tags:[['flag','Spoke your mind privately']]}; }},
+    ]})},
+
+/* Asked to campaign */
+{ id:'ff_campaign_trail', once:true, weight:8, when:S=> S.potus && S.potus.inOffice && S.potus.term===1 && S.age>=14,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Campaign Trail 🚌',
+    text:`Re-election season. The campaign wants the whole family out there — you on stage, you at the diners, you humanizing the candidate. It is grueling, it is public, and it is a lot to ask of a kid.`,
+    choices:[
+      {label:'Throw yourself into it', tip:`Fame · exhausting`, apply:()=>{ bumpFame(rng(8,14)); chg('happy',-3); chg('health',-2); rel('potus',6,4,'Campaigned hard for the family.'); ledgerAdd('triumph',7,{note:'Became a campaign asset.'});
+        return {text:`You gave the speech, worked the rope lines, charmed the local news in twelve states. The campaign called you their secret weapon. You also did not sleep in your own bed for two months.`,tags:[['good','The campaign’s secret weapon']]}; }},
+      {label:'Do the minimum and protect your peace', tip:`Boundaries`, apply:()=>{ chg('happy',2); rel('potus',-3,0,'Held back on the campaign.');
+        return {text:`You showed up for the big moments and firmly declined the rest. The campaign grumbled about the missed opportunity, but you kept a scrap of your life for yourself, and that was worth more.`,tags:[['flag','Set a limit']]}; }},
+      {label:'Refuse to be used as a prop', tip:`Defiant · a rift`, apply:()=>{ chg('happy',-2); rel('potus',-8,-4,'Refused to campaign at all.'); setFlag('refused_campaign');
+        return {text:`You told your parent flatly that you were not a stage prop and would not pretend to be. The campaign was furious, the family strained — but you drew a line about who owns your face, and you meant it.`,tags:[['bad','Refused the trail']]}; }},
+    ]})},
+
+/* A family rift over the president's decisions */
+{ id:'ff_family_rift', once:true, weight:6, when:S=> S.potus && S.potus.inOffice && S.age>=15,
+  build:S=>({ yr:`Age ${S.age}`, title:'A House Divided 🏛️',
+    text:`The presidency has split your own family down the middle. A relative has gone public against ${S.potus.name} — or the pressure has simply cracked the household — and everyone is forcing you to pick a side.`,
+    choices:[
+      {label:'Try to hold the family together', tip:`Peacemaker · karma`, apply:()=>{ karma(4); chg('happy',-2); rel('potus',3,3,'Worked to keep the family whole.'); ledgerAdd('charity',6,{note:'Held a fracturing family together.'});
+        if(rng(0,100)<55){ chg('happy',4); return {text:`You shuttled between them, translating, refusing to let the office destroy the family. Slowly, it held. Long after the term ends, they will remember you were the one who would not let go.`,tags:[['good','Kept the family whole']]}; }
+        return {text:`You tried everything — the calls, the dinners, the pleading — and some of it held and some of it did not. You cannot save everyone, but they will know you never stopped trying.`,tags:[['flag','Fought for the family']]}; }},
+      {label:'Side with the president', tip:`Loyal`, apply:()=>{ rel('potus',7,5,'Took the president’s side in the family split.'); setFlag('sided_with_potus'); chg('happy',-3);
+        return {text:`You chose your parent, and the relatives on the other side stopped speaking to you. The office cost you people you loved. Blood, it turns out, does not always run thicker than politics.`,tags:[['bad','Chose a side']]}; }},
+      {label:'Side against the president', tip:`Conviction · costly`, apply:()=>{ rel('potus',-10,-6,'Sided against the president in the family split.'); bumpFame(rng(4,8)); setFlag('broke_with_potus');
+        if(S.potus.goodness<0) karma(3); return {text:`You decided the relative was right, and you said so. The rupture with your parent was total and public. You slept badly for years — but you could not have lived with the other choice.`,tags:[['bad','Broke with the president']]}; }},
+    ]})},
+
+/* The bubble — suffocation of the detail */
+{ id:'ff_the_bubble', once:true, weight:7, when:S=> S.potus && S.potus.inOffice && S.age>=13,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Bubble 🫧',
+    text:`They call it "the bubble" — the invisible sphere of agents, sweeps, and protocol that moves everywhere you do. No unlocked doors, no spontaneous anything, an adult with a gun three feet away as you try to grow up. It never, ever switches off.`,
+    choices:[
+      {label:'Make peace with your agents', tip:`Adaptive · warmth`, apply:()=>{ rel('agent',7,6,'Grew close to your protective detail.'); chg('happy',3); setFlag('close_with_detail');
+        return {text:`If the shadows will not leave, you decided, they might as well be friends. Your lead agent taught you to drive, covered for your bad days, became something like an uncle. The bubble got a lot more human.`,tags:[['good','Bonded with your detail']]}; }},
+      {label:'Rebel against the constant watch', tip:`Defiant · risky`, apply:()=>{ chg('happy',2); karma(-1); addTrauma('surveillance',8,'the suffocation of the bubble');
+        if(rng(0,100)<40){ setFlag('security_incident'); return {text:`You fought the leash — ditching agents, ignoring protocol, testing every limit. It made you feel free for an hour and made their impossible job harder, and eventually a stunt went wrong enough to make the news.`,tags:[['bad','Fought the bubble']]}; }
+        return {text:`You pushed back constantly, on principle, refusing to let the security swallow every human impulse. It strained things with your detail, but you kept a stubborn ember of yourself alive.`,tags:[['flag','Chafed against the watch']]}; }},
+      {label:'Let it slowly wall you off', tip:`Poignant`, apply:()=>{ chg('happy',-5); addTrauma('isolation',11,'growing up inside the bubble'); setFlag('bubble_kid');
+        return {text:`You stopped fighting and stopped reaching out, and the bubble became the shape of your whole world — safe, curated, and profoundly alone. It is the wound almost every first kid carries out the door.`,tags:[['bad','Lost yourself in the bubble']]}; }},
+    ]})},
+
+/* ---------- DANGER ---------- */
+
+/* A credible threat to the family */
+{ id:'ff_threat', once:true, weight:7, when:S=> S.potus && S.potus.inOffice && S.age>=10,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Credible Threat ⚠️',
+    text:`Your lead agent's face goes still mid-sentence, a hand to the earpiece. A specific, credible threat has been made against the family. In seconds you are being moved — fast, wordless, professional — to a hardened room while the residence locks down around you.`,
+    choices:[
+      {label:'Trust your training and stay calm', tip:`Steady`, apply:()=>{ chg('happy',-4); addTrauma('danger',11,'the day a threat became real'); setFlag('threat_survivor'); rel('agent',4,4,'Trusted your detail in a crisis.');
+        return {text:`You did exactly what a hundred drills prepared you for — moved when told, stayed silent, trusted the professionals. Hours later they cleared it. You are safe. But some part of a kid should never have to know that drill so well.`,tags:[['flag','Weathered the threat']]}; }},
+      {label:'Panic and freeze', tip:`Human · scarring`, apply:()=>{ chg('happy',-8); chg('health',-2); addTrauma('danger',16,'the threat that broke something in you');
+        return {text:`Your body simply stopped — the agents half-carried you to safety as the fear roared in your ears. It turned out to be a bomb threat with no bomb, but the terror was real, and it does not leave you cleanly.`,tags:[['bad','Frozen by fear']]}; }},
+      {label:'Worry only about the president', tip:`Selfless · poignant`, apply:()=>{ chg('happy',-3); rel('potus',6,5,'Feared for the president above yourself.'); karma(2);
+        return {text:`Locked in the safe room, you did not think about your own skin once — only whether your parent was behind a hard door too. When you finally saw them, you both just held on. The office is dangerous. The love underneath it is not complicated.`,tags:[['flag','Feared only for your parent']]}; }},
+    ]})},
+
+/* An assassination scare */
+{ id:'ff_assassination', once:true, weight:6, when:S=> S.potus && S.potus.inOffice && S.age>=14,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Day It Got Real 🚨',
+    text:`It happens in a heartbeat at a public event — a crack, a surge, agents flattening your family to the ground and covering you with their own bodies as the motorcade screams away. Someone tried to kill the president. You were feet away.`,
+    choices:[
+      {label:'Survive it and carry the scar', tip:`Trauma · resolve`, apply:()=>{ setFlag('assassination_survivor'); addTrauma('violence',22,'the day someone tried to kill your family'); chg('happy',-9); chg('health',-3); bumpFame(rng(6,12)); rel('potus',8,6,'Survived an assassination attempt together.');
+        return {text:`Everyone lived. An agent took the risk that should have been yours, and the shooter was down. But you will hear that crack for the rest of your life, and you will never again believe, all the way down, that you are safe.`,tags:[['bad','Assassination survivor']]}; }},
+      {label:'Devote yourself to the agents who shielded you', tip:`Gratitude · karma`, apply:()=>{ setFlag('assassination_survivor'); addTrauma('violence',18,'the day agents shielded you with their lives'); karma(5); chg('happy',-6); rel('agent',12,10,'An agent shielded you with their body.'); ledgerAdd('triumph',8,{note:'Honored the agents who shielded the family.'});
+        return {text:`The agent who covered you was hurt doing it. You never forgot it — you learned their family's names, showed up at the hospital, carried what they did for you like a debt of honor for the rest of your days.`,tags:[['good','A debt you will always carry']]}; }},
+    ]})},
+
+/* ---------- POST-PRESIDENCY ---------- */
+
+/* The term ends */
+{ id:'ff_term_ends', once:true, weight:10, when:S=> has('first_family') && S.potus && !S.potus.inOffice && S.age>=12,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Term Ends 🏠',
+    text:`The last motorcade pulls away from the White House and, just like that, it is over. No more residence staff, no more East Room, a smaller detail, and the strange, ringing quiet of a family that used to be the center of the world and now, suddenly, is not.`,
+    choices:[
+      {label:'Embrace the return to normal life', tip:`Relief · growth`, apply:()=>{ chg('happy',7); setFlag('post_potus_grounded'); karma(1);
+        return {text:`You unpacked in an ordinary house on an ordinary street and felt something unclench that had been tight for years. You get to be a person now — anonymous, unwatched, free. It feels like coming up for air.`,tags:[['good','Free at last']]}; }},
+      {label:'Grieve the life you are losing', tip:`Poignant`, apply:()=>{ chg('happy',-5); addTrauma('loss',10,'the strange grief of leaving the White House'); setFlag('post_potus_adrift');
+        return {text:`Nobody warns you that you might miss it — the purpose, the pace, being at the heart of history. The ordinary world feels grey and small, and for a while you are a little lost, mourning a cage you also could not wait to leave.`,tags:[['bad','Adrift after the White House']]}; }},
+      {label:'Struggle to be a nobody again', tip:`Identity`, apply:()=>{ chg('happy',-3); chg('smarts',2); setFlag('post_potus_reinventing');
+        return {text:`For years you were defined entirely by one relationship to one office. Now you have to answer the question nobody asked while you lived there: who are you, on your own? The reinvention starts here.`,tags:[['flag','Learning who you are']]}; }},
+    ]})},
+
+/* Writing a memoir */
+{ id:'ff_memoir', once:true, weight:7, when:S=> has('first_family') && S.potus && !S.potus.inOffice && S.age>=18,
+  build:S=>({ yr:`Age ${S.age}`, title:'Write the Book 📖',
+    text:`A major publisher is offering a small fortune for your memoir — the real story of growing up in the first family. Everyone has a version of your childhood; this would finally be yours. But some of it is not only your story to tell.`,
+    choices:[
+      {label:'Write an honest, unflinching book', tip:`Truth · fame · risk`, apply:()=>{ money(rng(80000,400000)); bumpFame(rng(10,18)); chg('happy',2);
+        if(rng(0,100)<45){ rel('potus',-8,-5,'Aired the family’s private life in a memoir.'); ledgerAdd('scandal',8,{note:'Wrote a candid, family-straining memoir.'}); return {text:`You told the truth — the loneliness, the fights, the cost — and it became a bestseller. It also blindsided your family, who never agreed to be that exposed. The money is real. So is the frost at Thanksgiving.`,tags:[['bad','A candid, costly bestseller']]}; }
+        ledgerAdd('triumph',9,{note:'Wrote an acclaimed, honest memoir.'}); return {text:`You wrote it with care and courage, and it landed — critics called it the definitive account of a strange American childhood. You owned your story at last, and your family respected how you did it.`,tags:[['good','An acclaimed memoir']]}; }},
+      {label:'Write a warm, careful version', tip:`Safe · loyal`, apply:()=>{ money(rng(50000,180000)); bumpFame(rng(5,9)); rel('potus',4,3,'Wrote a memoir the family could live with.');
+        return {text:`You gave them the gentle version — the funny stories, the pride, the highlight reel, none of the wounds. It sold well and hurt no one. You know it is only half the truth, but some truths you chose to keep.`,tags:[['good','A gentle bestseller']]}; }},
+      {label:'Refuse to sell your childhood', tip:`Principled`, apply:()=>{ karma(2); setFlag('declined_memoir'); chg('happy',2);
+        return {text:`You turned the check down. Your childhood was strange enough without turning it into a product, and you decided the one thing the world would never get to own was the inside of your own memory.`,tags:[['good','Kept your story']]}; }},
+    ]})},
+
+/* Trading on the name */
+{ id:'ff_trade_on_name', once:true, weight:7, when:S=> has('first_family') && S.potus && !S.potus.inOffice && S.age>=19,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Name Opens Doors 🚪',
+    text:`Your last name is a key. A private-equity firm wants you as a "consultant," a fashion label wants you to walk, a foreign businessman wants a photo and a favor. None of it is about your résumé — it is about the four letters after your first name, and everyone knows it.`,
+    choices:[
+      {label:'Cash in on the name openly', tip:`Money · reputation cost`, apply:()=>{ money(rng(40000,250000)); bumpFame(rng(5,10)); karma(-3); setFlag('traded_on_name'); S.rep=clamp((S.rep||0)-6,-100,100);
+        if(rng(0,100)<40){ ledgerAdd('scandal',9,{note:'Traded on the family name for a shady payday.'}); return {text:`You took the money and the title and let the name do the work — until a story broke about who exactly was paying you and why. "TRADING ON DAD" is a headline you will not outrun for a while.`,tags:[['bad','Caught cashing in']]}; }
+        return {text:`You leveraged the name into a very comfortable living without doing much of anything to earn it. The money is excellent. The nagging sense that you never found out what you could do on your own is the price.`,tags:[['flag','Cashed in on the name']]}; }},
+      {label:'Build something real on your own merit', tip:`Harder · honorable`, apply:()=>{ chg('smarts',4); chg('happy',3); karma(3); setFlag('made_own_name');
+        if(rng(0,100)<55){ money(rng(20000,120000)); ledgerAdd('triumph',10,{note:'Built a career on merit, not the name.'}); return {text:`You turned down the easy money and grinded out a career where nobody could say you got it for your name. It was slower and it was real, and the first time someone praised your work without knowing your family, you nearly cried.`,tags:[['good','Earned it yourself']]}; }
+        return {text:`You refused the shortcuts and set out to build something honest. It is a long road and the door-openers stopped calling — but every step is unmistakably yours.`,tags:[['good','On your own two feet']]}; }},
+      {label:'Use the name for a cause instead', tip:`Karma`, apply:()=>{ karma(5); bumpFame(rng(4,8)); chg('happy',4); ledgerAdd('charity',12,{note:'Turned the family name toward a cause.'});
+        return {text:`If the name opens doors, you decided, you would walk important people through them — for a foundation, a fund, a fight that mattered. You spent the family's fame on something bigger than yourself. It is the best use you ever found for it.`,tags:[['good','Spent the name on good']]}; }},
+    ]})},
+
+/* The Secret Service detail winds down */
+{ id:'ff_detail_winds_down', once:true, weight:7, when:S=> has('first_family') && S.potus && !S.potus.inOffice && S.age>=17,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Detail Stands Down 🕶️',
+    text:`Protection for a former president's adult child does not last forever. The day comes: your detail is winding down. The agents who have shadowed you for years — to school, on dates, through the worst days — are handing you back your own life, and saying goodbye.`,
+    choices:[
+      {label:'Thank them properly and let go', tip:`Grace · closure`, apply:()=>{ karma(3); chg('happy',2); rel('agent',5,4,'Said a real goodbye to your detail.'); setFlag('detail_ended'); ledgerAdd('charity',5,{note:'Honored the agents who protected you.'});
+        return {text:`You gave them a real send-off — the letters, the gifts, the words you meant. These strangers spent years ready to die for you, and you made sure they left knowing you never once took it for granted. Then, for the first time in memory, you walked out a door alone.`,tags:[['good','A grateful goodbye']]}; }},
+      {label:'Feel newly, terrifyingly exposed', tip:`Poignant · fear`, apply:()=>{ chg('happy',-4); addTrauma('vulnerability',9,'losing the shield you grew up behind'); setFlag('detail_ended');
+        return {text:`For your whole conscious life there was a wall of trained professionals between you and the world. Now there is just you, in a crowd, unwatched — and instead of freedom, all you feel is a cold, exposed panic you did not expect.`,tags:[['bad','Exposed and afraid']]}; }},
+      {label:'Pay privately to keep security', tip:`Money · guarded`, apply:()=>{ money(-rng(30000,120000)); setFlag('private_security'); chg('happy',1);
+        return {text:`You could not bear to be unprotected, so you hired your own — former agents, a smaller shadow, but a shadow still. The bubble was yours to keep now, at your own expense. Some habits of fear you buy your way into keeping.`,tags:[['flag','Kept private security']]}; }},
+    ]})},
+
+/* Where are they now — the long view */
+{ id:'ff_where_now', once:true, weight:6, when:S=> has('first_family') && S.potus && !S.potus.inOffice && S.age>=25,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Strange Inheritance 🕰️',
+    text:`Years on, a documentary crew tracks you down: "the first kid, all grown up." They want to know what it did to you — the childhood in the fishbowl, the code name, the crowds and the threats. Sitting under their lights, you have to decide what that life actually made you.`,
+    choices:[
+      {label:'Say it was a gift you would not trade', tip:`Gratitude`, apply:()=>{ chg('happy',5); karma(2); bumpFame(rng(3,6)); ledgerAdd('triumph',6,{note:'Made peace with an extraordinary childhood.'});
+        return {text:`You told them the truth as you had come to see it: yes, it cost you a normal childhood, but it gave you a front-row seat to history and a family forged in fire. You would not trade it. The camera caught a person genuinely at peace.`,tags:[['good','At peace with it all']]}; }},
+      {label:'Say it took more than it gave', tip:`Honest · heavy`, apply:()=>{ chg('happy',-3); bumpFame(rng(4,8)); addTrauma('reflection',7,'reckoning with what the fishbowl cost');
+        return {text:`You did not perform gratitude. You told them about the loneliness, the fear, the pieces of an ordinary life you never got back. It was raw and it was real, and it gave every future first kid permission to admit it is hard.`,tags:[['flag','Told the hard truth']]}; }},
+      {label:'Refuse to be defined by it any longer', tip:`Freedom`, apply:()=>{ chg('happy',4); setFlag('free_of_the_name'); karma(1);
+        return {text:`You thanked the crew and declined. You spent a childhood as a symbol of someone else's office; you are done being a chapter in that story. Whoever you are now, you built without them watching — and that is finally enough.`,tags:[['good','Free of the name']]}; }},
+    ]})},
+
+];
+
+/* Expose for the loader (matches how EVENTS is concatenated). */
+
+/* =========================================================================
+   POTUS_THREAT_EVENTS  —  First-Family danger layer
+   -------------------------------------------------------------------------
+   EVENTS format: { id, once?, weight, when, build }
+   build:S => { yr, title, text, choices:[ {label, tip, apply:()=>({text,tags})} ] }
+
+   DANGER GATE (dangerous events):
+     S.potus && S.potus.inOffice &&
+     (S.potus.approval<45 || S.potus.goodness<0) &&
+     (S.age-(S._lastFFThreat||-99)>=1)
+   ...and every dangerous build stamps S._lastFFThreat=S.age so threats do
+   not spam (max ~one hard threat per year).
+
+   SECRET SERVICE MITIGATION:
+     has('secret_service') / S.potus.secretService is the shield. When a
+     threat lands, the detail USUALLY intervenes and saves you. Survival &
+     severity rolls are boosted heavily when the detail is present; without
+     it, outcomes get real (health loss, trauma, rarely death). Death only
+     occurs on a reckless player choice made WITHOUT protection, and is rare.
+
+   Helpers used: firstFamily(), bumpFame(n), karma(n), chg(stat,d), money(d),
+     setFlag(f), has(f), addTrauma(type,sev,desc), ledgerAdd(type,weight,opts),
+     addStress(n), rel(id,dAff,dTrust,note), P(id), S.stats, S.fitness, rng, pick.
+   NOTE: no DOM in apply(); mutate S and return {text,tags}.
+   ========================================================================= */
+const POTUS_THREAT_EVENTS = [
+
+/* ---- shared gate helpers (inlined per event to keep this array portable) ----
+   DANGER  = S.potus && S.potus.inOffice && (S.potus.approval<45 || S.potus.goodness<0) && (S.age-(S._lastFFThreat||-99)>=1)
+   INOFFICE= S.potus && S.potus.inOffice
+   SAFE-ish (good pres) = S.potus && S.potus.inOffice && S.potus.approval>=55 && S.potus.goodness>=0
+*/
+
+/* ===================== ASSASSINATION / KIDNAP ATTEMPTS ===================== */
+
+/* Gunman at a public event — the classic. Detail tackles / you freeze / you run. */
+{ id:'ff_threat_gunman', once:false, weight:10,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<45 || S.potus.goodness<0) && S.age>=6 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService; const venue=pick(['a ribbon-cutting','a school visit','a campaign rally','a charity gala','a parade']);
+    return {yr:`Age ${S.age}`, title:'🔫 A Gun in the Crowd',
+    text:`You are at ${venue} beside the First Family when a man tears through the rope line, hand rising with a pistol. Screams. A half-second to decide.`,
+    choices:[
+      {label:'Trust the detail — drop and let them cover you', tip:'Do exactly as trained', apply:()=>{
+        if(ss){ setFlag('assassination_survivor'); addTrauma('violence',rng(2,4),`Survived a gunman at ${venue}`); addStress(rng(14,26)); chg('happy',-rng(4,9)); bumpFame(rng(2,5)); ledgerAdd('survived_attempt',3,{note:'detail covered the body'});
+          return {text:`You hit the ground as your agents pile on top of you, a wall of suits and gunmetal. Two shots crack into the air; the gunman is buried under three agents before a third rings out. You are hauled to an armored SUV, shaking but whole. <b>You survived an assassination attempt.</b>`,tags:[['good','The detail saved you'],['bad','Trauma']]}; }
+        const hit=rng(0,100)<40; if(hit){ chg('health',-rng(22,45)); addTrauma('violence',rng(5,8),'Shot during an assassination attempt'); setFlag('assassination_survivor'); addStress(rng(30,50)); bumpFame(rng(4,8)); ledgerAdd('survived_attempt',5,{note:'shot, no detail'});
+          return {text:`There is no one to cover you. You drop as trained but a round finds your shoulder — white heat, then the world tilts. Bystanders wrestle the man down. You wake in surgery. <b>You survived, but the scar will never let you forget.</b>`,tags:[['bad','Shot'],['bad','Lasting trauma']]}; }
+        setFlag('assassination_survivor'); addTrauma('violence',rng(3,5),'Near-miss shooting'); addStress(rng(20,34));
+        return {text:`You throw yourself flat. The shots go wide, splintering the podium above you, and the crowd swarms the gunman. Inches. That is how close it was.`,tags:[['flag','Missed by inches'],['bad','Trauma']]}; }},
+      {label:'Freeze', tip:'Your body locks up', apply:()=>{
+        const ss2=has('secret_service')||S.potus.secretService; if(ss2){ setFlag('assassination_survivor'); addTrauma('violence',rng(3,5),'Froze as a gunman fired'); addStress(rng(20,36)); chg('happy',-rng(6,12));
+          return {text:`You cannot move. An agent slams into you a heartbeat before the shot, driving you both behind the armored door. He took the risk you could not. You are alive because of him, and you know it.`,tags:[['good','An agent reacted for you'],['bad','Guilt & trauma']]}; }
+        const hit=rng(0,100)<62; if(hit){ chg('health',-rng(30,55)); addTrauma('violence',rng(6,9),'Shot while frozen in fear'); setFlag('assassination_survivor'); addStress(rng(40,60));
+          return {text:`You stand rooted while everyone else moves. The impact spins you around before you hear the sound. Strangers drag you to cover, pressing hands to the wound. You live — barely — carried out on a stranger's jacket soaked red.`,tags:[['bad','Critically wounded'],['bad','Severe trauma']]}; }
+        setFlag('assassination_survivor'); addTrauma('violence',rng(4,6),'Froze during a shooting'); addStress(rng(30,45));
+        return {text:`You freeze — and by pure luck the shooter is tackled before he steadies his aim. You were a stationary target and fate blinked first.`,tags:[['bad','Paralyzed by fear'],['flag','Lucky to be alive']]}; }},
+      {label:'Run', tip:'Bolt for the exit — unpredictable', apply:()=>{
+        const ss3=has('secret_service')||S.potus.secretService; if(ss3){ addStress(rng(16,28)); addTrauma('violence',rng(2,4),'Ran from a gunman'); setFlag('assassination_survivor');
+          return {text:`You break from the detail and sprint. It is the wrong move — you leave your cover — but you are fast and the agents flood the gap behind you, dropping the shooter. You make it to the cars gasping, having gambled with your own life.`,tags:[['flag','Reckless but alive'],['bad','Trauma']]}; }
+        const dead=rng(0,100)<10, hurt=rng(0,100)<55; if(dead){ addTrauma('violence',9,'Killed fleeing an assassin'); S.stats.health=0; ledgerAdd('killed_attempt',9,{note:'ran into the line of fire, no detail'});
+          return {text:`With no one to guide you, you run the wrong way — straight across his sightline. The last thing you feel is a shove that is not a hand. The First Family loses one of its own today.`,tags:[['bad','Killed'],['bad','A nation mourns']]}; }
+        if(hurt){ chg('health',-rng(28,48)); addTrauma('violence',rng(6,8),'Wounded fleeing an assassin'); setFlag('assassination_survivor'); addStress(rng(35,52));
+          return {text:`You run exposed and pay for it — a round catches your leg and you go down hard on the pavement. Police reach you before he can finish it. You survive, but running alone nearly cost you everything.`,tags:[['bad','Wounded'],['bad','Trauma']]}; }
+        setFlag('assassination_survivor'); addTrauma('violence',rng(4,6),'Fled an assassination attempt'); addStress(rng(24,38));
+        return {text:`You run and, somehow, the chaos covers you. You reach a side door as the crowd overwhelms the gunman. You got lucky — desperately, undeservedly lucky.`,tags:[['flag','Escaped by luck'],['bad','Trauma']]}; }},
+    ]};}},
+
+/* Kidnap plot foiled at your school. */
+{ id:'ff_threat_kidnap_school', once:false, weight:8,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<45 || S.potus.goodness<0) && S.age>=6 && S.age<=18 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService;
+    return {yr:`Age ${S.age}`, title:'🎒 The Van by the Gate',
+    text:`A teacher pulls you from class white-faced. A van has been circling the school for three days; today two men tried to talk you into it at the fence, claiming your parent sent them. ${ss?'Your detail is already moving.':'Nobody official is here — the family cut your protection to save face.'}`,
+    choices:[
+      {label:'Stay put and get to the safe room', tip:'Follow the protocol', apply:()=>{
+        if(ss){ addStress(rng(10,20)); bumpFame(rng(1,3)); ledgerAdd('kidnap_foiled',3,{note:'detail intercepted'});
+          return {text:`Your lead agent walks you calmly to the reinforced office and locks it down. Outside, the detail boxes the van in the parking lot. The plot collapses before it began. You are shaken but safe.`,tags:[['good','Plot foiled'],['flag','Rattled']]}; }
+        const ok=rng(0,100)<70; if(ok){ addStress(rng(18,32)); addTrauma('fear',rng(2,4),'Nearly abducted at school'); setFlag('kidnap_target');
+          return {text:`You barricade in the office with the staff while police race over. The van is gone by the time they arrive — but a bag of zip-ties and a printout of your schedule is found in the bushes. It was real. It was for you.`,tags:[['flag','Escaped'],['bad','Trauma']]}; }
+        chg('health',-rng(8,18)); addTrauma('fear',rng(5,7),'Grabbed in an abduction attempt'); addStress(rng(30,46)); setFlag('kidnap_target'); setFlag('assassination_survivor');
+        return {text:`They do not wait. One grabs your arm through the gate and you are half-dragged before a gym teacher and three parents pile in swinging. They break your grip; the men flee. You are bruised, sobbing, and never quite the same about doorways again.`,tags:[['bad','Manhandled'],['bad','Lasting fear']]}; }},
+      {label:'Play along to buy time, then run', tip:'A dangerous gamble', apply:()=>{
+        const ss2=has('secret_service')||S.potus.secretService; if(ss2){ addStress(rng(14,24)); bumpFame(rng(1,3));
+          return {text:`You walk toward them slowly, stalling, keeping them talking — long enough for your agents to close from both sides. They are on the ground in seconds. Reckless, but your nerve gave the detail the opening.`,tags:[['flag','Bold gambit'],['good','Foiled']]}; }
+        const ok=rng(0,100)<45; if(ok){ addStress(rng(22,36)); addTrauma('fear',rng(4,6),'Talked down would-be kidnappers'); setFlag('kidnap_target');
+          return {text:`You keep them talking, edging back, then bolt mid-sentence and scream for the office. They run rather than chase into a crowd. You outfoxed them — this time.`,tags:[['flag','Talked your way out'],['bad','Trauma']]}; }
+        chg('health',-rng(14,26)); addTrauma('fear',rng(6,8),'Abduction attempt, no protection'); addStress(rng(35,52)); setFlag('kidnap_target');
+        return {text:`Your bluff fails. A hand clamps your mouth and you are lifted toward the sliding door — until a delivery driver lays on his horn and floors it at them. They drop you and scatter. You landed hard on concrete, but you landed free.`,tags:[['bad','Nearly taken'],['bad','Trauma']]}; }},
+    ]};}},
+
+/* Suspicious package delivered to the residence / your address. */
+{ id:'ff_threat_package', once:false, weight:9,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<45 || S.potus.goodness<0) && S.age>=8 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService;
+    return {yr:`Age ${S.age}`, title:'📦 The Package With No Return Address',
+    text:`A padded envelope arrives addressed to you by first name — no sender, a faint chemical smell, something shifting inside. Your hands are already on it.`,
+    choices:[
+      {label:'Put it down and call it in', tip:'The right move', apply:()=>{
+        if(ss){ addStress(rng(6,14)); ledgerAdd('threat_package',2,{note:'flagged, no protection lost'});
+          return {text:`You set it down and back away. The detail screens it: a crude powder and a letter promising you will pay for your parent. Harmless in the end — chalk dust and cowardice — but the message was meant to terrify a child, and it did.`,tags:[['good','Handled it right'],['flag','Shaken']]}; }
+        const bad=rng(0,100)<25; if(bad){ chg('health',-rng(10,22)); addTrauma('fear',rng(3,5),'Opened a threat package'); addStress(rng(20,34));
+          return {text:`No screeners, no detail. You set it down but your parent opens it — a puff of grey powder. Days of decontamination and testing follow. It turns out non-lethal, but the fear of those 72 hours is its own poison.`,tags:[['bad','Contamination scare'],['bad','Trauma']]}; }
+        addStress(rng(12,22)); addTrauma('fear',rng(2,4),'Received a threat package');
+        return {text:`You leave it and phone the police yourself. Bomb techs cart it off; it holds only a ranting letter and a bullet with your name scratched into it. A promise, not a weapon — this time.`,tags:[['flag','A chilling warning'],['bad','Trauma']]}; }},
+      {label:'Open it — you have to know', tip:'Reckless curiosity', apply:()=>{
+        const ss2=has('secret_service')||S.potus.secretService; const bad=rng(0,100)<(ss2?18:48);
+        if(bad){ chg('health',-rng(16,34)); addTrauma('fear',rng(5,8),'Opened a hostile package'); addStress(rng(28,44)); setFlag('assassination_survivor');
+          return {text:`You tear it open. Powder blooms into the air and a spring-loaded blade nicks your thumb. Hazmat teams seal the room around you. It could have been so much worse — and for weeks of testing, you do not know that it is not.`,tags:[['bad','Injured & exposed'],['bad','Severe trauma']]}; }
+        addStress(rng(14,24)); addTrauma('fear',rng(3,5),'Opened a threat package');
+        return {text:`You rip it open before anyone can stop you. Inside: shredded photos of your family, faces scratched out, and a single word. No toxin, no device — just hate, and now it lives in your head.`,tags:[['bad','Disturbing'],['bad','Trauma']]}; }},
+    ]};}},
+
+/* Car rams / rushes the motorcade. */
+{ id:'ff_threat_motorcade', once:false, weight:8,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<45 || S.potus.goodness<0) && S.age>=6 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService;
+    return {yr:`Age ${S.age}`, title:'🚗 The Motorcade',
+    text:`You are three cars back in the motorcade when a pickup guns it out of a side street straight at your SUV. Tires scream. The driver beside you is already shouting into his cuff.`,
+    choices:[
+      {label:'Brace and let the driver work', tip:'Trained agents drive these cars', apply:()=>{
+        if(ss){ addStress(rng(10,20)); addTrauma('fear',rng(2,4),'Motorcade ramming attempt'); bumpFame(rng(1,3)); ledgerAdd('motorcade_attack',3,{note:'evasive driving worked'});
+          return {text:`Your driver stamps the accelerator and swings the armored truck in a controlled slide; the follow car peels off to intercept. The pickup clips your bumper and spins into a hydrant. You are whipped against the belt but the armor holds. Textbook.`,tags:[['good','The detail drove you out'],['bad','Trauma']]}; }
+        const hurt=rng(0,100)<58; if(hurt){ chg('health',-rng(20,40)); addTrauma('fear',rng(5,8),'Injured in a motorcade attack'); addStress(rng(30,48)); setFlag('assassination_survivor');
+          return {text:`Your car is an ordinary sedan today — the family trimmed the detail. The pickup slams your door full-speed. Glass, metal, the world upside down. You crawl out bleeding as strangers pull the driver from the wreck. You should not have survived the impact.`,tags:[['bad','Serious injury'],['bad','Trauma']]}; }
+        addStress(rng(18,30)); addTrauma('fear',rng(3,5),'Survived a car ramming');
+        return {text:`Your driver yanks the wheel and the pickup misses by a hand's width, plowing into a lamppost instead. No armor, no follow car — just quick reflexes and a lot of luck between you and the morgue.`,tags:[['flag','Barely evaded'],['bad','Trauma']]}; }},
+      {label:'Scream at the driver to turn — grab the wheel', tip:'Panic', apply:()=>{
+        const ss2=has('secret_service')||S.potus.secretService; const bad=rng(0,100)<(ss2?30:70);
+        if(bad){ chg('health',-rng(22,42)); addTrauma('fear',rng(6,9),'Caused a crash in a motorcade attack'); addStress(rng(34,54)); setFlag('assassination_survivor');
+          return {text:`You lunge at the wheel and the truck loses its line. Instead of the evasive slide, you plow into a barrier. The airbag breaks your nose; your driver, half-crushed, still shields you with his arm. Your panic nearly killed you both.`,tags:[['bad','Crash injuries'],['bad','Guilt & trauma']]}; }
+        addStress(rng(16,28)); addTrauma('fear',rng(3,5),'Motorcade attack');
+        return {text:`You grab for the wheel; the driver shoves you off with one hand and saves the maneuver with the other. The pickup misses. He does not say a word — but the look he gives you says never again.`,tags:[['flag','Nearly made it worse'],['bad','Trauma']]}; }},
+    ]};}},
+
+/* Drone over the residence. */
+{ id:'ff_threat_drone', once:false, weight:9,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<48 || S.potus.goodness<0) && S.age>=8 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService;
+    return {yr:`Age ${S.age}`, title:'🛸 The Thing Over the Lawn',
+    text:`You are on the residence lawn at dusk when a heavy drone drops out of the sky and hovers twenty feet up, a dark package slung under it, its camera fixed on you.`,
+    choices:[
+      {label:'Get inside behind cover', tip:'Assume the worst', apply:()=>{
+        if(ss){ addStress(rng(8,16)); ledgerAdd('drone_incursion',2,{note:'counter-UAS engaged'});
+          return {text:`You are already moving as the counter-drone team jams it; it wobbles and drops into the rose bed. The "package" is a camera and a spray-painted threat. A stunt — but it flew a long way to find your face.`,tags:[['good','Neutralized'],['flag','Unnerving']]}; }
+        const bad=rng(0,100)<30; if(bad){ chg('health',-rng(8,18)); addTrauma('fear',rng(3,5),'Drone incident at the residence'); addStress(rng(22,36));
+          return {text:`With no counter-drone team, it circles unopposed and dumps its load — a canister of foul chemical smoke that sends you coughing to the grass. Harmless, they later swear. It did not feel harmless with your lungs burning.`,tags:[['bad','Chemical scare'],['bad','Trauma']]}; }
+        addStress(rng(14,24)); addTrauma('fear',rng(2,4),'Drone over the residence');
+        return {text:`You sprint indoors and watch from a window as it films the house for a full minute, then flies off into the dark. Whoever sent it now has everything — the layout, the routines, your face.`,tags:[['flag','Surveilled'],['bad','Trauma']]}; }},
+      {label:'Throw something at it / knock it down', tip:'Defiant and dumb', apply:()=>{
+        const ss2=has('secret_service')||S.potus.secretService; const bad=rng(0,100)<(ss2?20:45);
+        if(bad){ chg('health',-rng(10,22)); addTrauma('fear',rng(4,6),'Downed a hostile drone'); addStress(rng(20,34));
+          return {text:`You wing a garden rock and clip a rotor. It spirals down and its payload ruptures on impact — smoke, a small flash, stinging grit across your arms. Standing under it was the worst possible place to be.`,tags:[['bad','Hurt'],['bad','Trauma']]}; }
+        addStress(rng(10,18)); bumpFame(rng(1,3));
+        return {text:`You hurl a rock and by some miracle knock it clean out of the air. It cracks apart on the flagstones — just a camera and a note. The clip of a First-Family kid dropping a spy drone goes viral by morning.`,tags:[['flag','Reckless win'],['good','Went viral']]}; }},
+    ]};}},
+
+/* Breach of the perimeter fence — an intruder inside. */
+{ id:'ff_threat_fence', once:false, weight:8,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<45 || S.potus.goodness<0) && S.age>=8 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService;
+    return {yr:`Age ${S.age}`, title:'🚨 Fence Jumper',
+    text:`Alarms shriek through the residence at 2 a.m. A man cleared the perimeter fence and is on the grounds — and the last place he was seen is your wing of the house.`,
+    choices:[
+      {label:'Lock the bedroom door and hide', tip:'Do not confront', apply:()=>{
+        if(ss){ addStress(rng(12,22)); addTrauma('fear',rng(3,5),'Fence-jumper reached the house'); ledgerAdd('fence_breach',3,{note:'detail cleared the grounds'});
+          return {text:`You wedge the door and drop behind the bed. Boots thunder up the stairs — your agents, not him. They pin the intruder in the hallway outside your very room. He got closer than anyone will admit in the briefing.`,tags:[['good','Detail got there first'],['bad','Trauma']]}; }
+        const bad=rng(0,100)<40; if(bad){ chg('health',-rng(12,26)); addTrauma('fear',rng(5,8),'Intruder in the home, no detail'); addStress(rng(30,48)); setFlag('assassination_survivor');
+          return {text:`The door handle turns. He is inside before help is. You fight for the length of a nightmare — a lamp, your nails, your voice — until staff drag him off you. You keep the bruises and the certainty that home is not safe.`,tags:[['bad','Attacked at home'],['bad','Severe trauma']]}; }
+        addStress(rng(18,30)); addTrauma('fear',rng(4,6),'Home intrusion');
+        return {text:`You hide in the dark and hear him try your door — locked — then move on, muttering your parent's name, until police finally take him in the kitchen. You do not sleep in that room again.`,tags:[['flag','He tried your door'],['bad','Trauma']]}; }},
+      {label:'Go find out what is happening', tip:'Walk toward the danger', apply:()=>{
+        const ss2=has('secret_service')||S.potus.secretService; const bad=rng(0,100)<(ss2?28:64);
+        if(bad){ chg('health',-rng(16,32)); addTrauma('fear',rng(6,9),'Confronted a home intruder'); addStress(rng(34,52)); setFlag('assassination_survivor');
+          return {text:`You step into the hall and walk straight into him. He is bigger, wild-eyed, and armed with a kitchen knife he found on the way. You are cut before anyone reaches you. You live — but you learned the cost of curiosity in the worst way.`,tags:[['bad','Stabbed'],['bad','Severe trauma']]}; }
+        addStress(rng(16,26)); addTrauma('fear',rng(3,5),'Home intrusion');
+        return {text:`You creep out just in time to see agents wrestle him to the carpet at the end of the hall. Another few steps and you would have met him alone. Your knees give out where you stand.`,tags:[['flag','Too close'],['bad','Trauma']]}; }},
+    ]};}},
+
+/* A threat letter that names YOU specifically. */
+{ id:'ff_threat_letter', once:false, weight:10,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<48 || S.potus.goodness<0) && S.age>=9 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService;
+    return {yr:`Age ${S.age}`, title:'✉️ Named in the Threat',
+    text:`Your agents sit you down. For weeks the family has received threats — but the latest names <b>you</b>, your school, your routine, your favorite coffee order. Someone has been watching you for a long time.`,
+    choices:[
+      {label:'Accept a tightened detail and change your routine', tip:'Safety over freedom', apply:()=>{
+        setFlag('threat_target'); addStress(rng(10,20)); driftPers&&driftPers('discipline',1); addTrauma('fear',rng(2,4),'Named in a credible threat');
+        return {text:`You let them scramble your schedule, swap your car, seal your accounts. The freedom you had left evaporates overnight. It is a cage — but a cage is better than a coffin, and you know which one they are choosing for you.${ss?' Your detail doubles.':''}`,tags:[['flag','Life in lockdown'],['bad','Trauma']]}; }},
+      {label:'Refuse to let it run your life', tip:'Defiance', apply:()=>{
+        setFlag('threat_target'); const ss2=has('secret_service')||S.potus.secretService; addStress(rng(8,16)); bumpFame(rng(1,3));
+        if(!ss2){ addTrauma('fear',rng(3,5),'Ignored a credible threat'); return {text:`You keep your routine out of sheer stubbornness and no one is guarding you. Nothing happens for a month — and then you catch a man photographing you from a parked car. You run. You are lucky. You were also a fool.`,tags:[['bad','Nearly targeted'],['flag','Defiant']]}; }
+        return {text:`You refuse to disappear, and your detail simply tightens around your ordinary life instead. You keep your school, your coffee, your walks — with three agents you pretend not to see. Freedom on a leash, but freedom.`,tags:[['flag','Refused to hide'],['good','Kept your life']]}; }},
+    ]};}},
+
+/* A stalker who believes the president ruined their life. */
+{ id:'ff_threat_stalker', once:false, weight:9,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<50 || S.potus.goodness<0) && S.age>=12 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService;
+    return {yr:`Age ${S.age}`, title:'👁️ The Man Who Blames the President',
+    text:`The same face keeps appearing — outside your gym, across from a cafe, at the edge of a photo. He lost everything, he writes, because of a policy your parent signed, and he has decided the family should feel his pain. Today he is across the street again.`,
+    choices:[
+      {label:'Report it and let the detail handle him', tip:'By the book', apply:()=>{
+        if(ss){ addStress(rng(10,18)); ledgerAdd('stalker',2,{note:'protective intel unit tracked him'});
+          return {text:`Your agents have a file on him already. They move in quietly and he is taken for a psychiatric hold before he acts. Grief made a weapon of him, and it was aimed at you. It could have gone another way.`,tags:[['good','Stalker detained'],['flag','Unsettling']]}; }
+        const bad=rng(0,100)<38; if(bad){ chg('health',-rng(10,22)); addTrauma('fear',rng(5,7),'Confronted by a stalker'); addStress(rng(26,42)); setFlag('threat_target');
+          return {text:`With no detail to intercept, he closes the distance while you wait for police. He grabs your collar, screaming about his ruined life, and shoves you into a wall before bystanders pull him back. The rage in his face lives behind your eyes now.`,tags:[['bad','Assaulted'],['bad','Trauma']]}; }
+        addStress(rng(16,26)); addTrauma('fear',rng(3,5),'Stalked by a fixated man'); setFlag('threat_target');
+        return {text:`Police pick him up as he crosses toward you. In his bag: a knife, printouts of your movements, and a letter he meant to make you read. Weeks of your life had been catalogued by a stranger.`,tags:[['flag','Barely avoided'],['bad','Trauma']]}; }},
+      {label:'Approach him — maybe he just needs to be heard', tip:'Compassionate but risky', apply:()=>{
+        const ss2=has('secret_service')||S.potus.secretService; const bad=rng(0,100)<(ss2?25:60);
+        if(bad){ chg('health',-rng(12,26)); addTrauma('fear',rng(6,8),'Attacked approaching a stalker'); addStress(rng(30,46)); setFlag('threat_target');
+          return {text:`You cross the street with your hands open. For one moment he listens — then something snaps and he lunges. You are hurt before help arrives. Kindness was not the wrong instinct, only the wrong risk to take alone.`,tags:[['bad','Attacked'],['bad','Trauma']]}; }
+        karma(2); addStress(rng(12,20)); driftPers&&driftPers('warmth',1);
+        return {text:`You approach slowly and just... listen. He weeps. He tells you about the daughter he lost, the job, the house. Agents fold him in gently and get him help instead of a cell. You cannot fix what your parent's office broke — but you saw the human under the threat.`,tags:[['good','Chose compassion'],['flag','Dangerous grace']]}; }},
+    ]};}},
+
+/* ===================== PROTESTS TURNED UGLY ===================== */
+
+/* A mob forms outside your school. */
+{ id:'ff_threat_mob_school', once:false, weight:10,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<45 || S.potus.goodness<0) && S.age>=10 && S.age<=19 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService;
+    return {yr:`Age ${S.age}`, title:'📣 Mob at the Gates',
+    text:`A protest against your parent has massed outside your school and turned. They know you are inside. Fists on the fence, your name in the chants, a brick through a first-floor window.`,
+    choices:[
+      {label:'Shelter inside and wait for extraction', tip:'Do not be seen', apply:()=>{
+        if(ss){ addStress(rng(12,22)); addTrauma('fear',rng(2,4),'Trapped by a mob'); ledgerAdd('mob',2,{note:'clean extraction'});
+          return {text:`Staff move you to an interior room while your detail choreographs an exit through the service dock. You are in an armored SUV before the crowd knows you have moved. Behind the tinted glass you finally let yourself shake.`,tags:[['good','Extracted safely'],['bad','Trauma']]}; }
+        const bad=rng(0,100)<42; if(bad){ chg('health',-rng(10,22)); addTrauma('fear',rng(5,7),'Caught by a mob, no detail'); addStress(rng(28,44));
+          return {text:`There is no clean exit and no detail to make one. The crowd breaches the gate as you slip out the back; hands grab, something glass shatters near your head, a teacher takes a hit shielding you. You make it out cut and gasping on a stranger's word.`,tags:[['bad','Injured in the crush'],['bad','Trauma']]}; }
+        addStress(rng(18,30)); addTrauma('fear',rng(3,5),'School mob');
+        return {text:`You wait it out in a locked room, listening to your own name screamed by hundreds of throats, until riot police finally open a corridor. You walk out through overturned barricades and the smell of pepper spray, hollowed out.`,tags:[['flag','Endured the siege'],['bad','Trauma']]}; }},
+      {label:'Go to the window to reason with them', tip:'Brave or naive', apply:()=>{
+        const ss2=has('secret_service')||S.potus.secretService; const bad=rng(0,100)<(ss2?35:70);
+        if(bad){ chg('health',-rng(12,26)); addTrauma('fear',rng(5,8),'Injured facing a mob'); addStress(rng(30,48));
+          return {text:`You show your face at the window to plead for calm — and it is gasoline. A bottle catches your temple through the broken pane. Agents and staff drag you down bleeding. A crowd this angry did not want a conversation.`,tags:[['bad','Struck by a projectile'],['bad','Trauma']]}; }
+        bumpFame(rng(1,4)); addStress(rng(14,24)); karma(1);
+        return {text:`You step to the window and, impossibly, raise a hand for quiet. A few fall silent. You say you are just a kid who did not choose any of this. It is not much — but a corner of the crowd softens, and the clip of it moves people.`,tags:[['flag','Faced them down'],['good','A rare grace']]}; }},
+    ]};}},
+
+/* Someone throws something at you in public. */
+{ id:'ff_threat_projectile', once:false, weight:11,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<50 || S.potus.goodness<0) && S.age>=8 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService; const thing=pick(['a full soda can','a rotten egg','a shoe','a water bottle','a fistful of red paint']);
+    return {yr:`Age ${S.age}`, title:'🥚 Thrown From the Crowd',
+    text:`Walking a rope line, someone screams your parent's name and hurls ${thing} straight at your head.`,
+    choices:[
+      {label:'Let the detail react', tip:'Hold still, trust them', apply:()=>{
+        if(ss){ addStress(rng(4,10));
+          return {text:`An agent's forearm swats ${thing} out of the air an inch from your face and three others swallow you into a moving wall of suits. You never even break stride. That is what they train ten thousand hours for.`,tags:[['good','Detail blocked it'],['flag','Startled']]}; }
+        const hit=rng(0,100)<55; if(hit){ chg('health',-rng(4,12)); addStress(rng(12,22)); addTrauma('fear',rng(2,4),'Struck in public');
+          return {text:`${thing.charAt(0).toUpperCase()+thing.slice(1)} catches you across the cheek. It stings, it humiliates, and it is on every screen in the country by dinner. No one was there to knock it down.`,tags:[['bad','Struck'],['bad','Humiliated']]}; }
+        addStress(rng(8,16));
+        return {text:`You flinch and ${thing} sails past your ear into the crowd behind you. Close, ugly, and a reminder that a rope line is the only thing between you and a lot of hate.`,tags:[['flag','Near miss'],['bad','Shaken']]}; }},
+      {label:'Throw it right back', tip:'Petty defiance', apply:()=>{
+        karma(-2); const ss2=has('secret_service')||S.potus.secretService; addStress(rng(8,16)); bumpFame(rng(0,2));
+        if(!ss2){ chg('health',-rng(3,9)); addTrauma('fear',rng(2,3),'Escalated with a hostile crowd'); return {text:`You scoop it up and fire it back into the crowd. The mood turns instantly uglier and two more things come flying before you get clear. Satisfying for one second, dangerous for the next ten.`,tags:[['bad','Escalated it'],['flag','No regrets... mostly']]}; }
+        return {text:`You snatch ${thing} off the ground and whip it back into the crowd before an agent hauls you into the car. The clip is a sensation — half the country cheers the First-Family kid with an arm, half calls it a disgrace.`,tags:[['flag','Clapped back'],['good','Internet legend']]}; }},
+    ]};}},
+
+/* An effigy of your parent is burned. */
+{ id:'ff_threat_effigy', once:false, weight:9,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<42 || S.potus.goodness<0) && S.age>=11 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age;
+    return {yr:`Age ${S.age}`, title:'🔥 The Effigy',
+    text:`On the evening news, a crowd hangs and burns an effigy of your parent — your <i>mom</i>, your <i>dad</i> — while thousands cheer. You are watching from the residence. Someone forgot to turn it off in time.`,
+    choices:[
+      {label:'Turn it off and go be with your parent', tip:'They are a person too', apply:()=>{
+        chg('happy',-rng(4,9)); addStress(rng(10,18)); karma(1); rel&&rel('parent',3,2,'Sat with them after the effigy'); driftPers&&driftPers('warmth',1);
+        return {text:`You switch it off and go find them. They are staring at a wall, pretending it does not land. You sit down and say nothing that matters and everything that does. The country burned a symbol tonight — you go remind the human it stood for that someone loves them.`,tags:[['good','Chose your family'],['flag','It still hurts']]}; }},
+      {label:'Watch all of it — let it harden you', tip:'Do not look away', apply:()=>{
+        addStress(rng(12,22)); addTrauma('fear',rng(3,5),'Watched a mob burn a parent in effigy'); driftPers&&driftPers('warmth',-1); chg('happy',-rng(5,10));
+        return {text:`You make yourself watch every second — the flames on a face that reads you bedtime stories, the joy in the crowd. Something in you cools and sets. You will never trust a stranger's smile the same way again.`,tags:[['bad','A scar forms'],['flag','Colder now']]}; }},
+    ]};}},
+
+/* Cornered by an angry crowd — defuse / extract / confront. */
+{ id:'ff_threat_cornered', once:false, weight:9,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<45 || S.potus.goodness<0) && S.age>=13 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const ss=has('secret_service')||S.potus.secretService;
+    return {yr:`Age ${S.age}`, title:'🫥 Cornered',
+    text:`A quick errand goes wrong. You are recognized, and a knot of furious people closes around you against a wall, phones up, voices rising, no easy way out.`,
+    choices:[
+      {label:'Defuse it — hands up, calm voice', tip:'Talk them down', apply:()=>{
+        const ok=rng(0,100)<45+(S.stats.smarts||50)/6; if(ok){ karma(1); addStress(rng(10,18)); bumpFame(rng(1,3));
+          return {text:`You keep your hands visible and your voice level: you are not your parent, you are just trying to get home. It is enough. The tension leaks out; a few even look ashamed. You walk out on your own two feet.`,tags:[['good','Talked your way clear'],['flag','Nerve-wracking']]}; }
+        chg('health',-rng(8,18)); addTrauma('fear',rng(4,6),'Cornered and jostled by a crowd'); addStress(rng(24,38));
+        return {text:`Your words do not land. The pushing starts, then a shove, then a dozen. You are down before ${ss?'your detail plows in and rips you out of the pile':'a bystander pulls you free'}. You escape with bruises and the memory of the ground.`,tags:[['bad','Trampled'],['bad','Trauma']]}; }},
+      {label:'Signal the detail for a hard extraction', tip:'If you have one', apply:()=>{
+        if(ss){ addStress(rng(8,16)); addTrauma('fear',rng(2,4),'Hard extraction from a crowd'); ledgerAdd('extraction',2,{note:'clean'});
+          return {text:`You tug your ear and your agents materialize, forming a flying wedge that punches straight through the crowd with you in the pocket. Elbows, shouting, and then the cool dark of the car. Undignified and alive.`,tags:[['good','Extracted'],['bad','Trauma']]}; }
+        chg('health',-rng(6,14)); addStress(rng(18,30)); addTrauma('fear',rng(3,5),'Cornered with no protection');
+        return {text:`You reach for a detail that is not there — the family cut it. You have to fight your own way out through grabbing hands, and you barely do, shirt torn, phone gone, heart hammering. No one was coming.`,tags:[['bad','On your own'],['bad','Trauma']]}; }},
+      {label:'Confront them — get in their faces', tip:'Rage over reason', apply:()=>{
+        const ss2=has('secret_service')||S.potus.secretService; karma(-1); const bad=rng(0,100)<(ss2?40:72);
+        if(bad){ chg('health',-rng(12,26)); addTrauma('fear',rng(5,8),'Beaten confronting a crowd'); addStress(rng(30,48));
+          return {text:`You scream back, and a mob does what mobs do. It is fists and pavement until someone finally drags you clear. Standing your ground felt righteous for exactly one second.`,tags:[['bad','Beaten'],['bad','Trauma']]}; }
+        bumpFame(rng(1,3)); addStress(rng(14,24));
+        return {text:`You round on the loudest one and dare him to say it to your face. Bluff or backbone, it works — the knot loses its nerve and thins. You walk out untouched, adrenaline screaming, having gambled and won.`,tags:[['flag','Faced them down'],['good','Won the standoff']]}; }},
+    ]};}},
+
+/* ===================== SECRET SERVICE RELATIONSHIP ===================== */
+
+/* Your lead agent becomes a trusted figure. */
+{ id:'ff_threat_agent_bond', once:false, weight:11,
+  when:S=> S.potus && S.potus.inOffice && (has('secret_service')||S.potus.secretService) && S.age>=8 && (S.age-(S._lastFFBond||-99)>=2),
+  build:S=>{ S._lastFFBond=S.age; const nm=pick(['Agent Reyes','Agent Cole','Agent Okafor','Agent Bianchi','Agent Duong','Agent Hart']);
+    return {yr:`Age ${S.age}`, title:'🕴️ Your Lead Agent',
+    text:`${nm} has stood a step behind you for years now — the same steady presence at every game, every bad day, every 3 a.m. panic. Tonight, between posts, they actually talk to you like a person.`,
+    choices:[
+      {label:'Let them in — they have earned it', tip:'A real bond', apply:()=>{
+        rel&&rel('lead_agent',6,8,`Grew close to ${nm}`); chg('happy',rng(3,7)); S._leadAgent=nm; setFlag('agent_bond'); driftPers&&driftPers('warmth',1);
+        return {text:`You tell ${nm} things you tell no one, and they tell you a little back — a kid at home, a reason they took this job. In a life full of strangers paid to stand near you, you found one who actually sees you. It matters more than you can say.`,tags:[['good',`${nm} has your back`],['good','A true bond']]}; }},
+      {label:'Keep the wall up — they are staff, not family', tip:'Stay guarded', apply:()=>{
+        driftPers&&driftPers('warmth',-1); chg('happy',-rng(0,3));
+        return {text:`You keep it professional. ${nm} nods and steps back into the role. Safer, maybe — you have watched too many people get close for the wrong reasons. But the loneliest kind of company is the kind you never let speak.`,tags:[['flag','Kept your distance']]}; }},
+    ]};}},
+
+/* You resent being followed everywhere. */
+{ id:'ff_threat_resent', once:false, weight:10,
+  when:S=> S.potus && S.potus.inOffice && (has('secret_service')||S.potus.secretService) && S.age>=13 && S.age<=25 && (S.age-(S._lastFFResent||-99)>=2),
+  build:S=>{ S._lastFFResent=S.age;
+    return {yr:`Age ${S.age}`, title:'🚪 No Door Without a Guard',
+    text:`Every date, every party, every walk — a suit ten feet back, an earpiece, a manifest of your whole life. You are old enough now to hate it. You just want to be no one for one night.`,
+    choices:[
+      {label:'Sit down with your detail and set boundaries', tip:'Work with them', apply:()=>{
+        addStress(-rng(4,10)); rel&&rel('lead_agent',2,3,'Negotiated some breathing room'); driftPers&&driftPers('discipline',1);
+        return {text:`Instead of fighting them you negotiate — more distance, an earpiece not a shadow, a heads-up before they move. They give what they can. It is not freedom, but it is a version of your life you can breathe inside.`,tags:[['good','Found a compromise'],['flag','Still watched']]}; }},
+      {label:'Blow up at them and demand space', tip:'Vent it', apply:()=>{
+        addStress(rng(6,14)); rel&&rel('lead_agent',-3,-2,'Lashed out at the detail'); chg('happy',-rng(1,4));
+        return {text:`You unload years of it in one ugly minute — that they are jailers, that you never asked for any of this. They take it without flinching, because taking it is the job. Nothing changes except the silence in the car afterward.`,tags:[['bad','Strained the detail'],['flag','Frustrated']]}; }},
+    ]};}},
+
+/* You give your detail the slip — freedom vs danger. */
+{ id:'ff_threat_slip', once:false, weight:9,
+  when:S=> S.potus && S.potus.inOffice && (has('secret_service')||S.potus.secretService) && S.age>=15 && S.age<=28 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const badPres = S.potus.approval<45 || S.potus.goodness<0;
+    return {yr:`Age ${S.age}`, title:'🏃 Giving Them the Slip',
+    text:`There is a back stairwell, a borrowed hoodie, and a two-minute gap in the shift change. You could just... walk out. One night as a nobody. No manifest, no earpiece, no permission.`,
+    choices:[
+      {label:'Do it — one night of freedom', tip:'Big risk', apply:()=>{
+        const caught=rng(0,100)<40; const bad = badPres && rng(0,100)<45;
+        if(bad){ chg('health',-rng(12,28)); addTrauma('fear',rng(5,8),'Attacked while off the grid'); addStress(rng(26,44)); rel&&rel('lead_agent',-4,-4,'Ditched the detail and got hurt'); setFlag('assassination_survivor');
+          return {text:`For an hour it is glorious — anonymous, ordinary, free. Then two men who recognize your face follow you into an alley, and there is no wall of suits this time. You fight, you run, you make it home bleeding, and your detail nearly dies of the fear you gave them. Freedom had a price and you paid it in skin.`,tags:[['bad','Hurt in the open'],['bad','Trauma']]}; }
+        if(caught){ addStress(rng(6,12)); rel&&rel('lead_agent',-2,-1,'Slipped the detail, got caught'); chg('happy',rng(1,4));
+          return {text:`You get four blocks and half a slice of pizza before your detail materializes at the counter, furious and relieved in equal measure. Grounded, lectured, watched twice as hard now — but for four blocks, you were just a kid buying pizza.`,tags:[['flag','Caught quickly'],['good','A taste of normal']]}; }
+        chg('happy',rng(4,9)); addStress(-rng(4,10)); setFlag('tasted_freedom'); driftPers&&driftPers('boldness',1);
+        return {text:`You vanish into the city and, for one whole night, no one knows your name. You ride a bus. You watch strangers. You are nobody and it is the best feeling of your life. You slip back before dawn and no one ever knows — a secret entirely your own.`,tags:[['good','One night free'],['flag','Rolled the dice']]}; }},
+      {label:'Do not — it is not worth the risk to them', tip:'Grow up a little', apply:()=>{
+        driftPers&&driftPers('discipline',1); chg('happy',-rng(1,4)); rel&&rel('lead_agent',1,2,'Chose not to run');
+        return {text:`You put the hoodie back. If something happened to you on their watch it would end them, and they never asked for that weight either. You stay in. The cage stays locked — but tonight you chose to hold the key yourself.`,tags:[['flag','Stayed put'],['good','Thought of them']]}; }},
+    ]};}},
+
+/* A drill goes wrong. */
+{ id:'ff_threat_drill', once:false, weight:8,
+  when:S=> S.potus && S.potus.inOffice && (has('secret_service')||S.potus.secretService) && S.age>=10 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age;
+    return {yr:`Age ${S.age}`, title:'⚠️ The Drill',
+    text:`Your detail runs a surprise evacuation drill — except halfway through, a real alarm layers over the fake one and no one, for thirty seconds, knows which is which.`,
+    choices:[
+      {label:'Follow the protocol exactly', tip:'Trust the training', apply:()=>{
+        addStress(rng(8,16)); driftPers&&driftPers('discipline',1);
+        return {text:`You do exactly what they drilled into you — move, cover, car — real or not. It turns out to be a faulty sensor, but for half a minute it was not a game, and you did everything right. Your lead agent gives you a rare, tight nod.`,tags:[['good','Kept your head'],['flag','Scary half-minute']]}; }},
+      {label:'Panic and break from formation', tip:'Instinct takes over', apply:()=>{
+        const hurt=rng(0,100)<40; if(hurt){ chg('health',-rng(6,14)); addTrauma('fear',rng(3,5),'Injured in a chaotic evacuation'); addStress(rng(18,30));
+          return {text:`You bolt the wrong way in the confusion and go down hard on a stairwell, an agent tangling with you to break your fall and wrenching his own shoulder. False alarm — but real bruises, and a real lesson in why they say freeze, not flee.`,tags:[['bad','Hurt in the scramble'],['bad','Trauma']]}; }
+        addStress(rng(12,22));
+        return {text:`You panic and scatter from the formation; an agent scoops you back before you get far. False alarm. You spend the ride home embarrassed and rattled, promising yourself you will hold next time.`,tags:[['flag','Broke formation'],['bad','Shaken']]}; }},
+    ]};}},
+
+/* An agent takes a hit protecting you. */
+{ id:'ff_threat_agent_down', once:false, weight:7,
+  when:S=> S.potus && S.potus.inOffice && (has('secret_service')||S.potus.secretService) && (S.potus.approval<45 || S.potus.goodness<0) && S.age>=10 && (S.age-(S._lastFFThreat||-99)>=1),
+  build:S=>{ S._lastFFThreat=S.age; const nm=S._leadAgent||pick(['Agent Reyes','Agent Cole','Agent Okafor','Agent Hart','your lead agent']);
+    return {yr:`Age ${S.age}`, title:'🩸 He Took It For You',
+    text:`It happens in a blur at a public stop — a rush, a glint, and ${nm} steps into the space between you and it. The threat is down in seconds. So is ${nm}, on the pavement, bleeding, having chosen your life over their own.`,
+    choices:[
+      {label:'Stay with them — hold their hand', tip:'Do not let go', apply:()=>{
+        const lives=rng(0,100)<62; setFlag('assassination_survivor'); addTrauma('violence',rng(6,9),`${nm} was wounded shielding you`); addStress(rng(30,50)); chg('happy',-rng(8,14));
+        if(lives){ rel&&rel('lead_agent',8,10,`${nm} took a hit for you and lived`); bumpFame(rng(2,4));
+          return {text:`You drop to the concrete and grip their hand while medics work, telling them to hold on, to stay, that you have got them like they always had you. ${nm} pulls through after surgery. You will carry the debt and the image forever — but they lived, and you were there.`,tags:[['flag','Survivor guilt'],['good',`${nm} survives`]]}; }
+        rel&&rel('lead_agent',6,6,`${nm} died shielding you`); addTrauma('grief',rng(7,9),`${nm} died taking a hit meant for you`); ledgerAdd('agent_died',6,{note:'gave their life'});
+        return {text:`You hold their hand and beg, but the light goes out of ${nm} on the sidewalk with your name the last thing they hear. They had a family. They stepped in front of it for you without a half-second of hesitation. You do not know how to be worth that. You are not sure you ever will.`,tags:[['bad',`${nm} is gone`],['bad','Survivor guilt']]}; }},
+      {label:'Let the detail pull you to safety', tip:'What they would want', apply:()=>{
+        setFlag('assassination_survivor'); addTrauma('violence',rng(6,8),`An agent was wounded shielding you`); addStress(rng(28,46)); chg('happy',-rng(6,12));
+        return {text:`Other agents rip you from the scene before you can reach ${nm} — because that is the protocol, because your safety was the whole point of what ${nm} just did. You do not learn if they made it until hours later. Either way, you left them on the ground, and that is a thing you will relitigate at 3 a.m. for the rest of your life.`,tags:[['bad','Torn away'],['bad','Guilt & trauma']]}; }},
+    ]};}},
+
+/* ===================== THE PRICE ===================== */
+
+/* PTSD from a close call. */
+{ id:'ff_threat_ptsd', once:false, weight:9,
+  when:S=> S.potus && has('assassination_survivor') && S.age>=12 && (S.age-(S._lastFFPrice||-99)>=2),
+  build:S=>{ S._lastFFPrice=S.age;
+    return {yr:`Age ${S.age}`, title:'🌑 It Comes Back at Night',
+    text:`Months after the worst day, it still ambushes you — a car backfire drops you to the floor, crowds close your throat, sleep is a rumor. The close call did not end when the danger did.`,
+    choices:[
+      {label:'Get real help — therapy, the works', tip:'Do the hard thing', apply:()=>{
+        addStress(-rng(10,20)); chg('happy',rng(2,6)); setFlag('ptsd_treatment'); driftPers&&driftPers('discipline',1); karma(1);
+        return {text:`You start seeing a trauma specialist the family quietly arranges. It is slow, unglamorous work — naming it, sitting in it, learning your body is not lying but is not right either. The flashbacks loosen their grip a notch at a time. You are not fixed. You are fighting, and that counts.`,tags:[['good','Getting help'],['flag','A long road']]}; }},
+      {label:'Bury it and put on the brave face', tip:'The family way', apply:()=>{
+        addStress(rng(10,20)); addTrauma('fear',rng(3,5),'Untreated trauma from a close call'); chg('happy',-rng(3,7)); driftPers&&driftPers('warmth',-1);
+        return {text:`You do what the family does: you smile for the cameras and lock the rest in a room inside yourself. It works, right up until it does not — and every year that room gets heavier and harder to keep shut.`,tags:[['bad','Buried it'],['bad','It festers']]}; }},
+    ]};}},
+
+/* Beg the president to change course. */
+{ id:'ff_threat_beg_change', once:false, weight:9,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<42 || S.potus.goodness<0) && S.age>=13 && (S.age-(S._lastFFPrice||-99)>=2),
+  build:S=>{ S._lastFFPrice=S.age; const good=S.potus.goodness;
+    return {yr:`Age ${S.age}`, title:'🙏 Please Just Stop',
+    text:`The threats, the mobs, the burned effigies — you have finally had enough. You corner your parent, the most powerful person alive, and beg them to change course before it gets someone in this family killed.`,
+    choices:[
+      {label:'Plead with them to be a better president', tip:'Speak from the heart', apply:()=>{
+        const listens = rng(0,100) < (good<0?25:55); addStress(rng(6,14));
+        if(listens){ karma(3); if(S.potus.goodness<100)S.potus.goodness=Math.min(100,S.potus.goodness+rng(6,14)); if(S.potus.approval<100)S.potus.approval=Math.min(100,S.potus.approval+rng(3,8)); rel&&rel('parent',5,5,'Got through to the president'); chg('happy',rng(3,7)); ledgerAdd('changed_the_president',5,{note:'a child moved the office'});
+          return {text:`You do not argue policy. You tell them what it is like to be their kid right now — the drills, the nightmares, the effigy of their face on fire. Something cracks. For once you are not a talking point; you are their child. They promise to try, and the tone of the whole administration begins, slowly, to soften.`,tags:[['good','You moved them'],['good','The danger eases']]}; }
+        addStress(rng(10,18)); chg('happy',-rng(4,8)); rel&&rel('parent',-2,-1,'The president would not listen');
+        return {text:`They hear you out with tired eyes and tell you the country is bigger than one family's fear, that they cannot govern from a place of weakness. Maybe they believe it. You leave the room understanding that you will always come second to the office — and that the danger is not going anywhere.`,tags:[['bad','They would not change'],['flag','A hard truth']]}; }},
+      {label:'Say nothing — it is not your place', tip:'Swallow it', apply:()=>{
+        addStress(rng(8,16)); addTrauma('fear',rng(2,4),'Carried the family danger in silence'); driftPers&&driftPers('warmth',-1);
+        return {text:`You look at the weight already bending their shoulders and you decide not to add yours. You go back to your room and carry it alone, the way everyone in this house seems to carry everything. Duty is just fear you have agreed not to mention.`,tags:[['flag','Held your tongue'],['bad','Alone with it']]}; }},
+    ]};}},
+
+/* The family goes into deeper lockdown. */
+{ id:'ff_threat_lockdown', once:false, weight:8,
+  when:S=> S.potus && S.potus.inOffice && (S.potus.approval<42 || S.potus.goodness<0) && S.age>=10 && (S.age-(S._lastFFPrice||-99)>=2),
+  build:S=>{ S._lastFFPrice=S.age;
+    return {yr:`Age ${S.age}`, title:'🔒 Deeper Lockdown',
+    text:`After the latest scare, the security review comes back brutal: no public school, no unscreened friends, no leaving the compound without a week of notice. The walls just moved in another few feet.`,
+    choices:[
+      {label:'Accept it and make a life inside the walls', tip:'Adapt', apply:()=>{
+        chg('happy',-rng(3,7)); addStress(rng(6,14)); chg('smarts',rng(1,3)); driftPers&&driftPers('discipline',1); setFlag('deep_lockdown');
+        return {text:`You stop fighting the walls and start furnishing them — tutors, a home gym, projects, a routine. It is a smaller world, but you make it a real one. Some kids grow up in a yard; you grow up in a fortress, and you learn to call it home.`,tags:[['flag','Life in a fortress'],['good','Made peace with it']]}; }},
+      {label:'Fight it — you will not live in a bunker', tip:'Rebel', apply:()=>{
+        addStress(rng(10,18)); chg('happy',rng(1,4)); rel&&rel('parent',-2,-1,'Fought the lockdown'); driftPers&&driftPers('boldness',1); setFlag('threat_target');
+        return {text:`You refuse. You climb the walls, literally and otherwise, sneak the fence line, dare them to stop you. You win a little freedom and a lot of risk, and every gray hair you give your detail is a threat that gets one step closer. The fight itself becomes the danger.`,tags:[['flag','Would not be caged'],['bad','Higher risk']]}; }},
+    ]};}},
+
+/* Consider a fake identity. */
+{ id:'ff_threat_fake_id', once:false, weight:7,
+  when:S=> S.potus && (S.potus.approval<42 || S.potus.goodness<0) && S.age>=17 && (S.age-(S._lastFFPrice||-99)>=2),
+  build:S=>{ S._lastFFPrice=S.age;
+    return {yr:`Age ${S.age}`, title:'🪪 A New Name',
+    text:`It arrives as a half-joke from someone who owes the family a favor: they could make you disappear. New name, new papers, a face no one has hunted since you were born. A clean life, if you are willing to bury the old one.`,
+    choices:[
+      {label:'Seriously consider it — start a quiet exit plan', tip:'A door out', apply:()=>{
+        setFlag('considered_fake_id'); addStress(-rng(2,8)); chg('happy',rng(1,4)); driftPers&&driftPers('boldness',1);
+        return {text:`You do not do it — not yet — but you build the door. A name you might use. A city no one would look. The mere existence of an exit changes something in you; for the first time the cage has a key you carved yourself, and you sleep a little better knowing it is there.`,tags:[['flag','An escape hatch'],['good','Some control back']]}; }},
+      {label:'Refuse — you will not erase who you are', tip:'Own your name', apply:()=>{
+        karma(1); driftPers&&driftPers('discipline',1); bumpFame(rng(0,2)); chg('happy',rng(0,3));
+        return {text:`You turn it down. Whatever the name has cost you, it is yours — your family, your history, your fight. You will not let them make you flinch out of your own life. You will walk through the world as exactly who you are, guards and all.`,tags:[['good','Kept your name'],['flag','And the target on it']]}; }},
+    ]};}},
+
+/* ===================== GOOD-PRESIDENT SAFE / ADORED BEATS ===================== */
+
+/* When the president is loved: the family is adored, not hunted. */
+{ id:'ff_threat_adored', once:false, weight:9,
+  when:S=> S.potus && S.potus.inOffice && S.potus.approval>=55 && S.potus.goodness>=0 && S.age>=6 && (S.age-(S._lastFFSafe||-99)>=2),
+  build:S=>{ S._lastFFSafe=S.age;
+    return {yr:`Age ${S.age}`, title:'💐 Loved by a Nation',
+    text:`Your parent is genuinely popular, and it rubs off. A rope line today is all handmade cards, kids in homemade shirts with your face on them, an old woman crying happy tears just to shake your hand.`,
+    choices:[
+      {label:'Soak it in and give it back', tip:'Be gracious', apply:()=>{
+        bumpFame(rng(2,5)); chg('happy',rng(4,9)); karma(2); driftPers&&driftPers('warmth',1);
+        return {text:`You work the line for an hour you did not have to — every card, every selfie, every shaky hand. The love is real and it is a shield stronger than any detail: when a whole country is rooting for you, very few people ever wish you harm. You go home lighter than you have any right to be.`,tags:[['good','A nation adores you'],['good','Safe & beloved']]}; }},
+      {label:'Stay humble — it is not really about you', tip:'Keep perspective', apply:()=>{
+        chg('happy',rng(2,5)); karma(1); driftPers&&driftPers('discipline',1);
+        return {text:`You smile and wave but keep it in perspective — they love an idea, an office, a hope, and you just happen to stand near it. Still, it beats the alternative by a mile. A good president is the best security a First-Family kid could ask for.`,tags:[['good','Grounded'],['good','Beloved & safe']]}; }},
+    ]};}},
+
+/* A would-be threat, defused entirely because the president is good/loved. */
+{ id:'ff_threat_defused_by_love', once:false, weight:7,
+  when:S=> S.potus && S.potus.inOffice && S.potus.approval>=58 && S.potus.goodness>=20 && S.age>=10 && (S.age-(S._lastFFSafe||-99)>=2),
+  build:S=>{ S._lastFFSafe=S.age;
+    return {yr:`Age ${S.age}`, title:'🕊️ The Threat That Dissolved',
+    text:`A man starts shouting near the rope line, hand moving to his coat, and your stomach drops — but before your detail even closes, the crowd itself turns on him, a dozen ordinary people pinning a would-be attacker because they love your family too much to let it happen.`,
+    choices:[
+      {label:'Thank the people who stepped in', tip:'Honor them', apply:()=>{
+        bumpFame(rng(2,5)); karma(2); chg('happy',rng(2,6)); addStress(rng(4,10)); driftPers&&driftPers('warmth',1);
+        return {text:`It was just a scare — no weapon, only a man having the worst day of his life — but strangers formed a wall of their own bodies around you on instinct. You go back and thank every one of them by hand. This is what a good presidency buys: a country that guards you because it wants to.`,tags:[['good','Saved by the people'],['good','Grateful']]}; }},
+      {label:'Feel the weight of how easily it could go wrong', tip:'Sober up', apply:()=>{
+        addStress(rng(8,16)); addTrauma('fear',rng(1,3),'A near-miss, defused by goodwill'); driftPers&&driftPers('discipline',1);
+        return {text:`It ends fine, but your knees do not get the memo. You saw, for one cold second, the other version — the one where the crowd is against you instead of for you. You hug your parent extra hard that night and quietly hope they never stop being the kind of president strangers protect.`,tags:[['flag','Sobering'],['good','Ended safe']]}; }},
+    ]};}},
+
+/* Learning to live as a target — a quieter, non-gated reflective beat. */
+{ id:'ff_threat_the_normal', once:false, weight:7,
+  when:S=> S.potus && S.potus.inOffice && S.age>=14 && (S.age-(S._lastFFReflect||-99)>=3),
+  build:S=>{ S._lastFFReflect=S.age; const dangerous = S.potus.approval<45 || S.potus.goodness<0;
+    return {yr:`Age ${S.age}`, title:'🫥 Growing Up in the Crosshairs',
+    text:`A friend asks, wide-eyed, what it is actually like — the threats, the guards, always being someone worth hurting. You realize you stopped noticing years ago. When did fear become furniture?`,
+    choices:[
+      {label:'Tell the truth about it', tip:'Let someone in', apply:()=>{
+        chg('happy',rng(1,5)); addStress(-rng(2,8)); rel&&rel('friend',3,3,'Told a friend the real cost'); driftPers&&driftPers('warmth',1);
+        return {text:`You tell them the real version — the manifest of your day, the drills, the one night you got away, the agent who took a hit. Saying it out loud to someone who is not paid to hear it lifts a weight you did not know you were carrying. ${dangerous?'It is a heavy story. It helps to have finally told it.':'It could have been so much worse than it was, and you know it.'}`,tags:[['good','Let someone in'],['flag','Heavy truth']]}; }},
+      {label:'Laugh it off — deflect like always', tip:'Keep the mask on', apply:()=>{
+        chg('happy',rng(0,3)); driftPers&&driftPers('warmth',-1);
+        return {text:`You make it a joke — the guards are great wingmen, the drills are cardio — and change the subject. It is easier. It is also one more brick in a wall so old you forgot you built it. Not everyone gets to have a childhood; you got a security posture.`,tags:[['flag','Deflected'],['flag','The mask stays on']]}; }},
+    ]};}},
+
+];
+
+/* Optional export hook for module contexts (harmless if unused in the single-file build) */
+
+try{ EVENTS.push(...POTUS_EVENTS, ...POTUS_THREAT_EVENTS); }catch(e){}
+/* ===== end POTUS packs ===== */
 try{ applyTheme(currentTheme()); }catch(e){}   // 🎨 apply the saved appearance theme on load
 try{ initSoundLabel(); }catch(e){}             // 🔊 sync the sound-toggle label
 try{ initLang(); }catch(e){}      // apply saved UI language on load
