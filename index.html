@@ -1450,6 +1450,7 @@ function continueGame(){
     if(!S.genome) S.genome=rollGenome(null,null);   // GENETICS — backfill a genome for pre-genetics saves
     if(!S.personality) S.personality=freshPersonality(); if(!S.mind) S.mind=freshMind(false);   // PERSONALITY & MIND backfill
     if(S.worldYear===undefined) S.worldYear=S.age||0; if(!S.priceIndex) S.priceIndex=10000; S.investments=S.investments||{stocks:0,spec:0,cost:0};   // ECONOMY backfill
+    if(S._lastMarquee && !S._marqueeWY){ S._lastMarquee={}; S._marqueeWY=true; }   // 🗓️ WORLD EVENT CALENDAR backfill — old saves stored ages; new semantics compare worldYear
     S.hobbies=S.hobbies||{};   // HOBBIES backfill
     S.goalsAchieved=S.goalsAchieved||{};   // LIFE GOALS backfill
     S.underworld=S.underworld||{rep:0,rank:-1,crew:null,heat:0,jobs:0,busts:0,jailUntil:0};   // UNDERWORLD backfill
@@ -12475,12 +12476,45 @@ const VENUE_EVENTS=[
   {id:'f1',      name:'F1 Grand Prix',  icon:'🏎️', cost:400, happy:12, fame:1, sport:true,  countries:['ae','it','es','uk','jp','br','mx','au']},
 ];
 const OVERSEAS=[
-  {id:'worldcup', name:'World Cup Final',     icon:'🏆', country:'br', cost:1200, travel:2500, happy:18, fame:3, period:4},   // every 4 years
-  {id:'superbowl',name:'Super Bowl',          icon:'🏈', country:'us', cost:2000, travel:2000, happy:16, fame:3, period:1},   // yearly
-  {id:'olympics', name:'The Olympics',        icon:'🥇', country:'jp', cost:900,  travel:2200, happy:15, fame:2, period:4},   // every 4 years
-  {id:'fashion',  name:'Paris Fashion Week',  icon:'👗', country:'fr', cost:1500, travel:1800, happy:14, fame:3, period:1},   // yearly
+  /* real recurring world events at their REAL cadence — multi-year ones live on the world calendar (you WAIT for the edition year) */
+  {id:'worldcup', name:'World Cup Final',       icon:'🏆', country:'br', cost:1200, travel:2500, happy:18, fame:3, period:4},
+  {id:'olympics', name:'Summer Olympics',       icon:'🥇', country:'jp', cost:900,  travel:2200, happy:15, fame:2, period:4},
+  {id:'wolympics',name:'Winter Olympics',       icon:'⛷️', country:'ch', cost:1100, travel:2400, happy:15, fame:2, period:4},
+  {id:'eurofinal',name:'Euro Championship Final',icon:'⚽', country:'de', cost:900,  travel:2100, happy:15, fame:2, period:4},
+  {id:'cricketwc',name:'Cricket World Cup',     icon:'🏏', country:'in', cost:500,  travel:2300, happy:14, fame:2, period:4},
+  {id:'rugbywc',  name:'Rugby World Cup',       icon:'🏉', country:'nz', cost:700,  travel:2800, happy:14, fame:2, period:4},
+  {id:'expo',     name:'The World Expo',        icon:'🌍', country:'ae', cost:300,  travel:2400, happy:11, fame:1, period:5},
+  {id:'rydercup', name:'The Ryder Cup',         icon:'⛳', country:'uk', cost:800,  travel:2000, happy:12, fame:2, period:2},
+  {id:'biennale', name:'Venice Biennale',       icon:'🎨', country:'it', cost:400,  travel:1900, happy:12, fame:2, period:2},
+  {id:'superbowl',name:'Super Bowl',            icon:'🏈', country:'us', cost:2000, travel:2000, happy:16, fame:3, period:1},
+  {id:'fashion',  name:'Paris Fashion Week',    icon:'👗', country:'fr', cost:1500, travel:1800, happy:14, fame:3, period:1},
+  {id:'wimbledon',name:'Wimbledon Final',       icon:'🎾', country:'uk', cost:1300, travel:2000, happy:13, fame:2, period:1},
+  {id:'tourfr',   name:'Tour de France Finish', icon:'🚴', country:'fr', cost:150,  travel:1800, happy:11, fame:1, period:1},
+  {id:'monacogp', name:'Monaco Grand Prix',     icon:'🏎️', country:'mc', cost:2500, travel:2100, happy:16, fame:3, period:1},
+  {id:'cannes',   name:'Cannes Film Festival',  icon:'🎬', country:'fr', cost:1800, travel:1800, happy:14, fame:4, period:1},
+  {id:'metgala',  name:'The Met Gala',          icon:'🎭', country:'us', cost:3500, travel:1900, happy:15, fame:5, period:1},
+  {id:'riocarn',  name:'Rio Carnival',          icon:'🎉', country:'br', cost:400,  travel:2400, happy:17, fame:2, period:1},
+  {id:'oktober',  name:'Oktoberfest',           icon:'🍺', country:'de', cost:300,  travel:1900, happy:14, fame:1, period:1},
+  {id:'sanfermin',name:'Running of the Bulls',  icon:'🐂', country:'es', cost:200,  travel:1900, happy:13, fame:2, period:1},
+  {id:'tomatina', name:'La Tomatina',           icon:'🍅', country:'es', cost:100,  travel:1900, happy:12, fame:1, period:1},
+  {id:'eurovision',name:'Eurovision Final',     icon:'🎤', country:'se', cost:600,  travel:1900, happy:13, fame:2, period:1},
+  {id:'glasto',   name:'Glastonbury Festival',  icon:'🎸', country:'uk', cost:500,  travel:1900, happy:15, fame:2, period:1},
+  {id:'sakura',   name:'Cherry Blossom Festival',icon:'🌸', country:'jp', cost:150,  travel:2200, happy:12, fame:1, period:1},
+  {id:'harbin',   name:'Harbin Ice Festival',   icon:'🏮', country:'cn', cost:250,  travel:2200, happy:12, fame:1, period:1},
+  {id:'holi',     name:'Holi Festival',         icon:'🌈', country:'in', cost:80,   travel:2300, happy:14, fame:1, period:1},
+  {id:'muertos',  name:'Día de los Muertos',    icon:'💀', country:'mx', cost:150,  travel:1600, happy:12, fame:1, period:1},
+  {id:'comiccon', name:'Comic-Con',             icon:'🎪', country:'us', cost:400,  travel:1800, happy:13, fame:1, period:1},
+  {id:'burning',  name:'Burning Man',           icon:'🔥', country:'us', cost:900,  travel:1800, happy:15, fame:2, period:1},
 ];
-function marqueeCooldown(e){ if(!e.period) return 0; const last=(S._lastMarquee||{})[e.id]; if(last==null) return 0; return Math.max(0, e.period-(S.age-last)); }
+/* 🗓️ WORLD EVENT CALENDAR — marquee events live on the WORLD clock, not yours.
+   Each multi-year event's edition years are anchored per-dynasty via econHash (a pure
+   function of the seed — no RNG consumed), so the schedule EXISTS before you ever open
+   this menu: if the World Cup last ran two years ago, you wait two more. Randomized per
+   dynasty, identical on replay, and it carries across heirs like the economy does. */
+function _evtHash(s){ let h=0; for(let i=0;i<s.length;i++) h=(Math.imul(h,131)+s.charCodeAt(i))>>>0; return h; }
+function marqueePhase(e){ if(!e.period||e.period<=1) return 0; return Math.floor(econHash(_evtHash(e.id)+424242)*e.period)%e.period; }
+function marqueeWait(e){ if(!e.period||e.period<=1) return 0; const wy=S.worldYear||0; return (marqueePhase(e)-(wy%e.period)+e.period)%e.period; }   // 0 = ON this year
+function marqueeAttended(e){ return (S._lastMarquee||{})[e.id]===(S.worldYear||0); }   // already went to THIS edition/year
 /* ---- Passport — a real multi-step process: photo → office → file → wait → come back to collect ---- */
 let _ppPhoto=null;
 function applyPassport(){
@@ -12561,11 +12595,12 @@ function attendVenue(id){
 }
 function attendOverseas(id){
   const e=OVERSEAS.find(x=>x.id===id); if(!e)return;
-  const cd=marqueeCooldown(e); if(cd>0){ toast(`🗓️ The ${e.name} isn't on again for <b>${cd}</b> more year${cd===1?'':'s'}.`.replace(/<[^>]+>/g,'')); return; }
+  const wait=marqueeWait(e);
+  if(wait>0){ toast(`🗓️ The ${e.name} is not on this year — the next edition is in ${wait} year${wait===1?'':'s'}.`); return; }
+  if(marqueeAttended(e)){ toast(`✅ You already went to the ${e.name} this ${e.period>1?'edition':'year'} — the next one is in ${e.period} year${e.period===1?'':'s'}.`); return; }
   const abroad=e.country!==S.country;
   if(abroad && !passportValid()){ toast('🛂 You need a passport to travel abroad.'); return; }
   logAct('call',{fn:'attendOverseas',args:[id]});
-  S._lastMarquee=S._lastMarquee||{}; S._lastMarquee[id]=S.age;   // 🗓️ mark it attended so it can't be spammed (World Cup/Olympics every 4 yrs; Super Bowl/Fashion yearly)
   if(!abroad){ doTravel(e,false,'economy'); return; }
   const c=e.cost, t=e.travel;
   openModal({banner:'Travel', title:e.name, icon:'✈️', text:'Pick your travel class — a better class means more comfort and a better chance to meet people.', closable:true,
@@ -12579,6 +12614,7 @@ function doTravel(e,abroad,cls){
   const travel=abroad?Math.round(e.travel*{economy:1,business:2.2,first:4}[cls]):0;
   const total=e.cost+travel;
   if(!spend(total))return;
+  S._lastMarquee=S._lastMarquee||{}; S._lastMarquee[e.id]=S.worldYear||0;   // 🗓️ mark THIS edition attended (only once you actually paid & went)
   const comfort={economy:0,business:4,first:9}[cls];
   chg('happy',e.happy+comfort);
   const clsTxt={economy:'economy',business:'business class 🥂',first:'first class 👑'}[cls];
@@ -12607,8 +12643,12 @@ function renderEvents(){
   h+=VENUE_EVENTS.filter(e=>e.countries==='all'||e.countries.includes(S.country))
       .map(e=>eventRow(e.icon,e.name,`${cur()}${e.cost.toLocaleString()}`,`attendVenue('${e.id}')`)).join('');
   h+=`<div class="genlabel">Overseas Experiences ✈️</div>`;
-  h+=OVERSEAS.map(e=>{ const abroad=e.country!==S.country, tot=e.cost+(abroad?e.travel:0); const cd=marqueeCooldown(e);
-    const note=cd>0?`🗓️ next in ${cd} yr${cd===1?'':'s'}`:(abroad&&!passportValid())?'🛂 needs passport':(e.period?`every ${e.period} yr${e.period===1?'':'s'}`:'');
+  h+=OVERSEAS.slice().sort((a,b)=>marqueeWait(a)-marqueeWait(b) || b.period-a.period).map(e=>{   // what's ON leads; the rarest editions rank first
+    const abroad=e.country!==S.country, tot=e.cost+(abroad?e.travel:0); const wait=marqueeWait(e);
+    const note = wait>0 ? `🗓️ next edition in ${wait} yr${wait===1?'':'s'} · every ${e.period} yrs`
+      : marqueeAttended(e) ? `✅ went this ${e.period>1?'edition':'year'}`
+      : (abroad&&!passportValid()) ? '🛂 needs passport'
+      : e.period>1 ? `🔴 ON THIS YEAR · every ${e.period} yrs` : `every 1 yr`;
     return eventRow(e.icon,`${e.name} · ${COUNTRIES[e.country].flag}`,`${cur()}${tot.toLocaleString()}`,`attendOverseas('${e.id}')`,note);
   }).join('');
   v.innerHTML=h;
