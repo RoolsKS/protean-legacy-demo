@@ -6145,9 +6145,19 @@ function haunt(id){
   const kind=pick(['rattle every window in the house','whisper their name at 3am','possess the TV and play static','hurl a plate across the kitchen','appear in the mirror behind them','breathe cold down their neck','scrawl a message on the foggy glass','slam the doors over and over']);
   p.affinity=clamp(p.affinity-rng(4,12)); p.fear=(p.fear||0)+rng(15,32);
   karma(-3); setFlag('haunts_loved_ones'); S.hauntCount=(S.hauntCount||0)+1;
-  // high chance to get busted — rises with how scared & savvy they've become and how often you haunt
-  const bust = rng(0,100) < 45 + Math.min(35,(p.fear||0)/3) + S.hauntCount*2;
-  if(bust){ bustedGhost(p); return; }
+  // They only ATTEMPT an exorcism once truly fed up (low early, climbs with fear & repeat hauntings)…
+  const attempt = rng(0,100) < 8 + Math.min(24,(p.fear||0)/5) + (S.hauntCount||0)*1.5;
+  if(attempt){
+    // …and a powerful spirit RESISTS the banishing — you grow stronger with every haunt. Only a failed resist ends you.
+    const power = clamp(30 + (S.hauntCount||0)*4 + (has('dark_legend')||has('archnemesis')?15:0) + ((p.fear||0)>70?10:0), 20, 88);
+    if(rng(0,100) < power){
+      p.fear=clamp((p.fear||0)+rng(6,14)); setFlag('resisted_exorcism'); S.exorcismsSurvived=(S.exorcismsSurvived||0)+1;
+      const howF=pick(['called in a priest','hired a medium','smudged sage through the house','had the place blessed','ringed every door in salt']);
+      pushLog(`👻 <b>${p.name}</b> ${howF} to banish me — but I'm too strong now. I shrugged it off and haunt on. ✝️❌`,[['bad',`Survived an exorcism (${S.exorcismsSurvived})`]]);
+      resultModal('Exorcism Failed','You Endure 👻','👻',[`${p.name} ${howF} to be rid of you.`,`The ritual flickers… and fails. <b>You're too powerful to banish.</b> Their terror only deepens. 😱`, statBar('Their Fear',p.fear)],()=>setTab('life')); return;
+    }
+    bustedGhost(p); return;
+  }
   pushLog(`👻 I haunted <b>${p.name}</b> — ${kind}. They're terrified.`,[['bad',`Haunted ${p.name}`]]);
   resultModal('Haunting', p.name, '👻', [`You ${kind}.`, `${p.name} is shaken to the bone. 😱`, statBar('Their Fear',p.fear), `The more frightened they get, the likelier they call for help.`], ()=>setTab('life'));
 }
@@ -9175,31 +9185,93 @@ function openPerson(id){
       ${barRow('💛 Warmth',npcDial(p,'warmth'),100,{hideMax:true})}${barRow('🛡️ Loyalty',npcDial(p,'loyalty'),100,{hideMax:true})}${barRow('😤 Temper',Math.max(npcDial(p,'petulance'),npcDial(p,'craziness')),100,{hideMax:true,invert:true})}${barRow('🧱 Willpower',npcDial(p,'willpower'),100,{hideMax:true})}</div>`;
   openModal({banner:'Relationship', title:p.name, text:detail, closable:true, choices:ch});
 }
+/* ⏱️ SPEND TIME WITH ALL — now a CHOICE: pick HOW you gather everyone. Each mode plays out differently
+   (its own cost, energy, willingness, gains, flavor) and a random "beat" adds a one-off story turn, so no
+   two days are the same. Opener logs 'call'; each mode is a modalpick leaf (rng consumed deterministically). */
+const ST_WARM=[ n=>`baked a disaster of a cake with ${n}`, n=>`got lost in old photos with ${n}`, n=>`took ${n} on a long, aimless drive`, n=>`stayed up too late talking with ${n}`,
+  n=>`beat ${n} at cards (they'd dispute that)`, n=>`walked the whole neighborhood with ${n}`, n=>`cooked ${n}'s favourite meal with them`, n=>`sat on the porch with ${n} till the streetlights came on`,
+  n=>`fell down a rabbit hole of old memories with ${n}`, n=>`laughed until it hurt with ${n}`, n=>`fixed something around the house with ${n}`, n=>`shared a quiet coffee with ${n} that said more than words`,
+  n=>`lost a whole afternoon to board games with ${n}`, n=>`swapped secrets with ${n} like teenagers`, n=>`taught ${n} something, or learned it from them`, n=>`just sat in comfortable silence with ${n}`,
+  n=>`took the scenic route home with ${n}`, n=>`argued happily with ${n} about nothing`, n=>`cried-laughing at ${n}'s terrible jokes`, n=>`made a memory with ${n} you'll both keep` ];
+const ST_COOL=[ n=>`${n} was buried in work and could only wave`, n=>`${n} said "maybe next week" for the third time`, n=>`${n} was in a mood and you gave them space`, n=>`${n} was out the moment you arrived`,
+  n=>`${n} kept it to a polite five minutes`, n=>`${n} had somewhere else to be`, n=>`${n} wasn't picking up`, n=>`${n} just wanted to be left alone today`, n=>`${n} cancelled at the last second`, n=>`${n} was too tired to really be there` ];
+/* random one-off "beats" — a story turn during the gathering. Each takes the willing crew, returns a line, and may nudge relationships/flags. */
+const ST_BEATS=[
+  (w)=>{ if(w.length<2)return null; const a=w[rng(0,w.length-1)],b=w.filter(x=>x!==a)[rng(0,Math.max(0,w.length-2))]||w[0]; rel(a.id,-rng(2,6),-rng(1,4)); rel(b.id,-rng(2,6),-rng(1,4)); addStress(rng(2,6)); return `${a.name.split(' ')[0]} and ${b.name.split(' ')[0]} got into it over old family business — you spent an hour playing referee.`; },
+  (w)=>{ const a=w[rng(0,w.length-1)]; rel(a.id,+rng(4,9),+rng(3,7)); chg('happy',rng(2,5)); setFlag('family_lore'); return `${a.name.split(' ')[0]} pulled out the shoebox of ancient photos and told stories nobody had heard in years. 📔`; },
+  (w)=>{ const a=w[rng(0,w.length-1)]; rel(a.id,+rng(5,10),+rng(4,8)); if(typeof addSelfWorth==='function')addSelfWorth(3); return `${a.name.split(' ')[0]} quietly pulled you aside and told you something they'd never told anyone. You'll carry it carefully. 🫂`; },
+  (w)=>{ chg('happy',rng(3,7)); gainFame(rng(0,2)); return `Someone brought a speaker and it turned into an impromptu dance party. Even the shy ones joined in. 🎶`; },
+  (w)=>{ const a=w[rng(0,w.length-1)]; rel(a.id,+rng(6,12),+rng(4,9)); setFlag('mended_a_rift'); return `You and ${a.name.split(' ')[0]} finally talked about the thing you'd both been avoiding — and let it go. A rift healed today. 🕊️`; },
+  (w)=>{ chg('happy',rng(2,5)); const a=w[rng(0,w.length-1)]; return `${a.name.split(' ')[0]} announced big news to the whole room — hugs, happy tears, and a toast all around. 🥂`; },
+  (w)=>{ chg('health',-rng(1,3)); chg('happy',rng(2,5)); return `The food was… ambitious. Half of it was inedible and everyone laughed about it for the rest of the night. 🍳`; },
+  (w)=>{ const kids=w.filter(p=>p.fam&&p.age!=null&&p.age<13); if(!kids.length)return null; chg('happy',rng(2,5)); return `The little ones turned the whole place into a fort-building warzone. Chaos, glitter, joy. 🧒`; },
+  (w)=>{ const a=w[rng(0,w.length-1)]; rel(a.id,+rng(3,7),+rng(2,5)); return `A game of charades got fiercely, hilariously competitive. ${a.name.split(' ')[0]} will never live down their performance. 🎭`; },
+  (w)=>{ chg('happy',rng(3,6)); return `Someone proposed a group photo. Everyone crammed in, someone blinked, and it became the new favourite anyway. 📸`; },
+  (w)=>{ const a=w[rng(0,w.length-1)]; if((a.age||0)>60){ rel(a.id,+rng(5,10),+rng(4,8)); chg('happy',rng(1,4)); return `${a.name.split(' ')[0]} held court with stories of "back in my day." You realized how few of these afternoons you have left with them. 💛`; } return null; },
+  (w)=>{ money(-rng(20,120)); chg('happy',rng(2,4)); return `You made a supply run mid-gathering and came back with everyone's favourite snacks. Small hero moment. 🛒`; },
+  (w)=>{ const single=!S.spouse && !Object.values(S.people).some(p=>p.romantic&&p.alive); if(!single||S.age<16)return null; const g=rand()<.5?'m':'f'; const id='fr'+Object.keys(S.people).length; S.people[id]=person(id, nm(g)+' '+pick(LAST), 'Friend', rng(45,65), rng(40,60), {gender:g}); chg('happy',rng(2,5)); setFlag('met_someone_at_gathering'); return `Someone brought a plus-one — and you two hit it off. A new number in your phone. 📱`; },
+  (w)=>{ const a=w[rng(0,w.length-1)]; rel(a.id,+rng(4,8),+rng(3,6)); if(a.affinity>=80&&!a.bestFriend&&!a.romantic){ a.bestFriend=true; setFlag('has_best_friend'); return `Somewhere in the laughter, you and ${a.name.split(' ')[0]} realized you're each other's person. Best friends, made official. 🤝`; } return `You and ${a.name.split(' ')[0]} ended up talking till everyone else had gone home.`; },
+  (w)=>{ addStress(rng(3,7)); const a=w[rng(0,w.length-1)]; rel(a.id,-rng(1,4),0); return `${a.name.split(' ')[0]} had one too many and got maudlin, then weepy, then loud. You got them water and called it a night. 🍷`; },
+];
 function spendTimeAll(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
   logAct('call',{fn:'spendTimeAll'});
-  const ppl=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used)&&p.coLocated!==false);   // in-person only — long-distance folk can't be visited (pets/avoiding-boss excluded too)
-  if(ppl.length<2){ resultModal('Relationships','Nobody Around','🤷',[`There's no one nearby to spend time with right now.${Object.values(S.people).some(x=>x.alive&&x.coLocated===false)?' (Your loved ones abroad are only a call — or a reunion — away.)':''}`],()=>setTab('people')); return; }
-  // per-person flavor: a specific shared moment for the willing, a specific reason for those who beg off
-  const WARM=[ n=>`baked a disaster of a cake with ${n}`, n=>`got lost in old photos with ${n}`, n=>`took ${n} on a long, aimless drive`, n=>`stayed up too late talking with ${n}`,
-    n=>`beat ${n} at cards (they'd dispute that)`, n=>`walked the whole neighborhood with ${n}`, n=>`cooked ${n}'s favorite meal together`, n=>`sat on the porch with ${n} till the streetlights came on`,
-    n=>`fell down a shared rabbit hole of memories with ${n}`, n=>`laughed until it hurt with ${n}`, n=>`fixed something around the house with ${n}`, n=>`shared a quiet coffee with ${n} that said more than words` ];
-  const COOL=[ n=>`${n} was buried in work and could only wave`, n=>`${n} said "maybe next week" for the third time`, n=>`${n} was in a mood and you gave them space`, n=>`${n} was out the moment you called`,
-    n=>`${n} kept it to a polite five minutes`, n=>`${n} had somewhere else to be`, n=>`${n} wasn't picking up`, n=>`${n} just wanted to be left alone today` ];
-  const warmHits=[], coolHits=[]; let invested=0, refused=0;
-  ppl.forEach(p=>{ const willing = rng(0,100) < clamp(66 + (p.affinity-50)*0.5, 22, 96);   // the closer they are, the likelier they're up for it
-    const fn=p.name.split(' ')[0];
-    if(willing){ rel(p.id, +rng(3,6), +rng(1,3), 'Spent quality time together.'); invested++; if(warmHits.length<3) warmHits.push(pick(WARM)(fn)); }
-    else { rel(p.id, -1, 0); refused++; if(coolHits.length<2) coolHits.push(pick(COOL)(fn)); } });
-  chg('happy', clamp(Math.round(invested/3),1,8));
+  const near=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used)&&p.coLocated!==false);
+  const far=Object.values(S.people).filter(p=>p.alive&&!p.pet&&p.coLocated===false);
+  if(near.length<2 && far.length<1){ resultModal('Relationships','Nobody Around','🤷',[`There's no one nearby to spend time with right now.`],()=>setTab('people')); return; }
+  const modes=[
+    {k:'drive',  label:'🚗 Drive around and visit everyone', tip:'A day on the road, door to door'},
+    {k:'train',  label:'🚆 Take the train across town to them', tip:'Rattling rails, one stop at a time'},
+    {k:'invite', label:'🏡 Invite everyone over to you', tip:'Bring the whole crew home'},
+    {k:'party',  label:'🎉 Throw a big get-together', tip:'Food, music, chaos — costs money'},
+    {k:'dinner', label:'🍽️ Host a big family dinner', tip:'Everyone around one table'},
+    {k:'outing', label:'🌳 Plan a group outing', tip:'Park, beach, a movie — out together'},
+    {k:'gifts',  label:'🎁 Show up with a gift for each', tip:'Win hearts — costs money'},
+    {k:'help',   label:'🧹 Spend the day helping everyone', tip:'Chores, errands, just showing up'},
+    ...(far.length?[{k:'call', label:'📞 Big group video call (near & far)', tip:'The only way to include everyone abroad'}]:[]),
+  ];
+  openModal({banner:'Relationships', title:'⏱️ Spend Time With All', icon:'⏱️', closable:true,
+    text:`${near.length} nearby${far.length?` · ${far.length} abroad`:''}. How do you want to spend the day with everyone? Each way plays out its own way.`,
+    choices: modes.map((m,i)=>({label:m.label, tip:m.tip, alt:i>0, fn:()=>stAllGo(m.k)})).concat([{label:'‹ Back', alt:true, fn:()=>setTab('people')}]) });
+}
+function stAllGo(mode){ closeModal();   // modalpick leaf → no logAct
+  const CFG={
+    drive: {en:20, lo:20,hi:150,  mult:1.0,  will:0,   intro:n=>`You crisscrossed town in the car, one doorstep at a time.`},
+    train: {en:16, lo:8,hi:70,    mult:1.0,  will:0,   intro:n=>`You rode the rails across the city, stop by stop, gathering your people.`},
+    invite:{en:14, lo:0,hi:90,    mult:1.05, will:6,   intro:n=>`You threw the doors open and let everyone come to you.`},
+    party: {en:28, lo:250,hi:2200, mult:1.28, will:16, risk:true, intro:n=>`You threw a proper bash — lights, music, a crowd spilling into every room.`},
+    dinner:{en:20, lo:80,hi:650,  mult:1.16, will:11,  intro:n=>`You set the big table and cooked all afternoon for a full house.`},
+    outing:{en:22, lo:60,hi:450,  mult:1.12, will:9,   intro:n=>`You loaded everyone up for a day out together.`},
+    gifts: {en:14, lo:150,hi:1400, mult:1.32, will:20, intro:n=>`You went round with a little something wrapped for each of them.`},
+    help:  {en:24, lo:0,hi:0,     mult:0.9,  will:-4, karma:true, intro:n=>`You spent the day being useful — chores, errands, rides, whatever they needed.`},
+    call:  {en:8,  lo:0,hi:0,     mult:0.72, will:0, remote:true, intro:n=>`You got everyone on one long, glorious, chaotic video call — even the ones abroad.`},
+  }[mode]; if(!CFG){ setTab('people'); return; }
+  if(!spendEnergy(CFG.en,'a day with everyone')){ setTab('people'); return; }
+  const near=Object.values(S.people).filter(p=>p.alive&&!p.pet&&!(p.boss&&p.used)&&p.coLocated!==false);
+  const far=Object.values(S.people).filter(p=>p.alive&&!p.pet&&p.coLocated===false);
+  const ppl = CFG.remote ? near.concat(far) : near;
+  let cost=Math.round(rng(CFG.lo,CFG.hi)*priceMult()); if(cost>0){ if(S.money>0)money(-Math.min(cost,S.money)); else cost=0; }
+  const warmHits=[], coolHits=[]; let invested=0, refused=0; const willing=[];
+  ppl.forEach(p=>{ const fn=p.name.split(' ')[0];
+    const up = rng(0,100) < clamp(60 + CFG.will + (p.affinity-50)*0.5, 18, 97);
+    if(up){ rel(p.id, +Math.round(rng(3,6)*CFG.mult), +Math.round(rng(1,3)*CFG.mult), 'Spent quality time together.'); invested++; willing.push(p); if(warmHits.length<3)warmHits.push(pick(ST_WARM)(fn));
+      if(CFG.karma){ karma(1); } if(CFG.remote){ p.affinity=clamp(p.affinity+1); } }
+    else { rel(p.id, -1, 0); refused++; if(coolHits.length<2)coolHits.push(pick(ST_COOL)(fn)); } });
+  chg('happy', clamp(Math.round(invested/3)+(mode==='party'||mode==='gifts'?2:0),1,10));
+  if(CFG.karma)karma(2);
+  // a random story BEAT (~45%), plus a rare party mishap
+  let beatLine=''; if(invested>=1 && rng(0,100)<45){ const b=ST_BEATS[rng(0,ST_BEATS.length-1)](willing); if(b)beatLine=b; }
+  let mishap=''; if(CFG.risk && rng(0,100)<18){ const loss=Math.round(rng(100,900)*priceMult()); if(S.money>0)money(-Math.min(loss,S.money)); addStress(rng(3,8)); mishap=pick([`Then the party got out of hand — a broken window and a very awkward apology to the neighbours (−${cur()}${loss.toLocaleString()}).`,`Someone's plus-one started drama and it nearly came to blows before you cooled it down.`,`The night ran wildly over budget and long past a reasonable hour (−${cur()}${loss.toLocaleString()}).`]); }
   const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
-  const warmLine = warmHits.length ? cap(warmHits.join(', ')) + (invested>warmHits.length?`, and made time for ${invested-warmHits.length} more`:'') + '.' : '';
-  const coolLine = coolHits.length ? cap(coolHits.join('; ')) + (refused>coolHits.length?`, and ${refused-coolHits.length} other${refused-coolHits.length===1?'':'s'} slipped away too`:'') + '.'
-    : (refused?`${refused} ${refused===1?"wasn't":"weren't"} up for it.`:'');
-  pushLog(`⏱️ I made the rounds. ${warmLine}${coolLine?' '+coolLine:''}`,[['good',`Spent time · ${invested}`]]);
+  const warmLine = warmHits.length? cap(warmHits.join(', ')) + (invested>warmHits.length?`, and made time for ${invested-warmHits.length} more`:'') + '.' : '';
+  const coolLine = coolHits.length? cap(coolHits.join('; ')) + (refused>coolHits.length?`, and ${refused-coolHits.length} other${refused-coolHits.length===1?'':'s'} slipped away too`:'') + '.' : (refused?`${refused} ${refused===1?"couldn't":"couldn't"} make it.`:'');
+  pushLog(`⏱️ ${CFG.intro()} ${warmLine}`,[['good',`Time with all · ${invested}`]]);
   resultModal('Relationships','Quality Time ⏱️','⏱️',[
-    invested?warmLine:`You reached out to everyone nearby.`,
-    refused?coolLine:(invested?`Not a soul turned you away — a good day for the family. 💛`:''),
-    invested>=Math.max(2,Math.round(ppl.length*0.7))?`A day well spent — the whole house feels warmer for it.`:''
+    CFG.intro()+(cost>0?` <span style="color:var(--dim);font-size:12px">(${cur()}${cost.toLocaleString()})</span>`:''),
+    invested?warmLine:`You reached out, but the timing just wasn't there today.`,
+    coolLine,
+    beatLine,
+    mishap,
+    (!mishap && invested>=Math.max(2,Math.round(ppl.length*0.7)))?`A day well spent — the whole family feels closer for it. 💛`:''
   ].filter(Boolean),()=>setTab('people')); }
 function personAction(id,action){
   const p=S.people[id]; if(!p||!p.alive)return;
