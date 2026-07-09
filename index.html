@@ -780,6 +780,7 @@ const FAMILY_TIERS=[
   {v:'rich_kid',  label:'💰 Wealthy',        prem:true},
   {v:'famous_kid',label:'🌟 Famous Family',  prem:true},
   {v:'royal',     label:'👑 Royalty',        prem:true},
+  {v:'first_family',label:'🏛️ Presidential Family', prem:true},
   {v:'adopted',   label:'🏠 Adopted',        prem:true},
 ];
 function fillFamilyTiers(){ const sel=document.getElementById('cFamily'); if(!sel) return; const prem=isPremium(); const prev=sel.value||'normal';
@@ -1348,6 +1349,7 @@ function startLife(opts){
   else if(S.origin==='royal'){ S.money+=rng(2000000,9000000); setFlag('royal'); S.fame=Math.max(S.fame||0,rng(10,25)); }
   else if(S.origin==='adopted'){ setFlag('adopted'); }
   else if(S.origin==='famous_kid'){ setFlag('famous_family'); S.fame=Math.max(S.fame||0,rng(15,35)); }
+  else if(S.origin==='first_family'){ setFlag('first_family'); setFlag('famous_family'); S.fame=Math.max(S.fame||0,rng(28,52)); S.money+=rng(200000,1500000); }
   else if(S.origin==='middle'){ S.money+=rng(8000,28000); setFlag('middle_class'); }
   else if(S.origin==='poor'){ setFlag('born_poor'); }
   buildFamily(opts.gender);
@@ -1384,6 +1386,8 @@ function startLife(opts){
     for(const p of Object.values(S.people)){ if(!p.alive||p.pet) continue;
       if(p.fam && p.side==='paternal' && p.rel!=='Father'){ p.coLocated=false; p.countryOf=S.royal.crownCountry; } }
   } else S.royal=null;
+  // 🏛️ PRESIDENTIAL FAMILY — you were born into the first family. A parent (or grandparent/sibling) sits in the highest office.
+  if(S.origin==='first_family'){ firstFamilyInit(); } else S.potus=null;
   // populations — the world, your country, your city (shapes competition & reach)
   S.countryPop=countryPop(S.country);
   { const cs=COUNTRIES[S.country].cities||[]; const ci=cs.indexOf(S.city);
@@ -1690,6 +1694,52 @@ function ageFamily(){
     // gentler mortality — relatives live longer, deaths cluster less (was ~7% at 74; now ~3.5%)
     const risk=p.age<58?0.0012:(p.age-58)/620+0.005;
     if(rand()<risk){ p.alive=false; onRelativeDeath(p); }
+  }
+}
+/* ============================================================
+   🏛️ PRESIDENTIAL FAMILY — a parent (or grandparent/sibling) holds the highest office.
+   Secret Service shields you; the president's APPROVAL decides adoration vs danger.
+   Term-limited, then life changes. Deterministic (rng in init + potusYear only).
+   ============================================================ */
+const POTUS_CODENAMES=['Renegade','Radiance','Rosebud','Marksman','Rawhide','Trailblazer','Twinkle','Turquoise','Timberwolf','Sundance','Scorecard','Snowstorm','Falcon','Phoenix','Pioneer','Nightingale','Halcyon','Harbor'];
+const POTUS_PARTIES=['the Federalists','the Progressives','the National Union','the Liberty Party','the Reform Coalition'];
+function firstFamily(){ return (S && S.potus) ? S.potus : null; }
+function firstFamilyInit(){
+  const rel = pick(['parent','parent','parent','grandparent','sibling','sibling','aunt']);   // usually a parent
+  let id='dad';
+  if(rel==='parent') id = rand()<0.5?'dad':'mom';
+  else if(rel==='grandparent') id = pick(['pgf','pgm','mgf','mgm']);
+  else if(rel==='sibling'){ const sibs=Object.values(S.people).filter(p=>p.fam&&/Brother|Sister/.test(p.rel)); id = sibs.length?pick(sibs).id:'dad'; }
+  else if(rel==='aunt'){ const au=Object.values(S.people).filter(p=>p.fam&&/Aunt|Uncle/.test(p.rel)); id = au.length?pick(au).id:'dad'; }
+  const p=P(id) || P('dad'); if(!p){ S.potus=null; return; }
+  p.alive=true; if(p.memory) p.memory=p.memory.filter(m=>!/Passed before/.test(m.note||''));
+  p.job='President'; p.potus=true;
+  const actualRel = /Mother|Father/.test(p.rel)?'parent' : /Grand/.test(p.rel)?'grandparent' : /Brother|Sister/.test(p.rel)?'sibling' : /Aunt|Uncle/.test(p.rel)?'aunt' : 'parent';   // relation MUST match the NPC actually chosen
+  const goodness=rng(-60,85);
+  S.potus={ id:p.id, name:p.name, relation:actualRel, title:'President', party:pick(POTUS_PARTIES),
+    approval: clamp(50 + Math.round(goodness/4) + rng(-12,12), 20, 88),
+    goodness, inOffice:true, term:1, yearsInOffice:rng(0,3),
+    codeName: pick(POTUS_CODENAMES), secretService:true };
+  setFlag('secret_service'); S.hood='an affluent';
+}
+function potusYear(){
+  if(!S || !S.potus) return; const pt=S.potus;
+  if(pt.inOffice){
+    pt.yearsInOffice=(pt.yearsInOffice||0)+1;
+    const pull=(pt.goodness/2 - (pt.approval-50))/6;
+    pt.approval=clamp(Math.round(pt.approval + pull + rng(-7,7)), 8, 96);
+    if((S.fame||0)<45) bumpFame(rng(2,5));                                     // first family are household names while they serve
+    const maxTerm = pt.term>=2 ? 8 : (rand()<0.5?4:8);
+    if(pt.yearsInOffice>=maxTerm || (rand()<0.06 && pt.approval<32)){
+      if(pt.term<2 && pt.approval>=48 && pt.yearsInOffice<=4 && rand()<0.7){ pt.term=2; pushLog(`🗳️ ${pt.name} won <b>re-election</b> — another term in the highest office.`,[['good','Re-elected']]); }
+      else { pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job='former President';
+        pushLog(`🏛️ ${pt.name}'s time in office has <b>ended</b>. The motorcades thin, the world moves on — but you will always be a former first-family member.`,[['echo','The term ends']]);
+        setFlag('former_first_family'); }
+    }
+  } else {
+    pt.postYears=(pt.postYears||0)+1;
+    if(pt.secretService && pt.postYears>=4){ pt.secretService=false; setFlag('secret_service',false);
+      pushLog(`🕶️ My Secret Service detail was formally <b>stood down</b>. For the first time in memory, no one is watching my back.`,[['flag','Detail ended']]); }
   }
 }
 function deathCause(p){ const age=p.age||0;
@@ -2803,6 +2853,7 @@ function birthNarrative(){
   else if(S.origin==='royal') t+=`<br>I was born <b>ROYAL</b> — but not here. The crown of <b>${S.royal?countryName(S.royal.crownCountry):'a distant kingdom'}</b> ${S.royal?countryFlag(S.royal.crownCountry):''} sits with my grandfather. My ${P('dad')?'father':'parent'} walked away from court to raise me in ${COUNTRIES[S.country].name} — "just for a few years," they say. A trust of <b>${fcm(S.money)}</b> waits in my name, and so does the palace. 👑`;
   else if(S.origin==='rich_kid') t+=`<br>I was born into serious <b>wealth</b> — a <b>trust fund of ${fcm(S.money)}</b> waits in my name. 💰`;
   else if(S.origin==='famous_kid') t+=`<br>My family is <b>famous</b> — paparazzi outside the nursery, the spotlight found me early. 🌟`;
+  else if(S.origin==='first_family' && S.potus) t+=`<br>I was born into the <b>FIRST FAMILY</b> — my ${S.potus.relation==='parent'?(P(S.potus.id)&&/Mother/.test(P(S.potus.id).rel)?'mother':'father'):S.potus.relation} <b>${S.potus.name}</b> is the <b>President</b> (${S.potus.party}). Secret Service call me <b>"${S.potus.codeName}"</b>. Motorcades, the residence, the whole world watching — and it depends entirely on whether they love ${S.potus.name} or hate them. 🏛️`;
   else if(S.origin==='poor') t+=`<br>We had <b>next to nothing</b> — I was born into hard poverty. 🪫`;
   else if(S.origin==='middle') t+=`<br>We were comfortable — a solid <b>middle-class</b> home, with <b>${fcm(S.money)}</b> put aside for my start. 🏡`;
   const pet=Object.values(S.people).find(p=>p.pet&&p.alive);
@@ -5530,6 +5581,7 @@ function ageUp(){
   emigrationYear();                                                   // 🌍 residency/naturalization, culture adaptation, long-distance decay (deterministic)
   allowanceYear();                                                    // 👑 pocket money scaled to the family's wealth (deterministic)
   royaltyYear();                                                      // 👑 royal-in-exile: runaway hunt, succession, stipend (deterministic)
+  potusYear();                                                        // 🏛️ presidential family: approval drift, term limits, detail wind-down (deterministic)
   belongingsYear();                                                   // 💎 art/jewelry appreciate, electronics/fashion depreciate (deterministic)
   emsYear(); emsPensionYear();                                        // 🚨 emergency-services pay/promotion/deployment, and retiree pension (deterministic)
   clubsYear();                                                        // 🎽 school clubs/teams accrue years & performance (deterministic)
@@ -6218,6 +6270,7 @@ function continueAsHeir(id){
   S.schoolSport=null;   // ⚽ heir starts their own school-sports journey (inherits the athletic GENES → school prodigy)
   S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null;   // heir starts fresh: no inherited frat, season log, or lawsuit
   S.studentDebt=0; S.studentDebtOrig=0; S.studentDebtRate=0; S.isaYears=0; S.isaPct=0; S._sdWarned=false; S.schoolPrestige=0;   // 🎓 student loans / income-share do not pass to the heir
+  S.potus=null;   // 🏛️ the presidency belonged to the founder's generation — the heir starts without it (their own story)
   // 🏀 heir starts a fresh PLAYING career (inherits the athletic genes) but INHERITS the family FRANCHISE (arena, banners, finances compound across generations)
   if(S.bball && S.bball.owned){ const _ft=S.bball.world&&S.bball.world.teams[S.bball.owned.teamId]; S._inheritedFranchise=_ft?_ft.name:'the family franchise'; S.bball={ world:S.bball.world, owned:S.bball.owned, player:null, trophies:[], awards:[], keyMoments:[], recentEvents:[], summary:'' }; }
   else S.bball=null;
