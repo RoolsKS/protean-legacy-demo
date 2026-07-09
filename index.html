@@ -6192,8 +6192,7 @@ function render(){
   if(_juiceOK() && S._lastShownAge!=null && S.age>S._lastShownAge){ sfx('whoosh'); ageEl.classList.remove('money-pop'); void ageEl.offsetWidth; ageEl.classList.add('money-pop'); }
   S._lastShownAge=S.age;
   const moneyEl=document.getElementById('pmoney');
-  moneyEl.textContent=(S.money<0?'-':'')+cur()+Math.abs(S.money).toLocaleString();
-  moneyEl.style.color=S.money<0?'var(--bad)':'var(--good)';
+  _syncMoney();   // animated count-up to the current balance (snaps if unchanged)
   // 🍬 juice: coin + flash + fly-text when the balance jumps up (UI-only, never during replay)
   { const gain=S.money-(S._lastShownMoney==null?S.money:S._lastShownMoney);
     if(_juiceOK() && S._lastShownMoney!=null && gain>=2500){ sfx('coin'); moneyEl.classList.remove('money-pop'); void moneyEl.offsetWidth; moneyEl.classList.add('money-pop');
@@ -13895,9 +13894,15 @@ function checkAgeGate(){ let ok=false; try{ ok=localStorage.getItem(AGE_GATE_KEY
 function _juiceOK(){ return typeof document!=='undefined' && document.body && !(typeof S!=='undefined'&&S&&S._replaying); }
 /* keep the header bank balance in sync the instant S.money changes (any handler). Also refreshes an open
    Finances/Shop bank line if present. UI-only; no-ops in headless/replay. */
+function _setMoneyEl(el,v){ el.textContent=(v<0?'-':'')+cur()+Math.abs(Math.round(v)).toLocaleString(); el.style.color=v<0?'var(--bad)':'var(--good)'; }
+/* keep the header balance INSTANTLY correct the moment S.money changes (any handler), and pulse it so the
+   change reads as "live". Snap-not-animate — a rAF count-up can freeze on a wrong value if the tab backgrounds. */
 function _syncMoney(){ if(!_juiceOK()||typeof S==='undefined'||!S) return; try{
-  const el=document.getElementById('pmoney'); if(el){ el.textContent=(S.money<0?'-':'')+cur()+Math.abs(S.money).toLocaleString(); el.style.color=S.money<0?'var(--bad)':'var(--good)'; }
   document.querySelectorAll('[data-bankline]').forEach(n=>{ n.textContent=(S.money<0?'-':'')+cur()+Math.abs(S.money).toLocaleString(); });
+  const el=document.getElementById('pmoney'); if(!el) return;
+  const shown=(el.textContent||'').replace(/[^0-9-]/g,''); const changed=(shown!==String(S.money));
+  _setMoneyEl(el,S.money);
+  if(changed && S._lastShownMoney!=null){ el.classList.remove('money-pop'); void el.offsetWidth; el.classList.add('money-pop'); }   // pulse on a real change (not on the fresh-life first paint)
 }catch(e){} }
 let _actx=null, _soundOn=true;
 try{ _soundOn = localStorage.getItem('pl_sound')!=='0'; }catch(e){}
