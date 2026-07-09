@@ -5365,6 +5365,29 @@ function buildGovScenario(S){
 
 /* ---------- DEFERRED (scheduled) consequence events ---------- */
 const SCHEDULED = {
+  court_day:S=>{ const c=S._court||{strength:45}; const st=c.strength;
+    return {
+    yr:`Age ${S.age}`, title:'⚖️ Your Day in Court',
+    text:`The courtroom is colder than you expected. The store's corporate lawyers file in with matching briefcases. The judge looks over her glasses. Your case is <b>${st>=55?'strong':st>=45?'decent':'shaky'}</b> — how do you play it?`,
+    choices:[
+      {label:'🦈 Hire the hotshot litigator', tip:`${cur()}${fmn(8000)} · best odds`, apply:()=>{ const fee=Math.min(S.money,8000); money(-fee);
+        const roll=rng(0,100), win=roll < st+30;
+        if(win){ const award=Math.round(rng(15000,60000)*(st/50)); money(award); chg('happy',8); ledgerAdd('triumph',14,{note:'Won a lawsuit in open court.'});
+          return {text:`Your shark is worth every cent — he corners their floor manager into admitting the warning sign <b>never existed</b>. The jury is out for forty minutes. Verdict: <b>${cur()}${fmn(award)}</b> in damages. Their lawyers pack their matching briefcases in silence.`, tags:[['good',`Verdict +${cur()}${fmn(award)}`]]}; }
+        chg('happy',-5); return {text:`Even the hotshot cannot save it — their CCTV shows you looking at your phone mid-fall. Case dismissed. You are out the ${cur()}${fmn(fee)} fee, and his handshake feels like a receipt.`, tags:[['bad','Case dismissed']]}; } },
+      {label:'🧑‍⚖️ A solid local attorney', tip:`${cur()}${fmn(2500)} · fair odds`, apply:()=>{ const fee=Math.min(S.money,2500); money(-fee);
+        const roll=rng(0,100), win=roll < st+15;
+        if(win){ const award=Math.round(rng(8000,30000)*(st/50)); money(award); chg('happy',6);
+          return {text:`No theatrics — just a methodical case built brick by brick. The maintenance log has a gap, and she makes the jury stare at it. You win <b>${cur()}${fmn(award)}</b>.`, tags:[['good',`Won +${cur()}${fmn(award)}`]]}; }
+        chg('happy',-4); return {text:`She fights hard, but their expert witness muddies the water and the jury shrugs. You lose — ${cur()}${fmn(fee)} in fees for a lesson in how the house wins.`, tags:[['bad','Lost at trial']]}; } },
+      {label:'🤝 Settle on the courthouse steps', tip:'Sure money, smaller', apply:()=>{ const offer=Math.round(rng(4000,12000)*(st/50)); money(offer); chg('happy',3);
+        return {text:`Minutes before opening statements, their lead counsel leans over: <b>"${cur()}${fmn(offer)}, no admission of fault."</b> You look at the jury box, the cold room, the year this could take — and shake his hand.`, tags:[['good',`Settled +${cur()}${fmn(offer)}`]]}; } },
+      {label:'🙋 Represent yourself', tip:'Free · wild ride', apply:()=>{ const roll=rng(0,100), win=roll < st-8+Math.round(S.stats.smarts/8);
+        if(win){ const award=Math.round(rng(10000,45000)*(st/50)); money(award); chg('happy',10); chg('smarts',3); setFlag('own_lawyer'); ledgerAdd('triumph',18,{note:'Won a lawsuit representing yourself.'});
+          return {text:`You watched every courtroom drama ever made, and it shows. Your closing — delivered straight to juror #4 — lands like a movie speech. <b>${cur()}${fmn(award)}</b>, and the judge tells you, off the record, that you missed a calling.`, tags:[['good',`Pro-se legend +${cur()}${fmn(award)}`]]}; }
+        chg('happy',-6); return {text:`It goes about how the judge's face said it would. You object to your own witness, cite a law from the wrong country, and lose in an afternoon. The bailiff pats your shoulder on the way out.`, tags:[['bad','Humbled in court']]}; } },
+    ]};},
+
   smoke_payoff:S=>({
     yr:`Age ${S.age}`, title:'The Cough That Stayed',
     text:`Decades of cigarettes catch up with you. The doctor's face says it all.`,
@@ -9030,6 +9053,7 @@ function activityEntries(){
   if(S.age>=18){ const ph=econPhase(); add(true,'invest','📈','Investments', `${ph.icon} ${ph.name}${investValue()>0?` · holdings ${fcm(investValue())}`:''} · ride the market`, "investMenu()"); }
   add(S.age>=18 && !S.business && !(S.job&&S.job.owner),'startup','🚀','Found a Startup','Launch your own company from scratch — bet on yourself', "foundStartup()");
   add(true,'trophyroom','🏆','Trophy Room','Every ribbon, trophy, award & win you\'ve earned', "trophyRoom()");
+  add(S.age>=18,'luxury','💎','Luxury', 'Private jets, yachts, high-roller nights — the VIP menu', "luxuryHub()");
   add(S.age>=18,'casino','🎰','Casino', 'Slots, blackjack, roulette, horses — bet at your own risk', "casino()");
   add(S.age>=18,'lottery','🎟️','Lottery', `Rolling jackpot ${fcm(S.lottoJackpot||3000000)}${(S.lottoTickets||[]).length?` · ${S.lottoTickets.length} ticket(s) in`:''}`, "lottery()");
   add(S.age>=13,'blackmarket','🕶️','Black Market', 'Fake ID, booze, guns — get busted at your own risk', "blackMarket()");
@@ -11729,10 +11753,16 @@ function fameYear(){ fameRelativesRise();   // 🌟 relatives with public career
   const f=S.fame||0; const followers=(typeof totalFollowers==='function'?totalFollowers():0);
   const star = S.job && /Actor|Actress|Musician|Singer|Pop Star|Star|Influencer|Model|Athlete|Author|Writer/i.test(S.job.title||'');
   const famousKin = has('famous_family') && livingKin(p=>p.famous).length>0;
-  const target = Math.min(100, Math.round((followers>0?Math.log10(followers+1)*16:0) + (star?22:0) + (has('famous_family')?8:0)));
+  // 🎬 REAL fame needs REAL work: a big credit to your name (awards, office, pro sport, chart-level following)
+  const bigCredit = has('award_winner') || has('oscar') || has('crowned_monarch') || !!S.office || (typeof proAthlete==='function'&&proAthlete()) || followers>=5000000;
+  // followers alone top out well short of stardom: 10k→~18, 100k→~36, 1M→~54, capped at 60
+  const fromFollowers = followers>0 ? Math.max(0, Math.min(60, Math.round((Math.log10(followers)-3)*18))) : 0;
+  const cap = 60 + (star?20:0) + (bigCredit?20:0);   // Icon (85+) demands a spotlight career AND a marquee credit — not just a follower count
+  const target = Math.min(cap, Math.round(fromFollowers + (star?22:0) + (has('famous_family')?8:0)));
   let nf=f;
   if(target>f) nf=Math.min(target, f+Math.max(2,Math.round((target-f)/4)));   // fame rises toward your reach (following + a spotlight career)…
   else { const gap=f-target; nf=Math.max(target, f-Math.max(2,Math.round(gap/6))); }   // …and FADES without upkeep — faster the further you have coasted above your reach
+  if(f>cap) nf=Math.min(nf, Math.max(cap, f-3));                                        // fame above what your career supports deflates — hype without work does not hold
   if(famousKin) nf=Math.max(nf,12);                                                     // a famous parent/sibling keeps a floor under your name
   const prevTier=fameTier(f).name;
   S.fame=clamp(Math.round(nf)); S.peakFame=Math.max(S.peakFame||0,S.fame);
@@ -11750,7 +11780,7 @@ function fameView(){ if(!S){toast('Start a life first.');return;} logAct('call',
       <div style="color:var(--dim);font-size:11px">YOUR FAME</div></div>
     <div class="relbars">${barRow('🌟 Fame',v,100)}</div>
     <div style="color:var(--dim);font-size:12px;margin-top:6px">${(typeof totalFollowers==='function'?fc(totalFollowers()):0)} followers${next?` · ${next.min-v} fame from <b>${next.icon} ${next.name}</b>`:' · you are a living <b>Legend</b> 🏆'}</div>
-    <p style="color:var(--dim);font-size:12px;margin-top:8px">Fame grows with your following and entertainment career — and fades without upkeep. The famous earn from endorsements, get chased by paparazzi, and one scandal can undo it all. ${v>=52?'Your name opens doors (and invites trouble).':''}</p></div>`;
+    <p style="color:var(--dim);font-size:12px;margin-top:8px">Fame grows with your following and entertainment career — and fades without upkeep. Followers alone top out around <b>Rising Star</b>: the top tiers demand a <b>spotlight career</b> and a <b>marquee credit</b> (a major award, high office, a pro sports career, or a truly massive following). The famous earn from endorsements, get chased by paparazzi, and one scandal can undo it all. ${v>=52?'Your name opens doors (and invites trouble).':''}</p></div>`;
   openModal({banner:'Fame', title:'🌟 Fame & Celebrity', icon:'🌟', closable:true,
     text:body, choices:[{label:'Close', fn:()=>{ closeModal(); setTab('connections'); }}] });
 }
@@ -13701,15 +13731,30 @@ function passportSubmit(speed){ closeModal();
 function collectPassport(){
   const app=S.passportApp||{photo:'good'};
   const badPhoto = app.photo==='bad';
-  const blocked = has('criminal') || has('criminal_record') || (S.karma||0)<-40;
-  let deny=false, why='';
-  if(badPhoto && rng(0,100)<70){ deny=true; why=`Your photo was <b>rejected</b> — it didn't meet the requirements. 📷`; }
-  else if(blocked && rng(0,100)<75){ deny=true; why=`A <b>background flag</b> held it up.`; }
-  else if(rng(0,100)<12){ deny=true; why=`A bureaucratic <b>backlog</b> — no clear reason given.`; }
-  if(deny){ S.passportApp=null; setFlag('passport_denied');
-    pushLog(`I went to collect my passport — <b>denied</b>. I'll have to start over. 🛂`,[['bad','Passport denied']]);
-    return resultModal('Passport','Denied','🚫',[`You came back to collect your passport — but it was <b>DENIED</b>.`, why, `You'll need to begin the application again.`],()=>setTab('life'));
+  const blocked = (has('criminal') || has('criminal_record') || (S.karma||0)<-40) && !S._ppLawyer;
+  let deny=false, why='', fix='', cause='';
+  if(badPhoto && rng(0,100)<70){ deny=true; cause='photo';
+    why=`📷 <b>Reason: your photo was rejected.</b> You ${app.photo==='bad'?'smiled or used a filtered selfie':'did not meet the photo spec'} — passport photos must be neutral, plain-background, unedited.`;
+    fix=`<b>How to fix it:</b> apply again and choose the <b>proper neutral photo</b> this time. That is the whole problem.`; }
+  else if(blocked && rng(0,100)<75){ deny=true; cause='background';
+    why=`🚔 <b>Reason: you were flagged in the background check.</b> ${has('criminal')||has('criminal_record')?'Your <b>criminal record</b> makes the office sit on applications like yours.':'Your <b>reputation</b> preceded you — the office does not like what it found.'}`;
+    fix=`<b>How to fix it:</b> hire an <b>immigration lawyer</b> below to argue your file past the review — or rebuild your standing (clean years, charity, good karma) and keep re-applying.`; }
+  else if(rng(0,100)<12){ deny=true; cause='backlog';
+    why=`🗄️ <b>Reason: a bureaucratic backlog.</b> Nothing you did — your file simply sat in a pile until the window closed.`;
+    fix=`<b>How to fix it:</b> just re-apply. Paying the <b>expedite fee</b> skips the queue entirely and cannot get lost in the pile.`; }
+  if(deny){ S.passportApp=null; setFlag('passport_denied');   // a retained lawyer is NOT consumed by a photo/backlog denial — she stays on the file
+    pushLog(`I went to collect my passport — <b>denied</b> (${cause==='photo'?'bad photo':cause==='background'?'background flag':'backlog'}). 🛂`,[['bad','Passport denied']]);
+    const choices=[{label:'Start a new application', fn:()=>{ closeModal(); applyPassport(); }}];
+    if(cause==='background') choices.push({label:`⚖️ Hire an immigration lawyer — ${cur()}${fmn(3000)}`, tip:'Clears the background review on your next application', alt:true,
+      fn:()=>{ closeModal(); if(!spend(3000)){ return; } S._ppLawyer=true;
+        pushLog(`I hired an immigration lawyer to argue my passport file. ⚖️`,[['flag','Lawyer retained']]);
+        resultModal('Passport','Lawyer Retained','⚖️',[`She reads your file, sighs, and says: <b>"I can get this through."</b>`,`Your next application will pass the background review — apply again now.`],()=>applyPassport()); }});
+    choices.push({label:'Leave it for now', alt:true, fn:()=>{ closeModal(); setTab('life'); }});
+    openModal({banner:'Passport', title:'🚫 Application DENIED', icon:'🚫', closable:true,
+      text:`You came back to collect your passport — <b>DENIED</b>.<br><br>${why}<br><br>${fix}`, choices});
+    return;
   }
+  S._ppLawyer=false;
   const renewed=!!S.passport;
   S.passport=true; S.passportApp=null; S.passportExpires=S.age+10; setFlag('has_passport'); chg('happy',renewed?2:4);   // passports are valid 10 years
   pushLog(`I collected my ${renewed?'renewed':'brand-new'} <b>passport</b>! ✅ Valid until age ${S.passportExpires}. 🛂✈️`,[['good',renewed?'Passport renewed':'Passport approved']]);
@@ -17691,7 +17736,9 @@ const EVENTS_WAVE4 = [
   build:S=>({ yr:`Age ${S.age}`, title:'You Have Been Served ⚖️',
     text:`You slipped on an unmarked wet floor at a big store and hurt your back. A lawyer says you have a real case — but suing means months of stress.`,
     choices:[
-      { label:'Sue the store', tip:'Payout · hassle', apply:()=>{ setFlag('w4_lawsuit'); chg('happy',-3); if(rng(0,100)<55){ const settle=rng(3000,25000); money(settle); chg('happy',5); return {text:`After a grinding year, they settle for ${cur()}${fmn(settle)}. Vindicated — and paid.`, tags:[['good',`Settled +${cur()}${fmn(settle)}`]]}; } money(-rng(500,2000)); return {text:`The case collapsed and you are out the legal fees. Sometimes the little guy just loses.`, tags:[['bad','Lost the case']]}; } },
+      { label:'Sue the store', tip:'Take it to court', apply:()=>{ setFlag('w4_lawsuit'); chg('happy',-2);
+        S._court={strength:rng(35,65)}; schedule(S.age+1,'court_day');
+        return {text:`You file suit. Discovery, depositions, a court date — your <b>day in court</b> comes next year. Your lawyer rates the case ${S._court.strength>=55?'strong':S._court.strength>=45?'decent':'winnable, barely'}.`, tags:[['flag','Lawsuit filed']]}; } },
       { label:'Accept a quick quiet settlement', tip:'Fast · smaller', apply:()=>{ setFlag('w4_lawsuit'); const quick=rng(1500,6000); money(quick); return {text:`You take their fast offer of ${cur()}${fmn(quick)} and skip the drama. A bird in the hand.`, tags:[['good',`Quick cash +${cur()}${fmn(quick)}`]]}; } },
       { label:'Let it go', tip:'Peace of mind', apply:()=>{ setFlag('w4_lawsuit'); karma(2); chg('happy',2); return {text:`You decide your health and your peace matter more than a payout. You heal and move on.`, tags:[['flag','Walked away']]}; } },
     ] }) },
@@ -18320,6 +18367,55 @@ const LUXURY_EVENTS = [
 
 try{ EVENTS.push(...LUXURY_EVENTS); }catch(e){}
 try{ RIBBONS.push(...TRIP_RIBBONS); }catch(e){}   // 🧳 globetrotter / superfan / high-roller / once-in-a-lifetime
+/* 💎 LUXURY HUB — the BitLife-style VIP menu on the Activities tab: the luxury experiences ON DEMAND
+   (each still enforces its own wealth gate + the shared 2-year indulgence cooldown via its `when`) */
+const LUX_MENU=[
+  {id:'lux_jet',        label:'🛩️ Charter a Private Jet',      gate:'needs ~$250k+'},
+  {id:'lux_yacht',      label:'🛥️ Superyacht Week',            gate:'needs ~$1.5M+'},
+  {id:'lux_island',     label:'🏝️ Rent a Private Island',      gate:'needs ~$3M+'},
+  {id:'lux_space',      label:'🚀 A Seat on the Rocket',       gate:'needs ~$8M+ · once in a lifetime'},
+  {id:'lux_submarine',  label:'🤿 Deep-Sea Submersible Dive',  gate:'needs ~$800k+'},
+  {id:'lux_highroller', label:'🎰 The High-Roller Suite',      gate:'needs ~$600k+'},
+  {id:'lux_chef',       label:'👨‍🍳 Fly In a Michelin Chef',     gate:'needs ~$150k+'},
+  {id:'lux_track',      label:'🏎️ Supercar Track Day',         gate:'needs ~$250k+'},
+  {id:'lux_heliski',    label:'🚁 Heli-Ski the Alps',          gate:'needs ~$300k+ · decent health'},
+  {id:'lux_sharks',     label:'🦈 Cage-Dive with Great Whites',gate:'needs ~$100k+'},
+  {id:'lux_volcano',    label:'🌋 Stand on a Live Volcano',    gate:'needs ~$100k+'},
+  {id:'lux_whales',     label:'🐋 Swim with Whales',           gate:'needs ~$100k+'},
+  {id:'lux_wine',       label:'🍷 A Legendary Wine Lot',       gate:'needs ~$500k+'},
+  {id:'lux_diamond',    label:'💎 Commission a Diamond Piece', gate:'needs ~$1.5M+'},
+  {id:'lux_watch',      label:'⌚ The Grail Watch',            gate:'needs ~$600k+'},
+  {id:'lux_art',        label:'🖼️ Bid at a Fine-Art Auction',  gate:'needs ~$3M+'},
+  {id:'lux_racehorse',  label:'🐎 Buy a Racehorse',            gate:'needs ~$750k+'},
+  {id:'lux_stadium',    label:'🎭 Rent a Stadium for a Party', gate:'needs ~$1M+'},
+  {id:'lux_popstar',    label:'🎤 Book a Pop Star Privately',  gate:'needs ~$1.2M+'},
+  {id:'lux_cinema',     label:'🎮 Build a Pleasure Wing',      gate:'needs ~$500k+ · own a home'},
+  {id:'lux_spectacle',  label:'💍 A Proposal Spectacle',       gate:'needs ~$400k+ · a partner to propose to'},
+  {id:'lux_scholarship',label:'🎓 Endow a Scholarship',        gate:'needs ~$1M+ · once'},
+  {id:'lux_hospital',   label:'🏥 Fund a Hospital Wing',       gate:'needs ~$5M+ · once'},
+];
+function luxuryHub(){ if(!S||isLocked())return;
+  if(S.age<18){ toast('🍼 The VIP life starts at 18.'); return; }
+  logAct('call',{fn:'luxuryHub'});
+  const cool=(S._lastLux!=null && S.age-S._lastLux<2);
+  const choices=LUX_MENU.map(m=>{ const ev=EVENTS.find(e=>e.id===m.id);
+    let ok=false; try{ ok=!!(ev&&ev.when(S)); }catch(_){ ok=false; }
+    return {label:m.label+(ok?'':' 🔒'), tip:ok?'':m.gate, alt:true, fn:()=>{ if(!ok){ toast(`🔒 ${m.gate}${cool?' · you indulged recently — give it a year or two':''}`); return; } luxRun(m.id); }};
+  });
+  choices.push({label:'Close', fn:closeModal});
+  openModal({banner:'Luxury', title:'💎 Luxury', icon:'💎', closable:true,
+    text:`The VIP menu — money opens every door here. You have <b>${cur()}${fmn(S.money)}</b>.${cool?'<br><span style="color:var(--dim);font-size:12px">You indulged recently — most doors reopen in a year or two.</span>':''}`, choices});
+}
+function luxRun(id){ const ev=EVENTS.find(e=>e.id===id); if(!ev) return; closeModal();   // modalpick leaf of the logged luxuryHub opener
+  const built=ev.build(S);
+  openModal({banner:'Luxury', title:built.title, icon:'💎', closable:true,
+    text:built.text,
+    choices:built.choices.filter(c=>!c.when||c.when(S)).map(c=>({label:c.label, tip:c.tip, alt:true, fn:()=>{ closeModal();
+      let r={}; try{ r=c.apply()||{}; }catch(_){ r={}; }
+      if(r.text){ pushLog(`<b>${built.title}.</b> ${r.text}`, r.tags||null); resultModal('Luxury', built.title, '💎', [r.text], ()=>setTab('activities')); }
+      else setTab('activities');
+    }})) });
+}
 /* ===== end luxury ===== */
 try{ applyTheme(currentTheme()); }catch(e){}   // 🎨 apply the saved appearance theme on load
 try{ initSoundLabel(); }catch(e){}             // 🔊 sync the sound-toggle label
