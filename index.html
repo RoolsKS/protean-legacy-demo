@@ -1958,11 +1958,17 @@ function applyGenomeToStats(){ if(!S.genome)return;
 function geneticIllnessRisk(){ if(!S.genome)return 0;
   return riskLevel('heart')*3 + riskLevel('cancer')*3 + riskLevel('mind')*2 + Math.max(0,(50-geneVal('vitality'))/10); }
 // which illness expresses — carriers lean toward their predisposed disease (penetrance already gated entry)
-function geneticIllnessPick(pool){ if(!S.genome)return pick(pool);
-  const map={heart:'heart',cancer:'cancer',mind:'depression'};
-  for(const rk in map){ if(riskLevel(rk)>=1){ const cand=pool.find(p=>p.key===map[rk]);
-    if(cand && rng(0,100)<(riskLevel(rk)===2?60:30)) return cand; } }
-  return pick(pool); }
+function geneticIllnessPick(pool){
+  // hereditary risk still biases toward the family illness (heart/cancer/depression)
+  if(S.genome){ const map={heart:'heart',cancer:'cancer',mind:'depression'};
+    for(const rk in map){ if(riskLevel(rk)>=1){ const cand=pool.find(p=>p.key===map[rk]);
+      if(cand && rng(0,100)<(riskLevel(rk)===2?55:28)) return cand; } } }
+  // otherwise AGE-WEIGHTED: the young mostly catch mild, self-limiting things; serious disease (heart, cancer, diabetes) only grows common with age
+  const age=S.age||0;
+  const wt=p=> p.sev<=2 ? 10 : Math.max(0.2, Math.min(9, (age-45)/6 + 1));   // sev3+ ~rare before ~45, steadily common in later life
+  let tot=0; for(const p of pool) tot+=wt(p); if(tot<=0) return pick(pool);
+  let r=rand()*tot; for(const p of pool){ r-=wt(p); if(r<=0) return p; }
+  return pool[pool.length-1]; }
 function hasLongevity(){ return riskLevel('longevity')>=1; }
 // THE GENOME viewer — your genes, your hereditary risks, what you'll pass on
 function genomeView(){ if(!S){toast('Start a life first.');return;}
@@ -5530,25 +5536,56 @@ function ageUp(){
   sugarYear();                                                        // 🍯 sugar arrangements pay out / cost out each year, with discovery risk (deterministic)
   staffYear();                                                        // 🧑‍✈️ household staff salaries + their yearly perks (deterministic)
 
-  // passive yearly drift — fitness slows the decline, neglect speeds it up
-  S.fitness=clamp((S.fitness||50)-rng(0,2));     // conditioning fades without upkeep
-  if(S.age>40) chg('health',-Math.max(0, rng(0,3) - Math.round((S.fitness||50)/40) - (geneVal('vitality')>=70?1:0) - (hasLongevity()?1:0)));   // strong genes slow the decline
-  if(has('smoker')) chg('health',-2);
+  // passive yearly drift — a NORMAL life stays healthy into old age; the body only really winds down past 70
+  S.fitness=clamp((S.fitness||50)-rng(0,2), S.age<70?22:0);     // conditioning fades without upkeep, but an alive body keeps a baseline until old age
+  { let drift=0;
+    if(S.age>=75)      drift=rng(2,5);           // 🧓 the fragile years — real decline sets in
+    else if(S.age>=65) drift=rng(1,3);
+    else if(S.age>=55) drift=rng(0,2);
+    else if(S.age>=45) drift=rng(0,1);
+    drift -= Math.round((S.fitness||50)/45) + (geneVal('vitality')>=70?1:0) + (hasLongevity()?1:0);   // fitness & good genes offset it
+    if(drift>0) chg('health',-drift); }
+  // 🌿 a young, healthy body RECOVERS — minor knocks heal, so a normal life does not slowly bleed out from old scratches.
+  // Blocked by a serious untreated illness (you do not bounce back from untreated cancer) and fades in old age.
+  if(S.age<65 && S.stats.health>0 && !(S.illnesses||[]).some(i=>!i.treated && i.sev>=3)){
+    const cap=70+Math.round((S.fitness||50)/4);   // heals back toward ~70–95 depending on fitness
+    if(S.stats.health<cap) chg('health', rng(1,4)); }
+  if(has('smoker')) chg('health',-3);            // 🚬 vice is what takes you early
   for(const a of (S.addictions||[])){ chg('health',-(a.drain||2));   // addictions wear you down
     if(a.key==='gambling' && S.money>0){ const loss=Math.min(S.money, rng(500,8000)); money(-loss); if(loss>0) pushLog(`My gambling habit bled <b>${cur()}${loss.toLocaleString()}</b> this year. 🎰`,[['bad',`-${cur()}${loss.toLocaleString()} gambling`]]); } }
   // illnesses you carry drain health each year; severe ones can be fatal.
   // Without modern medicine (pre-1900s eras) the same illnesses hit harder and kill more readily.
   const _medOK = worldRules.cap('modernMedicine');
-  for(const i of (S.illnesses||[])){ if(!i.treated){ chg('health', _medOK ? -i.sev : -Math.round(i.sev*1.6));
-    if(i.sev>=(_medOK?4:3) && rng(0,100) < (_medOK ? i.sev*2 : Math.round(i.sev*3.4))){ S.stats.health=0; }   // heart disease / cancer / fever can take you
-  } }
-  // a new illness can develop — risk climbs with age, low fitness, smoking, addictions, HEREDITARY genes & a PANDEMIC
+  { const keep=[];
+    for(const i of (S.illnesses||[])){
+      if(i.treated){ keep.push(i); continue; }
+      // 🌿 acute illnesses (flu, bronchitis) — the body fights them off after a year or two, then they are GONE
+      if(i.acute && (S.age-(i.age||S.age))>=(i.dur||1)){ pushLog(`I got over <b>${i.name}</b>. 🌿`,[['good',`Recovered from ${i.name}`]]); continue; }
+      // yearly drain: acute hits its full severity while active; a MANAGED chronic condition (asthma, high BP, mild depression) is mostly background; only the serious ones (heart, cancer) really wear you down
+      const dr = i.acute ? i.sev : (i.sev<=2 ? rng(0,1) : i.sev-2);
+      chg('health', _medOK ? -dr : -Math.round(dr*1.6));
+      // sudden death from an illness: RARE while young and otherwise healthy — common only once you are old (75+) or already failing
+      const frail = S.age>=75 || S.stats.health<25;
+      const base = _medOK ? i.sev*2 : Math.round(i.sev*3.4);
+      const fatalPct = i.sev>=(_medOK?4:3) ? (frail ? base : (S.age>=60 ? Math.round(base*0.4) : S.age>=40 ? Math.round(base*0.12) : 0)) : 0;
+      if(fatalPct>0 && rng(0,100) < fatalPct){ S.stats.health=0; }   // heart disease / cancer takes you — mostly in later life or when neglected
+      keep.push(i);
+    }
+    S.illnesses=keep;
+  }
+  // a new illness can develop — climbs mainly with AGE (real after ~50, steep past 70), plus low fitness, smoking, addictions, HEREDITARY genes & a PANDEMIC
   const _pandemic = (function(){ const s=worldShockAt(); return s&&s.shock.k==='pandemic'?9:0; })();
-  if(rng(0,100) < 3 + Math.max(0,(S.age-30)/4) + (60-(S.fitness||50))/12 + (has('smoker')?6:0) + (S.addictions||[]).length*4 + geneticIllnessRisk() + _pandemic){
+  if(rng(0,100) < 1.5 + Math.max(0,(S.age-45)/3.5) + Math.max(0,(S.age-70)*1.1) + (60-(S.fitness||50))/14 + (has('smoker')?6:0) + (S.addictions||[]).length*4 + geneticIllnessRisk() + _pandemic){
     const pool=ILLNESSES.filter(x=>S.age>=x.minAge && !(S.illnesses||[]).some(y=>y.key===x.key));
     if(pool.length){ const x=geneticIllnessPick(pool); (S.illnesses=S.illnesses||[]).push({key:x.key,name:x.name,sev:x.sev,curable:x.curable,tough:x.tough,treated:false,age:S.age});
       const fam = ['heart','cancer','depression'].includes(x.key) && riskLevel(({heart:'heart',cancer:'cancer',depression:'mind'})[x.key])>=1;
       pushLog(`I was diagnosed with <b>${x.name}</b>.${fam?' It runs in the family. 🧬':''} ${x.curable?'It’s treatable — see a doctor.':'It’s chronic — a doctor can help manage it.'} 🤒`,[['bad',x.name]]); }
+  }
+  // 🧓 OLD-AGE FRAILTY — past 75 the odds of simply not waking up climb each year, so most lives close between 75 and the ~92 cap.
+  // A clean, fit, well-bred life pushes that later; a hard life brings it sooner. (Deterministic — pure rng in ageUp.)
+  if(S.age>=75 && S.stats.health>0){
+    const frailty = Math.max(0, (S.age-73)*2.6 - (hasLongevity()?9:0) - (geneVal('vitality')>=70?5:0) - Math.round((S.fitness||50)/12) - Math.round((S.stats.health||0)/22));
+    if(rng(0,100) < frailty){ S.stats.health=0; setFlag('died_old_age'); }
   }
   if(S.pregnant && S.age>S.pregnant.since){    // a female player carries to term, then delivers
     const f=S.pregnant.father; S.pregnant=null; babyBorn(f);
@@ -5684,6 +5721,9 @@ function ageUp(){
   underworldYear();           // crime life — police heat cools, crew income, raids & prison
   marriageYear();             // a marriage's spark drifts — neglect fades it, attention rekindles it
   fameYear();                 // fame rises with your following & career, fades without upkeep, pays endorsements
+  if(has('lux_ambassador') && (S.fame||0)>=45){ const ret=Math.round(rng(60000,220000)*priceMult()); money(ret);   // 💎 luxury-brand ambassador retainer (won from a private invite) — pays yearly while you stay famous
+    if(S.age%2===0) pushLog(`💎 My luxury-brand ambassadorship paid a <b>${cur()}${fmn(ret)}</b> retainer this year.`,[['good',`Ambassador +${cur()}${fmn(ret)}`]]); }
+  else if(has('lux_ambassador') && (S.fame||0)<40){ setFlag('lux_ambassador',false); pushLog(`📉 The brand quietly ended my ambassadorship — my star has dimmed.`,[['bad','Lost the ambassadorship']]); }
   if(S.passportApp && S.passportApp.stage==='processing' && S.age===S.passportApp.readyAge)   // passport finished processing — go collect it
     pushLog(`📨 My <b>passport is ready to collect</b> — head to Activities → Passport to pick it up. 🛂`,[['flag','Passport ready']]);
   if(S.passport && S.passportExpires!=null && S.age===S.passportExpires+1)   // just expired
@@ -6844,21 +6884,25 @@ function monthlyOutflow(){
 }
 function creditScore(){
   let s=580;
-  s += Math.min(110, Math.round((S.peakMoney||0)/25000));      // wealth history
-  s += Math.min(70, Math.round(Math.max(0,netWorth())/40000)); // assets
+  s += Math.min(130, Math.round((S.peakMoney||0)/25000));      // wealth history
+  s += Math.min(90, Math.round(Math.max(0,netWorth())/40000)); // assets
   s += (S.job?40:0) + (has('graduated_college')?20:0);
   s += Math.min(80, (S.onTimePayments||0)*12);                 // on-time payments build it
   s -= (S.missedPayments||0)*45;                                // misses crater it
-  s -= has('criminal')?70:0; s -= has('flunked_out')?15:0; s -= has('evicted')?20:0;
-  s -= Math.round(totalDebt()/3000);                            // heavy debt drags
+  s -= has('criminal')?60:0; s -= has('flunked_out')?15:0; s -= has('evicted')?20:0;
+  // 🏦 debt only hurts when it is large RELATIVE to what you can service (income + assets) — a rich person with a big, well-covered loan is a PRIME borrower, not a subprime one
+  const debt=totalDebt();
+  if(debt>0){ const grossAssets=Math.max(0, netWorth()+debt); const capacity=Math.max(1, grossIncome()*4 + grossAssets*0.5);
+    const ratio=debt/capacity; if(ratio>1) s -= Math.min(140, Math.round((ratio-1)*80)); }   // penalise ONLY over-leverage
   return clamp(Math.round(s),300,850);
 }
 function creditBand(){ const c=creditScore(); return c>=740?`⭐ ${c} excellent`:c>=670?`${c} good`:c>=580?`${c} fair`:`⚠️ ${c} poor`; }
-function loanAPR(){ return clamp(28 - (creditScore()-500)/22, 5, 28)/100; }   // 5%–28% by credit
+function loanAPR(){ return clamp(29 - (creditScore()-300)*(24/550), 4, 29)/100; }   // ~4% (excellent 850) → 29% (poor 300)
 function savingsAPY(){ const s=S.savings||0; return 0.03 + (s>500000?0.02:s>50000?0.01:0); }   // 3–5%, more for bigger balances
 function loanLimit(){ const cs=creditScore();
-  const lim = (cs-500)*220 + grossIncome()*2 + Math.max(0,netWorth())*0.3;
-  return Math.max(0, Math.round(lim - totalDebt())); }
+  const grossAssets=Math.max(0, netWorth()+totalDebt());   // assets BEFORE debt — a fortune is collateral even if you already owe
+  const lim = (cs-500)*300 + grossIncome()*4 + grossAssets*0.4 - totalDebt();
+  return Math.max(0, Math.round(lim)); }
 function bankMenu(){ if(!S){toast('Start a life first.');return;} if(isLocked()){toast('You have passed on. ⚰️');return;}
   if(S.age<16){ toast('🔒 You can open a bank account at 16.'); return; }
   logAct('call',{fn:'bankMenu'});
@@ -7405,7 +7449,7 @@ const FLIGHT={
   intl:    { economy:[900,1800], business:[5000,8000], first:[12000,18000], jetSeat:13, jetCost:[110000,250000], famJet:[70000,140000] },
   domestic:{ economy:[200,500],  business:[1200,2200], first:[3000,6000],   jetSeat:8,  jetCost:[28000,70000],   famJet:[18000,45000] },
 };
-function celebFee(c){ return Math.round(c.fame*c.fame*rng(40,90)); }   // greater artists cost a LOT more
+function celebFee(c){ return Math.round(c.fame*c.fame*(c.feeMult||65)); }   // greater artists cost a LOT more — STABLE per celeb (no per-render rng: shown fee == charged fee, and no replay drift)
 function gatherEveryone(){
   if(!S){ toast('Start a life first.'); return; }
   if(isLocked()){ toast('You have passed on. ⚰️'); return; }
@@ -10167,7 +10211,7 @@ function buildCelebs(){
   const pool=[...REAL_CELEBS], out={};
   for(let i=0;i<Math.min(16,pool.length);i++){
     const c=pool.splice(rng(0,pool.length-1),1)[0], fame=clamp(c.fame+rng(-8,1),40,99);
-    out['c'+i]={id:'c'+i,name:c.name,type:c.type,gender:c.g,fame,mood:rng(-20,55),
+    out['c'+i]={id:'c'+i,name:c.name,type:c.type,gender:c.g,fame,mood:rng(-20,55),feeMult:rng(40,90),
       followers:Math.round(fame*fame*rng(80,200)),affinity:0,rel:'stranger',met:false,memory:[]};
   }
   return out;
@@ -10326,8 +10370,8 @@ function hookupTonight(){
 }
 // real illnesses that develop with age & lifestyle; the doctor diagnoses & treats them
 const ILLNESSES=[
-  {key:'flu',        name:'The Flu',             sev:1, curable:true,  minAge:0},
-  {key:'bronchitis', name:'Bronchitis',          sev:2, curable:true,  minAge:0},
+  {key:'flu',        name:'The Flu',             sev:1, curable:true,  minAge:0, acute:true, dur:1},
+  {key:'bronchitis', name:'Bronchitis',          sev:2, curable:true,  minAge:0, acute:true, dur:2},
   {key:'depression', name:'Depression',          sev:2, curable:true,  minAge:12, mental:true},
   {key:'asthma',     name:'Asthma',              sev:2, curable:false, minAge:0},
   {key:'highbp',     name:'High Blood Pressure', sev:2, curable:false, minAge:35},
@@ -18562,6 +18606,557 @@ function luxRun(id){ const ev=EVENTS.find(e=>e.id===id); if(!ev) return; closeMo
     }})) });
 }
 /* ===== end luxury ===== */
+
+/* ===== 🌟 FAME DAILY-LIFE PERKS + 🎟️ PRIVATE INVITATIONS (spliced) ===== */
+/* ============================================================
+   FAME PERKS & COSTS PACK (fp_) — fame touching ordinary life,
+   both directions. Deterministic: seeded rng only, no DOM in
+   apply(). Shared ~2yr cooldown via S._lastPerk (age of the last
+   perk event, stamped in build so whichever event fires blocks
+   the whole family for 2 years).
+   ============================================================ */
+
+const _fpOK = (S, min) => (S.fame || 0) >= min && (S._lastPerk == null || S.age - S._lastPerk >= 2);
+
+const FAME_PERK_EVENTS = [
+
+/* ---------------------------- PERKS ---------------------------- */
+
+/* Restaurant comps your meal */
+{ id:'fp_comp_meal', weight:8, when:S=>_fpOK(S,15) && S.age>=16,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`On the House 🍽️`,
+    text:`Halfway through dinner the manager appears, beaming. "It is an honor to have you here — tonight is on us." Every table in the room is suddenly watching to see what you do.`,
+    choices:[
+      {label:'Accept graciously', tip:`Free meal · all eyes on you`, apply:()=>{ chg('happy',5); bumpFame(1);
+        return {text:`You thanked the staff by name, signed the wall by the kitchen, and left the room buzzing. The photo of your scrawled signature does numbers online.`,tags:[['good','Comped like a star']]}; }},
+      {label:'Insist on paying — and tip huge', tip:`Costs money · class act`, apply:()=>{ const t=Math.min(S.money,rng(120,400)); money(-t); karma(4); chg('happy',3);
+        return {text:`You paid the bill in full and left ${cur()}${fmn(t)} for the kitchen. A waiter posted the receipt. The internet decided you are one of the good ones.`,tags:[['good',`Tipped ${cur()}${fmn(t)}`]]}; }},
+      {label:'Milk it — order the whole dessert menu', tip:`Greedy · someone is filming`, apply:()=>{ chg('happy',4); karma(-2);
+        if(rng(0,100)<40){ bumpFollowers(rng(2000,9000)); return {text:`You ordered one of everything. A diner filmed the tower of desserts and the clip went viral — half adoring, half calling you a freeloader with a net worth.`,tags:[['bad','Freeloader discourse']]}; }
+        return {text:`You feasted like an emperor and waddled out. No consequences. This time.`,tags:[['flag','Milked the comp']]}; }},
+    ]};}},
+
+/* A fan pays for your coffee and cries */
+{ id:'fp_fan_coffee', weight:8, when:S=>_fpOK(S,15) && S.age>=15,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`The Crying Fan ☕`,
+    text:`The barista waves your card away — "the person ahead of you paid." You turn to thank them and they burst into tears. Hands shaking, they whisper that you got them through the worst year of their life.`,
+    choices:[
+      {label:'Sit with them for ten minutes', tip:`Kind · your morning is gone`, apply:()=>{ karma(6); chg('happy',6); bumpFollowers(rng(1500,6000));
+        return {text:`You sat down, asked their name, and just listened. Their post about it — "ten minutes I will never forget" — melted the entire internet.`,tags:[['good','Ten minutes of kindness']]}; }},
+      {label:'Warm thanks and keep moving', apply:()=>{ chg('happy',2); karma(1);
+        return {text:`You hugged them, thanked them sincerely, and slipped out before the whole shop noticed. A small good moment, kept small.`,tags:[['good','A quiet thank-you']]}; }},
+      {label:'Buy coffee for the entire shop', tip:`Grand gesture · costs money`, apply:()=>{ const c=Math.min(S.money,rng(80,260)); money(-c); karma(3); chg('happy',4); bumpFame(1);
+        return {text:`"Everyone drinks on me today." The shop erupted. Somewhere between the applause and the selfies, your crying fan got the best story of all.`,tags:[['good',`Bought the round · -${cur()}${fmn(c)}`]]}; }},
+    ]};}},
+
+/* Boutique PR gifting boxes */
+{ id:'fp_gift_box', weight:7, when:S=>_fpOK(S,32) && S.age>=18,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`The Gifting Avalanche 🎁`,
+    text:`Brands have found your address. A wall of PR boxes arrives — skincare, sneakers, a drone, a candle that costs more than a car payment. None of it was asked for. All of it wants a shout-out.`,
+    choices:[
+      {label:'Post a thank-you haul', tip:`Brands love it · fans smell ads`, apply:()=>{ bumpFollowers(rng(3000,12000)); chg('happy',3); karma(-1);
+        return {text:`The haul video pulled huge numbers and three more brands added you to their lists. The top comment: "so this account is a billboard now." It stung a little.`,tags:[['flag','Became the haul person']]}; }},
+      {label:'Quietly sell it all', tip:`Cash · brands keep receipts`, apply:()=>{ const v=rng(600,3500); money(v); karma(-3);
+        if(rng(0,100)<30){ return {text:`You flipped the lot for ${cur()}${fmn(v)} — and a brand rep spotted their unopened box on a resale site. You are off several gifting lists, permanently.`,tags:[['bad',`Sold the gifts · +${cur()}${fmn(v)}`]]}; }
+        return {text:`Everything went to resale for ${cur()}${fmn(v)}. No one noticed. Free money for being perceived.`,tags:[['good',`+${cur()}${fmn(v)} in gifts`]]}; }},
+      {label:'Donate it to a shelter', tip:`Karma`, apply:()=>{ karma(6); chg('happy',5); ledgerAdd('charity',10,{note:`Donated a mountain of PR gifts to a shelter.`});
+        return {text:`Two carloads of luxury freebies went to the shelter downtown. You did not post about it, which somehow made it feel twice as good.`,tags:[['good','Gave it all away']]}; }},
+      {label:'Keep the good stuff, no post', apply:()=>{ chg('happy',4);
+        return {text:`You kept the sneakers and the drone, gave the rest to friends, and posted nothing. The brands will survive.`,tags:[['flag','Kept the loot']]}; }},
+    ]};}},
+
+/* Club owner pays you to be seen */
+{ id:'fp_club_seen', weight:7, when:S=>_fpOK(S,32) && S.age>=21,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Paid to Party 🥂`,
+    text:`A club owner slides into your DMs with a number: show up Saturday, sit in the VIP booth, be photographed holding a drink. That is the whole job.`,
+    choices:[
+      {label:'Take the appearance fee', tip:`Easy money · shallow night`, apply:()=>{ const f=rng(2000,8000)+Math.floor((S.fame||0)*60); money(f); chg('happy',2); chg('health',-2);
+        return {text:`You smiled for two hours, touched one drink, and left with ${cur()}${fmn(f)}. Easiest money of your life, and somehow the emptiest.`,tags:[['good',`Appearance fee +${cur()}${fmn(f)}`]]}; }},
+      {label:'Negotiate double', tip:`Bold · they might walk`, apply:()=>{ if(rng(0,100)<50){ const f=(rng(2000,8000)+Math.floor((S.fame||0)*60))*2; money(f); chg('happy',3);
+          return {text:`"Double, or I stay home in my pajamas." They paid. ${cur()}${fmn(f)} to sit in a booth. You are officially an economy.`,tags:[['good',`Doubled the fee +${cur()}${fmn(f)}`]]}; }
+        chg('happy',-2); return {text:`They laughed and booked a reality star instead. You spent Saturday watching them get photographed in what would have been your booth.`,tags:[['bad','Priced yourself out']]}; }},
+      {label:'Decline — stay home', tip:`Privacy`, apply:()=>{ chg('happy',4);
+        return {text:`You made pasta, watched a movie, and let someone else be furniture for the nightlife economy. No regrets.`,tags:[['good','A normal Saturday']]}; }},
+    ]};}},
+
+/* DMV clerk waves you to the front */
+{ id:'fp_dmv_front', weight:7, when:S=>_fpOK(S,15) && S.age>=18,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Skip the Line 🪪`,
+    text:`The DMV. Ninety humans in plastic chairs, one flickering light. Then a clerk recognizes you, lights up, and waves you straight to window four — past every single glaring face.`,
+    choices:[
+      {label:'Take the fast lane', tip:`Saves the day · the line hates you`, apply:()=>{ chg('happy',4); karma(-2);
+        if(rng(0,100)<25){ bumpFollowers(rng(500,3000)); return {text:`In and out in six minutes. Someone in the line filmed it captioned "rules are for the unfamous" — mildly viral, mildly deserved.`,tags:[['bad','Line-skipper clip']]}; }
+        return {text:`Six minutes, door to door. You felt ninety pairs of eyes on your back the entire time and regretted absolutely nothing.`,tags:[['flag','Skipped the line']]}; }},
+      {label:'Wait like everyone else', tip:`Karma`, apply:()=>{ karma(4); chg('happy',-2); bumpFame(1);
+        return {text:`"I will wait my turn, thanks." Two hours in a plastic chair. A stranger posted a photo of you holding ticket B47 like a commoner, and people loved you for it.`,tags:[['good','Waited with the people']]}; }},
+      {label:'Wait — and entertain the line', tip:`Autographs & selfies for 2 hours`, apply:()=>{ karma(3); chg('happy',3); bumpFollowers(rng(1000,5000));
+        return {text:`You turned the waiting room into a meet-and-greet. By the time B47 was called, the DMV had a five-star review with your name in it.`,tags:[['good','DMV meet-and-greet']]}; }},
+    ]};}},
+
+/* Chef names a dish after you */
+{ id:'fp_dish_named', weight:6, when:S=>_fpOK(S,32) && S.age>=18,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`A Dish Bears Your Name 👨‍🍳`,
+    text:`A chef you have eaten with twice unveils a new menu item — named after you. There is a launch night. There is a plaque. It is, apparently, a burrata situation.`,
+    choices:[
+      {label:'Attend the unveiling', tip:`Free press for you both`, apply:()=>{ chg('happy',6); bumpFame(2);
+        return {text:`You ate your own namesake in front of forty cameras and declared it delicious. Reservations tripled. You now exist in menu form, which is a strange kind of immortality.`,tags:[['good','Immortalized in burrata']]}; }},
+      {label:'Ask for a cut of sales', tip:`Business-brained · could sour it`, apply:()=>{ if(rng(0,100)<45){ const r=rng(1500,6000); money(r); return {text:`Your people called their people. Two percent of every plate. First check: ${cur()}${fmn(r)}. The chef respects the hustle — barely.`,tags:[['good',`Dish royalties +${cur()}${fmn(r)}`]]}; }
+        karma(-2); chg('happy',-2); return {text:`The chef went quiet, then renamed the dish after a food critic. You turned a love letter into an invoice and lost both.`,tags:[['bad','Dish un-named']]}; }},
+      {label:`Cover every order on launch night`, tip:`Generous · costs money`, apply:()=>{ const c=Math.min(S.money,rng(800,3000)); money(-c); karma(5); chg('happy',5);
+        return {text:`"Anyone who orders it tonight — on me." The kitchen ran out by nine. The chef hugged you hard enough to crack a rib.`,tags:[['good',`Launch night on you · -${cur()}${fmn(c)}`]]}; }},
+    ]};}},
+
+/* A kid asks for an autograph */
+{ id:'fp_kid_autograph', weight:8, when:S=>_fpOK(S,15) && S.age>=15,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`The Kid With the Poster 🖍️`,
+    text:`A kid, maybe eight, plants themselves in your path holding a homemade poster of you — crayon, glitter, your name spelled almost right. Their parent mouths a silent "sorry" from ten feet back.`,
+    choices:[
+      {label:'Kneel down and give them the full moment', apply:()=>{ karma(5); chg('happy',7); bumpFollowers(rng(2000,8000));
+        return {text:`You got on one knee, studied the poster like fine art, and signed it twice — once for the kid, once "for the fridge." The parent filmed it through tears. Purest thing on the internet all week.`,tags:[['good',`Made a kid's whole year`]]}; }},
+      {label:'Quick autograph, keep moving', apply:()=>{ chg('happy',3); karma(1);
+        return {text:`You signed the poster, ruffled some hair, and were gone in forty seconds. Short for you. The whole world for them.`,tags:[['good','Signed the poster']]}; }},
+      {label:'Give them the jacket off your back too', tip:`Legend behavior`, apply:()=>{ karma(6); chg('happy',8); bumpFame(1); bumpFollowers(rng(3000,10000));
+        return {text:`You signed the poster, then draped your jacket over their shoulders — it fit like a tent. That photo will be on their wall until they are forty.`,tags:[['good','Gave the jacket']]}; }},
+    ]};}},
+
+/* Key to the city — fame 70+, once */
+{ id:'fp_key_city', once:true, weight:7, when:S=>_fpOK(S,70) && S.age>=25,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Key to the City 🗝️`,
+    text:`The mayor wants to give you the key to the city. Ceremony, marching band, a key too large for any known door. The local news is calling it the event of the season.`,
+    choices:[
+      {label:'Accept with a humble speech', apply:()=>{ chg('happy',8); bumpFame(2); karma(3); setFlag('keyToCity');
+        return {text:`You thanked the teachers, the bus drivers, and the diner that let teenage-you nurse one coffee for four hours. The band played. The key does not open anything, and you love it anyway.`,tags:[['good','Key to the city']]}; }},
+      {label:'Use the mic to call out city hall', tip:`Brave · the mayor is RIGHT there`, apply:()=>{ setFlag('keyToCity'); karma(6); if(rng(0,100)<55){ bumpFame(3); chg('happy',4);
+          return {text:`Key in hand, you turned to the mayor and asked, on live TV, when the shelters were getting funded. The clip ran nationally. The city fixed the budget line within a month.`,tags:[['good','Spoke truth at the podium']]}; }
+        chg('happy',-3); return {text:`You went off-script and the mayor went off-smile. Half the city called you a hero, the other half an ungrateful showboat. The key stayed. The invitations stopped.`,tags:[['bad','Podium backlash']]}; }},
+      {label:'Skip the ceremony', tip:`Privacy · snub`, apply:()=>{ chg('happy',2); karma(-2);
+        return {text:`They mailed the key. The mayor was photographed presenting it to an empty podium, which became a meme you did not enjoy being the cause of.`,tags:[['flag','Key by mail']]}; }},
+    ]};}},
+
+/* Honorary doctorate — fame 70+, once */
+{ id:'fp_doctorate', once:true, weight:7, when:S=>_fpOK(S,70) && S.age>=28,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Doctor of Letters 🎓`,
+    text:`A university offers you an honorary doctorate. You, in robes, on a stage, being called Doctor by people who spent a decade earning the same word.`,
+    choices:[
+      {label:'Accept and give the commencement speech', apply:()=>{ chg('happy',7); chg('smart',2); bumpFame(2); setFlag('honoraryDoc');
+        return {text:`You told nine thousand graduates that every good thing in your life came from a door someone else held open. Three standing ovations. The robe was extremely itchy.`,tags:[['good','Dr. You']]}; }},
+      {label:'Accept — and demand everyone call you Doctor', tip:`Bit of a bit`, apply:()=>{ setFlag('honoraryDoc'); chg('happy',5); karma(-1); bumpFollowers(rng(4000,15000));
+        return {text:`You updated every profile to "Dr." within the hour and correct people at restaurants. Real doctors are furious. The internet is delighted. Both are correct.`,tags:[['flag','Insufferably Dr. You']]}; }},
+      {label:'Decline — fund a scholarship instead', tip:`Costs real money`, apply:()=>{ const d=Math.min(S.money,rng(10000,40000)); money(-d); karma(8); ledgerAdd('charity',20,{note:`Turned down an honorary doctorate and funded a scholarship instead.`});
+        return {text:`"Give the honor to someone who studied for it — give me a tuition bill to pay." The scholarship in your name will outlive every headline: ${cur()}${fmn(d)}.`,tags:[['good',`Funded a scholarship · -${cur()}${fmn(d)}`]]}; }},
+    ]};}},
+
+/* A street named after you — fame 85+, once */
+{ id:'fp_street_name', once:true, weight:6, when:S=>_fpOK(S,85) && S.age>=30,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Your Name on the Map 🛣️`,
+    text:`The city council votes unanimously: a street will bear your name. Not a big street — but a real one, with a bakery and a bus stop and people who will write it on envelopes forever.`,
+    choices:[
+      {label:'Attend the unveiling', apply:()=>{ chg('happy',10); bumpFame(2); setFlag('streetNamed');
+        return {text:`They pulled the cloth off the sign and there it was — your name, in municipal green, official as gravity. You stood under it a long time. Icons get streets.`,tags:[['good','A street of your own']]}; }},
+      {label:'Buy the corner house on your street', tip:`Peak vanity · expensive`, apply:()=>{ setFlag('streetNamed'); const c=Math.min(S.money,rng(150000,500000)); money(-c); chg('happy',8);
+        return {text:`You now live on yourself. Your address is your own name twice. The mail carrier thinks it is hilarious. It cost ${cur()}${fmn(c)} and it was worth every cent.`,tags:[['good',`Lives on own street · -${cur()}${fmn(c)}`]]}; }},
+      {label:`Ask them to name it after your mother instead`, tip:`Heart`, apply:()=>{ setFlag('streetNamed'); karma(8); chg('happy',9); bumpFollowers(rng(5000,20000));
+        return {text:`"She drove me down streets like this to every practice, every audition. Put HER name up." The clip of the unveiling — her hand over her mouth — broke the internet gently.`,tags:[['good',`Named it for Mom`]]}; }},
+    ]};}},
+
+/* A fan club forms */
+{ id:'fp_fanclub', weight:7, when:S=>_fpOK(S,32) && S.age>=16,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`The Official Fan Club 📛`,
+    text:`It has bylaws. It has a treasurer. Somewhere out there, forty strangers hold monthly meetings about you, and they have just voted to make it official — pending your blessing.`,
+    choices:[
+      {label:'Send merch and a video message', tip:`Costs a little · buys devotion`, apply:()=>{ const c=Math.min(S.money,rng(200,900)); money(-c); karma(3); bumpFollowers(rng(3000,12000));
+        return {text:`Signed posters, a two-minute video, and a pizza budget for their next meeting. The fan club would now walk through fire for you, in matching shirts.`,tags:[['good','Blessed the fan club']]}; }},
+      {label:'Crash their first meetup unannounced', tip:`Chaotic good`, apply:()=>{ chg('happy',6); karma(4); bumpFollowers(rng(5000,18000));
+        if(rng(0,100)<20){ setFlag('intenseFan'); return {text:`You walked in mid-agenda-item and the room detonated. Incredible night — though one member cried for forty minutes straight and has since mailed you eleven letters.`,tags:[['flag','One fan got TOO invested']]}; }
+        return {text:`You knocked on the community-center door holding donuts. The screaming was heard two blocks away. Best PR you never planned.`,tags:[['good','Crashed the fan club']]}; }},
+      {label:'Ignore it entirely', tip:`Unmanaged fandoms ferment`, apply:()=>{ if(rng(0,100)<35){ chg('happy',-3); return {text:`Left unattended, the fan club developed opinions about your personal life and a lore document with 200 pages. They now police your comment sections like customs officers.`,tags:[['bad','Fandom went feral']]}; }
+        return {text:`You let it be. They meet, they chat, they mind their business. Fandom at its most benign.`,tags:[['flag','Fan club untended']]}; }},
+    ]};}},
+
+/* A lookalike contest of YOU */
+{ id:'fp_lookalike', weight:6, when:S=>_fpOK(S,52) && S.age>=18,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`The Lookalike Contest 👯`,
+    text:`A park downtown, a hand-painted banner, and thirty strangers dressed as you. Someone is hosting a lookalike contest of YOU, and the grand prize is fifty dollars and a sandwich.`,
+    choices:[
+      {label:'Enter incognito', tip:`The ultimate bit`, apply:()=>{ chg('happy',8); bumpFollowers(rng(8000,30000));
+        if(rng(0,100)<50){ money(50); return {text:`You entered your own lookalike contest in sunglasses — and WON. The judges never noticed. You accepted fifty dollars and a sandwich for being convincingly yourself. Historic.`,tags:[['good','Won own lookalike contest']]}; }
+        return {text:`You entered your own lookalike contest — and came SECOND. Beaten at being you by a plumber with better cheekbones. The reveal broke the internet. Best loss of your life.`,tags:[['good','Second place at being you']]}; }},
+      {label:'Judge it openly', apply:()=>{ chg('happy',5); bumpFame(1); bumpFollowers(rng(3000,10000));
+        return {text:`You arrived as a surprise judge and crowned your finest imitator with genuine ceremony. Thirty yous, one sandwich, zero dignity, maximum joy.`,tags:[['good','Judged the lookalikes']]}; }},
+      {label:'Stay away — too weird', apply:()=>{ chg('happy',-1);
+        return {text:`You scrolled the photos from home. One of them genuinely could be your sibling. You closed the app and stared at a wall for a while.`,tags:[['flag','Skipped own lookalike contest']]}; }},
+    ]};}},
+
+/* ---------------------------- COSTS ---------------------------- */
+
+/* Mobbed while grocery shopping */
+{ id:'fp_mobbed_grocery', weight:8, when:S=>_fpOK(S,32) && S.age>=18,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Mobbed in Aisle Five 🛒`,
+    text:`You just wanted cereal. One selfie became three became a crowd, and now your cart is pinned between a display of canned soup and forty raised phones.`,
+    choices:[
+      {label:'Selfies for everyone — the full hour', tip:`Kind · exhausting`, apply:()=>{ karma(4); chg('happy',-4); bumpFollowers(rng(1000,5000));
+        return {text:`You smiled through sixty-one photos, signed a receipt, a cast, and one confused baby. You got home drained, and forgot the cereal.`,tags:[['flag','Death by selfie']]}; }},
+      {label:'Abandon the cart and bolt', apply:()=>{ chg('happy',-2);
+        if(rng(0,100)<40){ karma(-1); return {text:`You left a full cart and speed-walked to the exit. The clip — "watch them RUN from fans" — trended for a day. The cereal remains unpurchased.`,tags:[['bad','Filmed fleeing fans']]}; }
+        return {text:`You slipped out through the garden section. Somewhere in aisle five, an orphaned cart still waits.`,tags:[['flag','Fled the supermarket']]}; }},
+      {label:'Never shop in person again', tip:`Costs money · costs normal`, apply:()=>{ const c=Math.min(S.money,rng(600,2400)); money(-c); chg('happy',2); setFlag('groceryConcierge');
+        return {text:`Groceries now arrive by courier, forever. Convenient, quiet — and a small ordinary pleasure you will never quite get back.`,tags:[['flag',`Outsourced normal life · -${cur()}${fmn(c)}`]]}; }},
+    ]};}},
+
+/* A date ruined by fans */
+{ id:'fp_date_ruined', weight:7, when:S=>_fpOK(S,15) && S.age>=18,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Third Wheel: The Public 💔`,
+    text:`Candlelight, good conversation, a hand reaching across the table — and then a flash. A table of fans has been filming your date for ten minutes, and now they want a group photo.`,
+    choices:[
+      {label:'One photo, then ask for space', tip:`Diplomatic`, apply:()=>{ chg('happy',-2); karma(2);
+        return {text:`One photo, a polite "we would love some privacy," and they mostly behaved. The mood, however, did not survive. You both ordered dessert to-go.`,tags:[['flag','Date interrupted']]}; }},
+      {label:'Snap at them', tip:`Human · will be filmed`, apply:()=>{ karma(-3); chg('happy',-5);
+        bumpFollowers(rng(500,2500)); return {text:`"Can we have ONE dinner?!" — filmed, clipped, posted with a frowning-emoji caption. You were right, and it did not matter even slightly.`,tags:[['bad','The angry clip']]}; }},
+      {label:'Leave through the kitchen, comp their desserts', tip:`Smooth · costs money`, apply:()=>{ const c=Math.min(S.money,rng(60,200)); money(-c); karma(3); chg('happy',3);
+        return {text:`You paid for the fan table dessert, winked, and vanished through the kitchen holding hands like a heist. The date was saved. Legend status: intact.`,tags:[['good','The kitchen escape']]}; }},
+    ]};}},
+
+/* Someone films your bad day */
+{ id:'fp_bad_day_filmed', weight:7, when:S=>_fpOK(S,32) && S.age>=18,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Your Worst Moment, in 4K 📱`,
+    text:`Bad news on the phone, a parking ticket in the rain, and you snapped at a slow crosswalk — and someone got ALL of it on camera. You can see them, right now, deciding whether to post.`,
+    choices:[
+      {label:'Confront them, demand they delete it', tip:`Risky`, apply:()=>{ if(rng(0,100)<40){ chg('happy',2); return {text:`You walked over, explained the day you were having, human to human. They deleted it while you watched. Some people are still people.`,tags:[['good','Deleted, decently']]}; }
+        karma(-4); chg('happy',-6); return {text:`The confrontation became PART TWO of the video. "Celebrity MELTS DOWN twice" outperformed everything you did on purpose this year.`,tags:[['bad','The meltdown, extended cut']]}; }},
+      {label:'Ignore it and walk away', apply:()=>{ chg('happy',-4);
+        if(rng(0,100)<50){ return {text:`It went up. Half the comments piled on; the other half wrote "let them have a bad day in peace." You did not read either half. Mostly.`,tags:[['bad','Bad day, published']]}; }
+        return {text:`They watched you walk off — and never posted it. You checked for a week. Nothing. A small mercy from a stranger.`,tags:[['good','Never posted']]}; }},
+      {label:'Post your own version first', tip:`Own the narrative`, apply:()=>{ if(rng(0,100)<60){ bumpFollowers(rng(4000,16000)); chg('happy',3); return {text:`"Rough day, snapped at a crosswalk, not proud of it — here is the unfiltered version." Your post beat theirs to the punch and turned a hit piece into a humanity moment.`,tags:[['good','Owned the narrative']]}; }
+        chg('happy',-3); return {text:`You posted a preemptive confession about a video most people never would have seen. Congratulations: you broke your own story. The internet thanks you for the content.`,tags:[['bad','Streisand-ed yourself']]}; }},
+    ]};}},
+
+/* A fake story spreads at family dinner */
+{ id:'fp_fake_story', weight:7, when:S=>_fpOK(S,32) && S.age>=20,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Tabloid at the Table 📰`,
+    text:`Family dinner. Someone slides a phone across the mashed potatoes: a tabloid story about you — secret feud, secret scandal, all fabricated. And from the look on Grandma's face, she believes every word.`,
+    choices:[
+      {label:'Laugh it off at the table', apply:()=>{ chg('happy',-2);
+        return {text:`"If I did half the things they print, I would need three of me." Most of the table laughed. Grandma still gives you a certain look over the gravy.`,tags:[['flag','Grandma has doubts']]}; }},
+      {label:'Sic the lawyers on the tabloid', tip:`Expensive · maybe a retraction`, apply:()=>{ const l=Math.min(S.money,rng(3000,15000)); money(-l);
+        if(rng(0,100)<55){ karma(1); bumpFame(1); return {text:`A retraction ran — page eleven, four sentences, ${cur()}${fmn(l)} in legal fees. You framed it and mailed a copy to Grandma. She has it on the fridge.`,tags:[['good','Retraction won']]}; }
+        chg('happy',-4); return {text:`${cur()}${fmn(l)} in fees later, the tabloid stands by its "sources." The lawsuit made three MORE outlets cover the original story. Cool. Great. Fine.`,tags:[['bad','Lawsuit backfired']]}; }},
+      {label:'Sit down with Grandma one-on-one', tip:`The real fix`, apply:()=>{ karma(3); chg('happy',4);
+        return {text:`You skipped the lawyers and spent an evening at her kitchen table with tea, explaining how tabloids work. "So they just... lie? For money?" Yes, Grandma. She is furious on your behalf now, which is its own army.`,tags:[['good','Grandma believes YOU']]}; }},
+    ]};}},
+
+/* An old friend acts different */
+{ id:'fp_old_friend', weight:7, when:S=>_fpOK(S,15) && S.age>=18,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`The Rehearsed Hug 🫂`,
+    text:`An old friend from before all this reaches out. But at coffee, something is off — they laugh a beat too loud, name-drop you to the waiter, and somewhere between refills, out comes a "business opportunity" they need you for.`,
+    choices:[
+      {label:'Call it out, honestly', tip:`Might save it · might end it`, apply:()=>{ if(rng(0,100)<50){ chg('happy',6); karma(2); return {text:`"You are performing for me and I hate it. Just be YOU." A terrible silence — then they exhaled, dropped the act, and you got your friend back. Best conversation in years.`,tags:[['good','Friendship rebooted']]}; }
+        chg('happy',-5); return {text:`They got defensive, then bitter — "must be nice, forgetting where you came from." The coffee went cold. So did twenty years.`,tags:[['bad','Lost an old friend']]}; }},
+      {label:'Play along, fund the "opportunity"', tip:`Buys peace · feels hollow`, apply:()=>{ const c=Math.min(S.money,rng(500,3000)); money(-c); chg('happy',-3); karma(1);
+        return {text:`You wrote the check and hugged the stranger wearing your friend's face. The venture will fail. The friendship already has — you just paid ${cur()}${fmn(c)} to avoid saying so.`,tags:[['bad',`Bought a hollow peace · -${cur()}${fmn(c)}`]]}; }},
+      {label:'Fade out quietly', apply:()=>{ chg('happy',-4); karma(-2);
+        return {text:`You let the texts go unanswered until they stopped coming. Cleaner than a fight, colder than one too. Fame did not take this friend — you both let go.`,tags:[['flag','Ghosted an old friend']]}; }},
+    ]};}},
+
+/* Your address leaks */
+{ id:'fp_address_leak', weight:7, when:S=>_fpOK(S,52) && S.age>=20,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Everyone Knows Where You Live 📍`,
+    text:`A forum posted your home address. By evening there are cars idling on the street, a drone over the yard, and gift baskets on the porch from strangers who should not know your porch exists.`,
+    choices:[
+      {label:'Move house', tip:`Very expensive · clean slate`, apply:()=>{ const c=Math.min(S.money,rng(25000,90000)); money(-c); chg('happy',-3); setFlag('movedForPrivacy');
+        return {text:`Boxes, movers, an LLC on the new deed and a lawyer between your name and your door. It cost ${cur()}${fmn(c)} and a home you loved — but the street is quiet again.`,tags:[['flag',`Moved for privacy · -${cur()}${fmn(c)}`]]}; }},
+      {label:'Hire security', tip:`Ongoing cost · fortress life`, apply:()=>{ const c=Math.min(S.money,rng(8000,25000)); money(-c); chg('happy',-2); setFlag('homeSecurity');
+        return {text:`Cameras, a gate, and a very calm man named after a Greek letter who now checks the perimeter at dawn. You feel safer. You also feel like an exhibit.`,tags:[['flag',`Fortified the house · -${cur()}${fmn(c)}`]]}; }},
+      {label:'Shrug it off', tip:`Cheapest · riskiest`, apply:()=>{ if(rng(0,100)<40){ chg('happy',-8); setFlag('intenseFan'); return {text:`Two weeks later you found a stranger in the garden at midnight, "just wanting to talk." Nobody was hurt. Nobody slept right for a month, either.`,tags:[['bad','Intruder in the garden']]}; }
+        chg('happy',-2); return {text:`The cars thinned out after a month. The internet has a short attention span — this time it worked in your favor.`,tags:[['flag','Rode out the leak']]}; }},
+    ]};}},
+
+/* A superfan at your door */
+{ id:'fp_superfan_door', weight:6, when:S=>_fpOK(S,52) && S.age>=20,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`The Knock 🚪`,
+    text:`The doorbell rings. On the step: a superfan, holding a scrapbook of your entire life — ticket stubs, printouts, photos of you that you have never seen. "I just needed to meet you once," they say. They are trembling.`,
+    choices:[
+      {label:'Talk gently at the door, sign, walk them out', tip:`Kind · sets no boundary`, apply:()=>{ karma(4);
+        if(rng(0,100)<30){ chg('happy',-4); setFlag('intenseFan'); return {text:`You gave them ten minutes and a signature — and last week, they were back with a second scrapbook. Kindness, they decided, was an invitation.`,tags:[['bad','They came back']]}; }
+        chg('happy',2); return {text:`You signed the scrapbook, walked them to the gate, and asked them — kindly and clearly — never to come to a home again. They cried, thanked you, and kept the promise.`,tags:[['good','Handled with grace']]}; }},
+      {label:'Do not open — call it in', tip:`Safe · feels cold`, apply:()=>{ chg('happy',-3);
+        return {text:`You watched through the peephole as a patrol car walked them off the property. They looked crushed, not dangerous — but you have read too many stories to gamble on the difference.`,tags:[['flag','Played it safe']]}; }},
+      {label:'Restraining order and a security consult', tip:`Costs money · hard boundary`, apply:()=>{ const c=Math.min(S.money,rng(2000,8000)); money(-c); chg('happy',-2); setFlag('homeSecurity');
+        return {text:`Paperwork, a court date, new cameras: ${cur()}${fmn(c)}. Clinical and cold and probably correct. The scrapbook haunts you a little anyway.`,tags:[['flag',`Hard boundary · -${cur()}${fmn(c)}`]]}; }},
+    ]};}},
+
+/* Coworkers treat you as the celebrity, not the colleague */
+{ id:'fp_coworker_celeb', weight:7, when:S=>_fpOK(S,15) && S.age>=18 && !!S.job,
+  build:S=>{ S._lastPerk=S.age; return { yr:`Age ${S.age}`, title:`Famous at the Office 🧑‍💼`,
+    text:`Work has gotten weird. Meetings go quiet when you enter. Nobody critiques your ideas anymore. Someone asked for an autograph in the supply room, and your boss keeps introducing you to clients like a zoo exhibit.`,
+    choices:[
+      {label:'Address it head-on at the team meeting', apply:()=>{ chg('happy',4); karma(2);
+        return {text:`"In this building I am a colleague, not a headline — argue with me, please." An awkward silence, then someone finally shredded your proposal like the old days. It felt WONDERFUL.`,tags:[['good','Colleague again']]}; }},
+      {label:'Lean into it', tip:`Fun · your work gets a free pass`, apply:()=>{ chg('happy',3); karma(-2); chg('smart',-2);
+        return {text:`You stopped correcting anyone. Your mediocre ideas now get applause, your errors get "interesting choice!" — and somewhere in the yes-chamber, you can feel yourself getting worse at your job.`,tags:[['bad','The yes-chamber']]}; }},
+      {label:'Be aggressively normal — donuts, small talk, chores', tip:`Slow fix`, apply:()=>{ const c=Math.min(S.money,rng(30,100)); money(-c); karma(3); chg('happy',3);
+        return {text:`You brought donuts, fixed the printer, took notes in meetings nobody wanted to take notes in. Within a month the awe wore off and someone stole your yogurt from the fridge. Victory.`,tags:[['good','Normalcy restored']]}; }},
+    ]};}},
+
+];
+
+/* ============================================================
+   FAME TRAVEL PERKS — one-liners for travel/flight flavor,
+   picked with pick() wherever trips render.
+   ============================================================ */
+
+const FAME_TRAVEL_PERKS = {
+  upgrade: [
+    `The gate agent does a double-take, types furiously, and hands back your boarding pass — seat 1A, "with our compliments."`,
+    `A flight attendant recognizes you mid-boarding and quietly reroutes you to first class before the curtain even closes.`,
+    `The hotel manager is waiting at check-in: your room "had an issue," so they moved you — to the penthouse suite, comped.`,
+    `The airline lounge waves you in without a card, and a glass of champagne finds your hand before you find a seat.`,
+    `The captain personally welcomes you aboard, and somewhere over the ocean the crew brings a dessert with your name piped in chocolate.`,
+  ],
+  mobbed: [
+    `Baggage claim turns into a meet-and-greet — forty selfies deep, your suitcase does three full laps of the carousel alone.`,
+    `Someone spots you at the gate and says your name too loudly; the whole terminal turns like a flock of pigeons.`,
+    `You wear sunglasses and a hat, and a teenager clocks you in four seconds flat: "I KNEW it was you by the WALK."`,
+    `Hotel staff sneak you through the kitchen exit while a crowd chants outside the lobby like you owe them an encore.`,
+    `A tour group re-routes itself mid-plaza to orbit you, and the guide starts narrating YOU like a landmark.`,
+  ],
+};
+
+/* 🎟️ PRIVATE INVITATIONS — fame/career-gated invites from brands, associations & people.
+   Shared cooldown: (S.age-(S._lastInv||-99))>=1, S._lastInv=S.age set in build.
+   Biggest once:true moments (lifetime tribute, wax figure) skip the cooldown. */
+const INVITE_EVENTS=[
+
+/* ============ TIER 1 — fame 15+ (locally known) ============ */
+
+{ id:'inv_restopen', once:false, weight:26, when:S=>S.age>=18 && (S.fame||0)>=15 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const rest=pick(['a fusion bistro','a rooftop taco bar','a farm-to-table place','a neon ramen joint','a steakhouse with a velvet rope']); return { yr:S.age, title:'🎟️ Restaurant Opening',
+    text:`An invitation arrives on thick card stock: the grand opening of <b>${rest}</b> downtown. The owner wants "local faces" at the tasting night — and you count, apparently.`,
+    choices:[
+      {label:'Attend and mingle', tip:'Free food · contacts', apply:()=>{ chg('happy',rng(2,5)); bumpFame(rng(0,2)); setFlag('inv_local_contact'); return {text:`You work the room between courses. The chef comps your whole table and the owner now greets you by name — a useful friend to have.`,tags:[['good','New local contact']]}; }},
+      {label:'Post a paid review', tip:'Cash · authenticity hit', apply:()=>{ const m=rng(300,1200); money(m); S.rep=clamp((S.rep||0)-rng(1,3),-100,100); return {text:`You gush online about food you barely tasted and pocket <b>${cur()}${fmn(m)}</b>. A few followers smell the sponsorship.`,tags:[['flag',`+${cur()}${fmn(m)}`]]}; }},
+      {label:'Feast like royalty', tip:'Shameless', apply:()=>{ chg('happy',rng(3,6)); karma(-1); return {text:`You order one of everything, twice, and leave without mingling at all. Delicious. The owner quietly crosses you off next year's list.`,tags:[['flag','Ate the whole menu']]}; }},
+      {label:'Send regrets', apply:()=>({text:`You pass. Somewhere downtown, a canapé goes uneaten in your honour.`,tags:[['flag','Declined']]})},
+    ]};}},
+
+{ id:'inv_radio', once:false, weight:24, when:S=>S.age>=18 && (S.fame||0)>=15 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; return { yr:S.age, title:'🎟️ Local Radio Guest Spot',
+    text:`The city's drive-time radio show invites you on air. Two hosts, one traffic report, and fifteen minutes that half the county will hear on their commute.`,
+    choices:[
+      {label:'Charm the hosts', tip:'Safe fame', apply:()=>{ bumpFame(rng(1,3)); bumpFollowers(rng(50,400)); chg('happy',rng(1,4)); return {text:`You banter, you land a joke about the traffic report, and the hosts beg you to come back. Clips of the segment make the rounds.`,tags:[['good','Radio darling']]}; }},
+      {label:'Overshare on air', tip:'Big fame · scandal risk', apply:()=>{ bumpFame(rng(2,6)); if(rng(0,100)<40){ ledgerAdd('scandal',rng(6,12),{note:'Said too much on live radio.'}); karma(-1); return {text:`You tell a story you absolutely should have kept private. The phones light up — some laughing, some furious.`,tags:[['bad','Live-air overshare']]}; } return {text:`You spill just enough to be irresistible. The segment goes semi-viral and everyone wants the rest of the story.`,tags:[['good','Great radio']]}; }},
+      {label:'Plug your work relentlessly', tip:'Money', apply:()=>{ const m=rng(200,900); money(m); bumpFame(rng(0,1)); return {text:`You mention your latest thing eleven times in fifteen minutes. Shameless — but it moves product: <b>${cur()}${fmn(m)}</b>.`,tags:[['good',`+${cur()}${fmn(m)}`]]}; }},
+    ]};}},
+
+{ id:'inv_ribbon', once:false, weight:24, when:S=>S.age>=18 && (S.fame||0)>=15 && (S.fame||0)<60 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const store=pick(['a hardware megastore','a car dealership','a frozen yogurt franchise','a discount mattress outlet','a supermarket']); const fee=rng(500,1500); return { yr:S.age, title:'🎟️ Ribbon-Cutting Ceremony',
+    text:`${store.charAt(0).toUpperCase()+store.slice(1)} wants YOU to cut the ribbon at their grand opening — giant scissors, local press, and a <b>${cur()}${fmn(fee)}</b> appearance fee.`,
+    choices:[
+      {label:'Take the check', tip:`+${cur()}${fmn(fee)}`, apply:()=>{ money(fee); bumpFame(rng(0,2)); return {text:`You smile, snip, and cash out <b>${cur()}${fmn(fee)}</b>. The local paper runs the photo with your name spelled almost correctly.`,tags:[['good',`+${cur()}${fmn(fee)}`]]}; }},
+      {label:'Do it for free, for the town', tip:'Goodwill', apply:()=>{ karma(3); bumpFame(rng(1,3)); chg('happy',rng(1,3)); return {text:`You waive the fee and shake every hand in the parking lot. The town notices. So does the local news.`,tags:[['good','Hometown hero']]}; }},
+      {label:'Demand double', tip:'Risky', apply:()=>{ if(rng(0,100)<45){ const m=fee*2; money(m); return {text:`They grumble, then pay. <b>${cur()}${fmn(m)}</b> for thirty seconds of scissor work.`,tags:[['good',`+${cur()}${fmn(m)}`]]}; } S.rep=clamp((S.rep||0)-rng(2,5),-100,100); return {text:`They hire the weather guy instead, and word spreads that you priced yourself out of a ribbon-cutting. Ouch.`,tags:[['bad','Priced out']]}; }},
+    ]};}},
+
+{ id:'inv_parade', once:false, weight:20, when:S=>S.age>=18 && (S.fame||0)>=15 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; return { yr:S.age, title:'🎟️ Parade Grand Marshal',
+    text:`The city council invites you to be grand marshal of the annual parade — a convertible, a sash, and several thousand people waving at you specifically.`,
+    choices:[
+      {label:'Wave with dignity', tip:'Wholesome', apply:()=>{ bumpFame(rng(1,3)); chg('happy',rng(2,5)); karma(1); return {text:`You wave until your arm aches. Kids point, grandmothers approve, and the sash is yours to keep.`,tags:[['good','Grand marshal']]}; }},
+      {label:'Showboat from the hood of the car', tip:'Fame swing · risk', apply:()=>{ bumpFame(rng(2,5)); if(rng(0,100)<35){ ledgerAdd('scandal',rng(5,10),{note:'Fell off a parade car mid-showboat.'}); chg('health',-rng(2,6)); return {text:`You climb onto the hood, hit a pothole, and become the parade's most replayed moment for the wrong reason.`,tags:[['bad','Parade tumble']]}; } return {text:`You ride the hood like a returning conqueror. The crowd eats it up and the photos are legendary.`,tags:[['good','Stole the parade']]}; }},
+      {label:'Decline the sash', apply:()=>({text:`You let the fire chief have his moment instead. The parade rolls on without you.`,tags:[['flag','Declined']]})},
+    ]};}},
+
+{ id:'inv_localgala', once:false, weight:20, when:S=>S.age>=18 && (S.fame||0)>=15 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const ch=[
+      {label:'Network the room', tip:'Contacts', apply:()=>{ setFlag('inv_local_contact'); bumpFame(rng(0,2)); chg('smarts',rng(0,1)); return {text:`You trade cards with half the chamber of commerce. Boring? Deeply. Useful? Extremely.`,tags:[['good','Well connected']]}; }},
+      {label:'Give a tipsy toast', tip:'Memorable · risky', apply:()=>{ chg('happy',rng(2,5)); if(rng(0,100)<40){ ledgerAdd('scandal',rng(4,9),{note:'A toast at the gala went off the rails.'}); karma(-1); return {text:`Your toast starts charming and ends with you naming names. The room goes very quiet, then very loud.`,tags:[['bad','Toast disaster']]}; } bumpFame(rng(1,3)); return {text:`Your slightly loose toast is the hit of the night. Three people ask if you do weddings.`,tags:[['good','Toast of the town']]}; }},
+      {label:'Eat and slip out early', apply:()=>{ chg('happy',rng(1,2)); return {text:`You clear the buffet, dodge the speeches, and are home by nine. A flawless operation.`,tags:[['flag','Ghosted the gala']]}; }},
+    ]; if(S.spouse) ch.push({label:'Bring your spouse', tip:'Date night', apply:()=>{ chg('happy',rng(2,5)); bumpFame(rng(0,2)); return {text:`You make it a date night. Your spouse charms the mayor better than you ever could, and the drive home is all laughter.`,tags:[['good','Power couple']]}; }});
+    return { yr:S.age, title:'🎟️ Chamber of Commerce Gala',
+    text:`The local business association invites you to its annual black-tie gala — rubber chicken, long speeches, and every person in town worth knowing.`, choices:ch };}},
+
+{ id:'inv_fanmeet', once:false, weight:20, when:S=>S.age>=18 && (S.fame||0)>=15 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; return { yr:S.age, title:'🎟️ Meet-and-Greet Signing',
+    text:`A bookstore invites you to a fan meet-and-greet. There is a line. An actual line, of actual people, waiting for you.`,
+    choices:[
+      {label:'Sign everything, hug everyone', tip:'Fans first', apply:()=>{ bumpFollowers(rng(100,600)); bumpFame(rng(1,2)); chg('happy',rng(2,5)); karma(2); return {text:`You stay two hours past closing and sign a cast, a car door, and one confused baby's onesie. The fans love you for it.`,tags:[['good','Fan favourite']]}; }},
+      {label:'Charge for selfies', tip:'Cash · cold', apply:()=>{ const m=rng(400,1600); money(m); karma(-2); S.rep=clamp((S.rep||0)-rng(1,4),-100,100); return {text:`Twenty bucks a photo. You bank <b>${cur()}${fmn(m)}</b> and at least one crying kid posts about it.`,tags:[['flag',`+${cur()}${fmn(m)}`]]}; }},
+      {label:'Bail last minute', tip:'Rude', apply:()=>{ bumpFame(-rng(1,3)); karma(-3); ledgerAdd('scandal',rng(3,7),{note:'No-showed a fan meet-and-greet.'}); return {text:`You ghost the whole event. The photo of the empty signing table does numbers online — not the good kind.`,tags:[['bad','No-show']]}; }},
+    ]};}},
+
+/* ============ TIER 2 — fame 32+ (rising star) ============ */
+
+{ id:'inv_premiere', once:false, weight:26, when:S=>S.age>=18 && (S.fame||0)>=32 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const film=pick(['a superhero threequel','an awards-bait period drama','a horror flick everyone is scared to screen','an animated blockbuster','a spy thriller']); const ch=[
+      {label:'Walk the carpet like you own it', tip:'Fame', apply:()=>{ bumpFame(rng(2,5)); bumpFollowers(rng(300,1500)); chg('happy',rng(2,4)); return {text:`Flashbulbs, your name shouted from the press pen, a perfect pose. The photos are everywhere by midnight.`,tags:[['good','Red carpet ready']]}; }},
+      {label:'Pull a diva moment', tip:'Huge fame swing · scandal', apply:()=>{ bumpFame(rng(3,8)); if(rng(0,100)<55){ ledgerAdd('scandal',rng(8,16),{note:'Diva meltdown on a premiere red carpet.'}); karma(-2); return {text:`You snap at a photographer and storm the rope line. The clip is inescapable — you are famous this week for all the wrong reasons.`,tags:[['bad','Carpet meltdown']]}; } return {text:`You sweep past the press with icy mystique and it somehow reads as star power. The internet crowns you.`,tags:[['good','Untouchable aura']]}; }},
+      {label:'Sell the invite', tip:'Cash · rep hit', apply:()=>{ const m=rng(2000,8000); money(m); S.rep=clamp((S.rep||0)-rng(3,7),-100,100); bumpFame(-rng(0,2)); return {text:`A crypto guy pays <b>${cur()}${fmn(m)}</b> for your seat. The studio notices the swap. You are quietly off next season's list.`,tags:[['flag',`+${cur()}${fmn(m)}`]]}; }},
+    ]; if(S.spouse) ch.push({label:'Bring your spouse', tip:'Couple goals', apply:()=>{ chg('happy',rng(3,6)); bumpFame(rng(1,3)); return {text:`You debut as a couple on the carpet. The photos are adorable, the captions are kind, and the ride home is giddy.`,tags:[['good','Couple debut']]}; }});
+    return { yr:S.age, title:'🎟️ Movie Premiere',
+    text:`A studio invites you to the world premiere of <b>${film}</b> — red carpet, press wall, and an after-screening you will hear about for months if you skip it.`, choices:ch };}},
+
+{ id:'inv_fashionweek', once:false, weight:24, when:S=>S.age>=18 && (S.fame||0)>=32 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; return { yr:S.age, title:'🎟️ Fashion Week — Front Row',
+    text:`A fashion house offers you a front-row seat at their runway show. Front row means cameras. Cameras mean everyone will see exactly what you wear.`,
+    choices:[
+      {label:'Dress impeccably and behave', tip:'Taste', apply:()=>{ bumpFame(rng(2,4)); chg('looks',rng(0,1)); bumpFollowers(rng(200,1200)); return {text:`Your outfit lands on three best-dressed lists. The designer sends a handwritten note and a garment bag.`,tags:[['good','Best dressed']]}; }},
+      {label:'Wear something outrageous', tip:'Fame swing · scandal risk', apply:()=>{ bumpFame(rng(3,7)); if(rng(0,100)<45){ ledgerAdd('scandal',rng(6,12),{note:'An outfit at fashion week caused an uproar.'}); return {text:`Your look is called "an act of aggression against fabric." It trends for four days. The fashion house is not amused.`,tags:[['bad','Fashion scandal']]}; } return {text:`Your unhinged outfit is declared genius by the right three people. You did not just attend fashion week — you WERE fashion week.`,tags:[['good','Fashion moment']]}; }},
+      {label:'Sell the seat', tip:'Cash · rep hit', apply:()=>{ const m=rng(3000,10000); money(m); S.rep=clamp((S.rep||0)-rng(3,6),-100,100); return {text:`An influencer pays <b>${cur()}${fmn(m)}</b> for your spot. The brand clocks the substitution instantly. Front row has eyes.`,tags:[['flag',`+${cur()}${fmn(m)}`]]}; }},
+    ]};}},
+
+{ id:'inv_brandlaunch', once:false, weight:24, when:S=>S.age>=18 && (S.fame||0)>=32 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const prod=pick(['a sneaker line','a phone','an energy drink','a fragrance','an electric scooter']); const fee=rng(5000,20000); return { yr:S.age, title:'🎟️ Brand Launch Party',
+    text:`A brand is launching <b>${prod}</b> and wants you at the party — <b>${cur()}${fmn(fee)}</b> to show up, smile, and be photographed holding the product.`,
+    choices:[
+      {label:'Take the paid appearance', tip:`+${cur()}${fmn(fee)}`, apply:()=>{ money(fee); bumpFame(rng(1,3)); return {text:`You hold the product at exactly the agreed angle for exactly the agreed hour. <b>${cur()}${fmn(fee)}</b>, easiest money of your year.`,tags:[['good',`+${cur()}${fmn(fee)}`]]}; }},
+      {label:'Negotiate harder', tip:'Greedy · risky', apply:()=>{ if(rng(0,100)<55){ const m=Math.round(fee*1.8); money(m); return {text:`Your people call their people. The fee climbs to <b>${cur()}${fmn(m)}</b>. Everyone pretends this was always the number.`,tags:[['good',`+${cur()}${fmn(m)}`]]}; } S.rep=clamp((S.rep||0)-rng(2,5),-100,100); return {text:`They book someone cheaper and hungrier. Word gets around that you are difficult about fees.`,tags:[['bad','Lost the gig']]}; }},
+      {label:'Attend unpaid, build the relationship', tip:'Long game', apply:()=>{ setFlag('inv_brand_contact'); bumpFame(rng(1,2)); karma(1); return {text:`You waive the fee and talk shop with the marketing director all night. There is a bigger deal in that handshake — someday.`,tags:[['good','Brand contact made']]}; }},
+    ]};}},
+
+{ id:'inv_magshoot', once:false, weight:22, when:S=>S.age>=18 && (S.fame||0)>=32 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; return { yr:S.age, title:'🎟️ Magazine Shoot',
+    text:`A glossy magazine wants you for a full-spread feature — hair, makeup, a photographer who only speaks in metaphors, and your face on ten thousand coffee tables.`,
+    choices:[
+      {label:'Do the shoot straight', tip:'Classic', apply:()=>{ bumpFame(rng(2,5)); chg('looks',rng(0,1)); chg('happy',rng(1,3)); return {text:`Eight hours, four outfits, one perfect cover frame. The issue sells out at the airport newsstands.`,tags:[['good','Cover story']]}; }},
+      {label:'Push for a daring concept', tip:'Big fame · scandal risk', apply:()=>{ bumpFame(rng(3,7)); if(rng(0,100)<40){ ledgerAdd('scandal',rng(6,13),{note:'A provocative magazine shoot divided the public.'}); return {text:`The shoot is provocative enough that two grocery chains refuse to stock the issue. Everyone buys it anyway — to be scandalized.`,tags:[['bad','Controversial spread']]}; } return {text:`The daring concept becomes THE cover of the year. Art schools will reference it. Your fame jumps a shelf.`,tags:[['good','Iconic cover']]}; }},
+      {label:'Demand photo approval', tip:'Control · may kill it', apply:()=>{ if(rng(0,100)<50){ bumpFame(rng(1,3)); return {text:`They cave. Every frame that runs is one you chose, and you look flawless in all of them.`,tags:[['good','Full control']]}; } return {text:`The magazine kills the feature rather than surrender approval. The spread goes to your rival instead.`,tags:[['bad','Shoot cancelled']]}; }},
+    ]};}},
+
+{ id:'inv_greenroom', once:false, weight:24, when:S=>S.age>=18 && (S.fame||0)>=32 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; return { yr:S.age, title:'🎟️ Late-Night Talk Show',
+    text:`A late-night talk show books you as a guest. The green room has a fruit plate with your name on it. Millions will watch you fill six minutes of couch time.`,
+    choices:[
+      {label:'Charm the couch', tip:'Safe fame', apply:()=>{ bumpFame(rng(2,5)); bumpFollowers(rng(500,2500)); chg('happy',rng(1,4)); return {text:`You land two stories and a genuinely great bit with the host. The clip does numbers and the booker pencils you in for next season.`,tags:[['good','Great segment']]}; }},
+      {label:'Spill a feud story', tip:'Viral · scandal', apply:()=>{ bumpFame(rng(4,8)); bumpFollowers(rng(1000,5000)); ledgerAdd('scandal',rng(7,14),{note:'Aired a feud on national television.'}); karma(-2); return {text:`You name names on national TV. The clip is viewed forty million times and the person you named is, reportedly, "considering options."`,tags:[['bad','Started a TV feud']]}; }},
+      {label:'Play it painfully safe', tip:'Forgettable', apply:()=>{ bumpFame(rng(0,1)); return {text:`You answer every question like a deposition. Pleasant, forgettable television. The fruit plate was the highlight.`,tags:[['flag','Played it safe']]}; }},
+    ]};}},
+
+{ id:'inv_podcast', once:false, weight:22, when:S=>S.age>=18 && (S.fame||0)>=32 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; return { yr:S.age, title:'🎟️ The Three-Hour Podcast',
+    text:`The biggest podcast in the country invites you on. Three hours, no edits, no publicist in the room. Careers have been made in that chair — and ended in it.`,
+    choices:[
+      {label:'Open up for real', tip:'Deep fame', apply:()=>{ bumpFame(rng(2,6)); bumpFollowers(rng(1500,6000)); chg('happy',rng(1,4)); return {text:`Hour two gets genuinely honest and the internet decides it likes the real you. Clips circulate for weeks with the caption "actually so real."`,tags:[['good','Won the internet']]}; }},
+      {label:'Say something unhinged on purpose', tip:'Explosive · scandal', apply:()=>{ bumpFame(rng(4,9)); bumpFollowers(rng(2000,9000)); if(rng(0,100)<60){ ledgerAdd('scandal',rng(9,18),{note:'An unhinged podcast take blew up.'}); karma(-2); return {text:`Your take detonates on impact. Three news cycles, two apology demands, one very rich clip channel. Fame is fame — right?`,tags:[['bad','Podcast firestorm']]}; } return {text:`Your wild take somehow becomes a beloved meme instead of a scandal. You have gamed the algorithm and lived.`,tags:[['good','Meme immortality']]}; }},
+      {label:'Plug the merch, take the check', tip:'Commerce', apply:()=>{ const m=rng(3000,12000); money(m); return {text:`You steer every answer back to the product. The host visibly gives up by hour two. Revenue: <b>${cur()}${fmn(m)}</b>.`,tags:[['flag',`+${cur()}${fmn(m)}`]]}; }},
+    ]};}},
+
+/* ============ TIER 3 — fame 52+ (celebrity) ============ */
+
+{ id:'inv_ballondor', once:false, weight:24, when:S=>{ const pa=proAthlete(); return S.age>=18 && (S.fame||0)>=52 && ((pa&&pa.sport==='soccer') || (S.fame||0)>=70) && (S.age-(S._lastInv||-99))>=1; },
+  build:S=>{ S._lastInv=S.age; const pa=proAthlete(); const ch=[
+      {label:'Attend in a tailored suit', tip:'Class', apply:()=>{ bumpFame(rng(2,5)); chg('happy',rng(2,5)); return {text:`Theatre du Chatelet, golden light, the greatest players alive in one room — and you, seated among them like you belong. Because you do.`,tags:[['good','Golden evening']]}; }},
+      {label:'Congratulate the winner graciously', tip:'Class act', apply:()=>{ karma(3); bumpFame(rng(1,3)); return {text:`Your warm embrace of the winner becomes the photo of the night. Grace, it turns out, photographs beautifully.`,tags:[['good','Pure class']]}; }},
+    ]; if(pa&&pa.sport==='soccer') ch.push({label:'Sulk when your name is not called', tip:'Petty · scandal', apply:()=>{ ledgerAdd('scandal',rng(7,14),{note:'Visibly sulked at the Ballon d’Or ceremony.'}); karma(-2); bumpFame(rng(1,4)); return {text:`The camera finds your face at exactly the wrong moment. The scowl becomes a meme format within the hour.`,tags:[['bad','Caught sulking']]}; }});
+    if(S.spouse) ch.push({label:'Bring your spouse', tip:'Date of the year', apply:()=>{ chg('happy',rng(3,6)); bumpFame(rng(1,3)); return {text:`You arrive together and the cameras cannot get enough. Somewhere between the trophies and the champagne, it becomes the best date of your year.`,tags:[['good','Golden couple']]}; }});
+    return { yr:S.age, title:'🎟️ Ballon d’Or Ceremony',
+    text:`A gold-embossed envelope from Paris: you are invited to the <b>Ballon d’Or ceremony</b>${pa&&pa.sport==='soccer'?` — and as a professional at ${pa.club||'your club'}, whispers say your name is somewhere on that long list`:''}. The whole football world will be in one theatre.`, choices:ch };}},
+
+{ id:'inv_ringside', once:false, weight:22, when:S=>S.age>=18 && (S.fame||0)>=52 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const ch=[
+      {label:'Soak in the spectacle', tip:'Vegas baby', apply:()=>{ bumpFame(rng(2,4)); chg('happy',rng(3,6)); return {text:`Blood, lights, a twelfth-round knockout you feel in your teeth. The broadcast cuts to your reaction twice. Vegas delivered.`,tags:[['good','Ringside royalty']]}; }},
+      {label:'Bet big on camera', tip:'Money swing · optics', apply:()=>{ const stake=rng(10000,40000); if(rng(0,100)<45){ const w=stake*2; money(w); bumpFame(rng(1,3)); return {text:`Your fighter wins by decision and you collect <b>${cur()}${fmn(w)}</b> — the clip of you celebrating the payout goes everywhere.`,tags:[['good',`+${cur()}${fmn(w)}`]]}; } spend(stake); ledgerAdd('scandal',rng(3,8),{note:'Caught losing a huge ringside bet on camera.'}); return {text:`Your fighter goes down in the fourth and so does <b>${cur()}${fmn(stake)}</b> — with your face on the jumbotron the moment it happens.`,tags:[['bad',`-${cur()}${fmn(stake)}`]]}; }},
+      {label:'Jump the barricade at the finish', tip:'Chaos · scandal', apply:()=>{ bumpFame(rng(3,7)); ledgerAdd('scandal',rng(6,13),{note:'Jumped the barricade at a Vegas title fight.'}); karma(-1); return {text:`You vault the rope to celebrate with the champ and security politely tackles you. Iconic footage; slightly bruised ribs.`,tags:[['bad','Tackled in Vegas']]}; }},
+      {label:'Sell the seats', tip:'Cash · rep hit', apply:()=>{ const m=rng(8000,25000); money(m); S.rep=clamp((S.rep||0)-rng(3,7),-100,100); return {text:`A hedge fund guy pays <b>${cur()}${fmn(m)}</b> for your ringside pair. The promoter, who comped them, is not thrilled.`,tags:[['flag',`+${cur()}${fmn(m)}`]]}; }},
+    ]; return { yr:S.age, title:'🎟️ Ringside in Vegas',
+    text:`A boxing promoter comps you two ringside seats for the heavyweight title fight in Las Vegas. Close enough to feel the sweat. Every camera in the arena knows where the celebrities sit.`, choices:ch };}},
+
+{ id:'inv_afterparty', once:false, weight:22, when:S=>S.age>=18 && (S.fame||0)>=52 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const ch=[
+      {label:'Network with the A-list', tip:'Contacts', apply:()=>{ setFlag('inv_alist_contact'); bumpFame(rng(2,4)); return {text:`By 2 a.m. you have three new phone numbers that used to be unreachable. This room is where next year gets decided.`,tags:[['good','A-list contacts']]}; }},
+      {label:'Party like it is your last night', tip:'Fun · risky', apply:()=>{ chg('happy',rng(4,8)); chg('health',-rng(1,4)); if(rng(0,100)<40){ ledgerAdd('scandal',rng(6,12),{note:'After-party antics leaked online.'}); return {text:`Somewhere around 4 a.m. someone films you dancing on the piano. The video escapes the party before you do.`,tags:[['bad','Leaked footage']]}; } return {text:`A perfect, blurry, glorious night. What happened at the party mercifully stays there.`,tags:[['good','Legendary night']]}; }},
+      {label:'One drink, then home with dignity', tip:'Discipline', apply:()=>{ karma(1); chg('health',rng(0,2)); return {text:`You make one perfect lap of the room and vanish like a professional. Mystique intact, liver grateful.`,tags:[['good','French exit']]}; }},
+    ]; if(S.spouse) ch.push({label:'Bring your spouse', tip:'Together', apply:()=>{ chg('happy',rng(3,6)); return {text:`You dance with your spouse while the famous people orbit around you. Best party either of you can half-remember.`,tags:[['good','Danced till dawn']]}; }});
+    return { yr:S.age, title:'🎟️ Awards After-Party',
+    text:`The invitation everyone actually wants: the after-party following the big awards show. No cameras inside — allegedly. The guest list is the industry itself.`, choices:ch };}},
+
+{ id:'inv_ambassador', once:false, weight:20, when:S=>S.age>=18 && (S.fame||0)>=52 && !has('lux_ambassador') && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const brand=pick(['a Swiss watchmaker','a Parisian fashion house','an Italian sports-car marque','a champagne house','a jewellery maison']); const sign=rng(80000,250000); return { yr:S.age, title:'🎟️ Ambassadorship Offer',
+    text:`${brand.charAt(0).toUpperCase()+brand.slice(1)} flies you first class to a private showing — then slides a folder across the table: <b>brand ambassador</b>. Signing bonus of <b>${cur()}${fmn(sign)}</b> plus a yearly retainer, in exchange for your face and your loyalty.`,
+    choices:[
+      {label:'Sign the deal', tip:`+${cur()}${fmn(sign)} · yearly retainer`, apply:()=>{ money(sign); setFlag('lux_ambassador'); bumpFame(rng(2,4)); return {text:`You sign with their heaviest pen. <b>${cur()}${fmn(sign)}</b> lands immediately, with a retainer arriving every year you keep the brand's halo polished.`,tags:[['good',`Ambassador · +${cur()}${fmn(sign)}`]]}; }},
+      {label:'Hold out for more', tip:'Bold · they may walk', apply:()=>{ if(rng(0,100)<50){ const m=Math.round(sign*1.6); money(m); setFlag('lux_ambassador'); bumpFame(rng(2,4)); return {text:`Silence, a phone call to Geneva, a new folder. <b>${cur()}${fmn(m)}</b> up front and the retainer to match. Never accept the first folder.`,tags:[['good',`Ambassador · +${cur()}${fmn(m)}`]]}; } S.rep=clamp((S.rep||0)-rng(2,5),-100,100); return {text:`They close the folder, thank you for your time, and sign your rival the following week. The first-class flight home feels very long.`,tags:[['bad','Deal walked']]}; }},
+      {label:'Stay independent', tip:'Freedom', apply:()=>{ karma(2); S.rep=clamp((S.rep||0)+rng(1,4),-100,100); chg('happy',rng(1,3)); return {text:`You decline politely. No logo owns your face. The refusal itself becomes a small legend in the industry.`,tags:[['good','Unbought']]}; }},
+    ]};}},
+
+{ id:'inv_auction', once:false, weight:20, when:S=>S.age>=18 && (S.fame||0)>=52 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const piece=pick(['a brooding abstract in oxblood red','a chrome sculpture of a melting phone','a tiny Dutch still life with a suspicious provenance','a neon installation that hums in E flat','a canvas that is, genuinely, just blue']); return { yr:S.age, title:'🎟️ Art Auction Preview',
+    text:`An auction house invites you to a private preview night — champagne, hushed voices, and <b>${piece}</b> that everyone pretends to understand.`,
+    choices:[
+      {label:'Bid on the piece', tip:'Expensive taste', apply:()=>{ const c=rng(20000,90000); if(S.money<c) return {text:`You raise your paddle with confidence your bank account does not share. The auctioneer moves on. Mortifying.`,tags:[['bad','Outbid by reality']]}; spend(c); chg('happy',rng(2,5)); bumpFame(rng(1,3)); return {text:`Yours for <b>${cur()}${fmn(c)}</b>. It hangs in your hallway now, confusing guests and appreciating — probably.`,tags:[['good',`Bought art · -${cur()}${fmn(c)}`]]}; }},
+      {label:'Sip champagne and collect collectors', tip:'Network', apply:()=>{ setFlag('inv_collector_contact'); bumpFame(rng(1,2)); chg('smarts',rng(0,1)); return {text:`You skip the bidding and befriend the people who never need to bid. Old money makes excellent conversation.`,tags:[['good','Collector circle']]}; }},
+      {label:'Loudly call it overrated', tip:'Contrarian · risky', apply:()=>{ bumpFame(rng(1,4)); if(rng(0,100)<45){ ledgerAdd('scandal',rng(4,9),{note:'Trashed a major artwork at a preview — in front of the artist.'}); karma(-1); return {text:`"My kid could paint that," you announce — directly to the artist, it turns out. The art world has a long memory and a group chat.`,tags:[['bad','Insulted the artist']]}; } return {text:`Your withering take gets quoted in an art magazine as "refreshing philistinism." Somehow, a compliment.`,tags:[['good','Refreshing philistine']]}; }},
+    ]};}},
+
+{ id:'inv_charityauction', once:false, weight:20, when:S=>S.age>=18 && (S.fame||0)>=52 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; return { yr:S.age, title:'🎟️ Celebrity Charity Auction',
+    text:`A children's hospital foundation invites you to headline their charity auction. They would love a donation — or better, something only YOU can offer on the block.`,
+    choices:[
+      {label:'Auction a dinner with yourself', tip:'Karma · fame', apply:()=>{ const raised=rng(15000,60000); karma(4); bumpFame(rng(2,4)); chg('happy',rng(2,4)); return {text:`Dinner with you sells for <b>${cur()}${fmn(raised)}</b> — every cent to the hospital. The winning bidder talks about their startup for three hours. Worth it.`,tags:[['good',`Raised ${cur()}${fmn(raised)}`]]}; }},
+      {label:'Write a big check quietly', tip:'Generous', apply:()=>{ const d=Math.max(5000,Math.min(50000,Math.round((S.money||0)*0.05))); if(S.money<d) return {text:`You reach for the checkbook and remember the balance. You applaud generously instead.`,tags:[['flag','Applauded instead']]}; spend(d); karma(5); return {text:`You give <b>${cur()}${fmn(d)}</b> with no cameras and no speech. The foundation director hugs you like family.`,tags:[['good',`Donated ${cur()}${fmn(d)}`]]}; }},
+      {label:'Attend, smile, give nothing', tip:'Optics only', apply:()=>{ bumpFame(rng(0,2)); karma(-2); return {text:`You pose with the giant novelty check that other people funded. A gossip column does the math on your contribution: zero.`,tags:[['flag','Photo-op philanthropy']]}; }},
+    ]};}},
+
+{ id:'inv_royal', once:true, weight:18, when:S=>S.age>=18 && (S.fame||0)>=52 && !has('royal_garden') && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const ch=[
+      {label:'Mind every manner you own', tip:'Impeccable', apply:()=>{ setFlag('royal_garden'); bumpFame(rng(2,5)); karma(2); chg('happy',rng(2,5)); return {text:`You bow at the correct depth, hold the teacup at the correct angle, and exchange eleven flawless words with actual royalty. Grandma would faint.`,tags:[['good','Received at the palace']]}; }},
+      {label:'Sneak a selfie with the monarch', tip:'Viral · protocol breach', apply:()=>{ setFlag('royal_garden'); bumpFame(rng(4,8)); bumpFollowers(rng(3000,12000)); ledgerAdd('scandal',rng(6,13),{note:'Breached royal protocol for a selfie.'}); karma(-1); return {text:`The selfie breaks the internet and several centuries of protocol. A palace spokesperson calls it "regrettable." Your followers call it legendary.`,tags:[['bad','Protocol breach']]}; }},
+      {label:'Pocket a palace teaspoon', tip:'Do not', apply:()=>{ setFlag('royal_garden'); karma(-4); if(rng(0,100)<35){ ledgerAdd('scandal',rng(8,16),{note:'Caught pocketing palace silverware.'}); bumpFame(rng(1,4)); return {text:`A footman sees everything. Footmen always see everything. The tabloid headline writes itself: SPOON RAIDER.`,tags:[['bad','Caught red-handed']]}; } return {text:`One small teaspoon, one enormous secret. It sits in your drawer radiating guilt and history.`,tags:[['flag','Souvenir acquired']]}; }},
+    ]; if(S.spouse) ch.push({label:'Bring your spouse', tip:'Once in a lifetime', apply:()=>{ setFlag('royal_garden'); chg('happy',rng(4,7)); bumpFame(rng(2,4)); return {text:`You and your spouse stroll the palace lawns arm in arm. Whatever else life holds, you will always have this afternoon.`,tags:[['good','A royal afternoon']]}; }});
+    return { yr:S.age, title:'🎟️ Royal Garden Party',
+    text:`A stiff envelope bearing an actual royal crest: you are invited to a <b>garden party at the palace</b>. Morning dress, hats, cucumber sandwiches, and rules older than your country.`, choices:ch };}},
+
+/* ============ TIER 4 — fame 70+ (A-list) ============ */
+
+{ id:'inv_island', once:false, weight:20, when:S=>S.age>=18 && (S.fame||0)>=70 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; return { yr:S.age, title:'🎟️ Private Island Party',
+    text:`A jet is waiting. Destination: a billionaire's private island, three days, phones "discouraged." The guest list is forty people the world would pay to eavesdrop on.`,
+    choices:[
+      {label:'Go, and keep the secrets', tip:'Inner circle', apply:()=>{ chg('happy',rng(4,8)); bumpFame(rng(1,3)); setFlag('inv_inner_circle'); return {text:`Three days of impossible sunsets and conversations that will never be printed. You leave with a tan and standing invitations for life.`,tags:[['good','Inner circle now']]}; }},
+      {label:'Post everything', tip:'Followers · betrayal', apply:()=>{ bumpFollowers(rng(5000,20000)); bumpFame(rng(2,5)); ledgerAdd('scandal',rng(7,14),{note:'Leaked photos from a private island gathering.'}); S.rep=clamp((S.rep||0)-rng(4,8),-100,100); karma(-2); return {text:`Your photo dump breaks the unspoken rule of the island. Followers pour in; the jet, notably, never comes back for you.`,tags:[['bad','Burned the bridge']]}; }},
+      {label:'Decline — quiet year', tip:'Peace', apply:()=>{ karma(1); chg('happy',rng(1,3)); return {text:`You send regrets and spend the weekend gloriously unphotographed. The mystique of the unattainable suits you.`,tags:[['good','Chose peace']]}; }},
+    ]};}},
+
+{ id:'inv_gala100', once:false, weight:20, when:S=>S.age>=18 && (S.fame||0)>=70 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const ch=[
+      {label:'Give a gracious toast', tip:'Statesmanlike', apply:()=>{ bumpFame(rng(2,5)); karma(2); return {text:`Your ninety-second toast about influence and responsibility gets quoted in three commencement speeches by June. Statesmanlike.`,tags:[['good','The toast of the gala']]}; }},
+      {label:'Drop a scorching hot take at the mic', tip:'Headlines · scandal', apply:()=>{ bumpFame(rng(3,8)); if(rng(0,100)<55){ ledgerAdd('scandal',rng(8,16),{note:'A hot take at the influence gala split the room.'}); karma(-1); return {text:`Half the ballroom applauds, half sits in pointed silence, and every outlet leads with your quote by morning.`,tags:[['bad','Divided the room']]}; } return {text:`The room holds its breath — then rises. Your gamble becomes the moment of the night, and the year.`,tags:[['good','Owned the room']]}; }},
+      {label:'Work the mogul tables', tip:'Contacts', apply:()=>{ setFlag('inv_mogul_contact'); bumpFame(rng(1,2)); chg('smarts',rng(0,1)); return {text:`You skip dessert to sit with people who own things you cannot see from the ground. Numbers are exchanged. Doors will open.`,tags:[['good','Mogul contacts']]}; }},
+    ]; if(S.spouse) ch.push({label:'Bring your spouse', tip:'Power entrance', apply:()=>{ chg('happy',rng(3,6)); bumpFame(rng(1,3)); return {text:`The two of you enter to a small wave of turned heads. The seating chart put you at the center table — where you belong.`,tags:[['good','Center table']]}; }});
+    return { yr:S.age, title:'🎟️ The Influence 100 Gala',
+    text:`You have been named to a magazine's list of the <b>100 most influential people alive</b> — and invited to the gala where all hundred sit in one candle-lit ballroom.`, choices:ch };}},
+
+{ id:'inv_yacht', once:false, weight:20, when:S=>S.age>=18 && (S.fame||0)>=70 && (S.age-(S._lastInv||-99))>=1,
+  build:S=>{ S._lastInv=S.age; const ch=[
+      {label:'Talk business on the top deck', tip:'Money door', apply:()=>{ if(rng(0,100)<50){ const m=rng(50000,300000); money(m); setFlag('inv_mogul_contact'); return {text:`Somewhere off the coast, over impossibly cold wine, a deal takes shape. Your cut lands the following month: <b>${cur()}${fmn(m)}</b>.`,tags:[['good',`+${cur()}${fmn(m)}`]]}; } setFlag('inv_mogul_contact'); return {text:`No deal this trip — but the mogul saves your number under your actual name, which insiders say is the real prize.`,tags:[['good','On the list']]}; }},
+      {label:'Party from bow to stern', tip:'Fun · risk', apply:()=>{ chg('happy',rng(4,8)); chg('health',-rng(1,4)); if(rng(0,100)<35){ ledgerAdd('scandal',rng(6,12),{note:'Yacht party antics photographed by a passing drone.'}); return {text:`A paparazzi drone catches the exact moment you swan-dive off the second deck in formalwear. Majestic. Regrettable. Everywhere.`,tags:[['bad','Drone photos']]}; } return {text:`Three days of sun, bass, and zero consequences. You dock happier than you have been in years.`,tags:[['good','Seaworthy legend']]}; }},
+      {label:'Politely pass', tip:'Boundaries', apply:()=>{ karma(1); return {text:`You send a bottle of something old and stay ashore. Moguls respect scarcity more than attendance.`,tags:[['flag','Stayed ashore']]}; }},
+    ]; if(S.spouse) ch.push({label:'Bring your spouse', tip:'Second honeymoon', apply:()=>{ chg('happy',rng(4,7)); return {text:`You claim the guest cabin with the balcony and treat it as a stolen honeymoon. The mogul barely sees either of you.`,tags:[['good','Stolen honeymoon']]}; }});
+    return { yr:S.age, title:'🎟️ The Mogul’s Yacht',
+    text:`A tech mogul invites you aboard a 120-meter yacht for a long weekend in the Mediterranean. Helipad, cinema, submarine — and, rumor has it, a business proposition.`, choices:ch };}},
+
+/* ============ TIER 5 — fame 85+ (icon) ============ */
+
+{ id:'inv_lifetime', once:true, weight:30, when:S=>S.age>=40 && (S.fame||0)>=85 && !has('lifetime_tribute'),
+  build:S=>{ return { yr:S.age, title:'🎟️ Lifetime Achievement Tribute',
+    text:`They are giving you a <b>lifetime achievement tribute</b> — an evening where everyone you have ever worked with, loved, or feuded with gathers to celebrate what you built. There is a montage. Of course there is a montage.`,
+    choices:[
+      {label:'Give the tearful speech', tip:'Legacy', apply:()=>{ setFlag('lifetime_tribute'); bumpFame(rng(3,6)); chg('happy',rng(5,9)); karma(3); return {text:`You thank the ones who carried you, your voice breaks exactly once, and the room stands for two full minutes. The montage was good. The moment was better.`,tags:[['good','A standing ovation']]}; }},
+      {label:'Dedicate it all to your family', tip:'Heart', apply:()=>{ setFlag('lifetime_tribute'); karma(5); chg('happy',rng(4,8)); bumpFame(rng(1,4)); return {text:`You call your family up to the stage and put the award in their hands. "This was never mine alone." Not a dry eye in the building.`,tags:[['good','Family first']]}; }},
+      {label:'Thank absolutely no one', tip:'Villain arc', apply:()=>{ setFlag('lifetime_tribute'); bumpFame(rng(2,6)); karma(-3); ledgerAdd('scandal',rng(5,11),{note:'Thanked no one at a lifetime tribute.'}); return {text:`"I did this myself," you say, and set the award down like a mic drop. Half the room gasps, the other half secretly loves it. The clip is eternal.`,tags:[['bad','Thanked nobody']]}; }},
+    ]};}},
+
+{ id:'inv_wax', once:true, weight:28, when:S=>S.age>=25 && (S.fame||0)>=85 && !has('wax_figure'),
+  build:S=>{ return { yr:S.age, title:'🎟️ Wax Figure Unveiling',
+    text:`A world-famous wax museum has spent eight months sculpting <b>you</b>. Today the curtain comes off, with press in attendance and your uncanny twin standing very, very still.`,
+    choices:[
+      {label:'Pose motionless beside it', tip:'Prank the crowd', apply:()=>{ setFlag('wax_figure'); bumpFame(rng(2,5)); bumpFollowers(rng(4000,15000)); chg('happy',rng(3,6)); return {text:`You stand frozen next to the figure until a tourist pokes your arm and screams. The prank video hits fifty million views. Immortality, achieved twice in one day.`,tags:[['good','Waxed and viral']]}; }},
+      {label:'Joke that it is better looking', tip:'Charm', apply:()=>{ setFlag('wax_figure'); bumpFame(rng(1,4)); karma(1); chg('happy',rng(2,5)); return {text:`"Finally, a version of me that shows up on time." The press laughs, the sculptor beams, and the quote runs under every photo.`,tags:[['good','Charmed the room']]}; }},
+      {label:'Complain it looks nothing like you', tip:'Diva · scandal', apply:()=>{ setFlag('wax_figure'); karma(-2); ledgerAdd('scandal',rng(4,10),{note:'Trashed their own wax figure at the unveiling.'}); bumpFame(rng(1,3)); return {text:`"Who is THAT supposed to be?" you demand, on camera, beside a heartbroken sculptor. The museum keeps the figure up anyway — some say out of spite.`,tags:[['bad','Insulted the wax']]}; }},
+    ]};}},
+
+];
+
+try{ EVENTS.push(...FAME_PERK_EVENTS, ...INVITE_EVENTS); }catch(e){}
+/* ===== end fame content ===== */
 try{ applyTheme(currentTheme()); }catch(e){}   // 🎨 apply the saved appearance theme on load
 try{ initSoundLabel(); }catch(e){}             // 🔊 sync the sound-toggle label
 try{ initLang(); }catch(e){}      // apply saved UI language on load
