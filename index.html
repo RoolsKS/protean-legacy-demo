@@ -1655,12 +1655,33 @@ function onRelativeDeath(p){
   let txt=`<b>${p.name}</b> (${p.rel}) has passed away at ${p.age} — ${cause}.`;
   const tags=[['bad',`Lost: ${p.rel}`]];
   chg('happy', -Math.round(p.affinity/12));
-  if(p.gen<0 && p.affinity>=55){            // first seed of the LEGACY system
-    const inh = p.gen===-2?rng(500,4000):rng(2000,15000);
-    money(inh); setFlag('inherited_from_'+p.id);
-    txt+=` They left you $${inh.toLocaleString()}.`;
-    tags.push(['echo',`Inheritance +$${inh.toLocaleString()}`]);
-  }
+  const w=p.wealth||0, aff=p.affinity||40;
+  // 📋 THE ESTATE — what a life was actually worth, and where it goes
+  const houses = w>=1e9?rng(4,14) : w>=1e8?rng(2,7) : w>=1e7?rng(1,4) : w>=1e6?rng(0,2) : (w>=2e5?rng(0,1):0);
+  const cars   = w>=1e9?rng(8,40) : w>=1e8?rng(4,16) : w>=1e7?rng(2,6) : w>=1e6?rng(1,3) : rng(0,1);
+  const biz    = w>=1e9?rng(2,6) : w>=1e8?rng(1,3) : w>=1e7?rng(0,2) : 0;
+  const kids   = w>=1e8?rng(2,6) : rng(1,4);          // their own children — the estate splits among these + you
+  const lovers = w>=1e8?rng(1,5) : (w>=1e6?rng(0,3):rng(0,1));
+  // your share, by how close a relative they were and how close you two were, split among the heirs, minus tax & charity
+  const tier = /Mother|Father/.test(p.rel)&&!/Grand/.test(p.rel)?0.45 : /Grand/.test(p.rel)?0.10 : /Brother|Sister/.test(p.rel)?0.22 : /Aunt|Uncle/.test(p.rel)?0.06 : 0.03;
+  const closeness = clamp(aff/100, 0.2, 1);
+  const netKept = 0.35 + rand()*0.30;                 // 35–65% survives taxes/charity/debts
+  let inh = 0;
+  if(aff>=40 || w>=1e6){ inh = Math.max(0, Math.round(w * tier / (kids+1) * closeness * netKept)); if(w<1e6 && inh<300) inh=rng(300,4000); }
+  // 🏡🚗 you may inherit actual ASSETS if you were a favoured heir
+  let gotHouse=false, gotCar=false;
+  if(houses>0 && aff>=55 && rng(0,100)<58 && S.assets){ const hv=Math.round((w>=1e9?rng(3e6,5e7):w>=1e7?rng(5e5,5e6):rng(1.2e5,9e5))*(0.5+(COUNTRIES[S.country]?COUNTRIES[S.country].col:50)/120));
+    S.assets.properties=S.assets.properties||[]; S.assets.properties.push({type:pick(['Estate','Villa','Family Home','Country House','Townhouse','Penthouse']), icon:'🏡', br:rng(3,8), ba:rng(2,6), garage:rng(1,4), age:rng(8,90), condition:rng(58,92), value:hv, up:Math.max(200,Math.round(hv*0.0008)), primary:!has('owns_home'), inherited:true, from:p.name});
+    if(!has('owns_home'))setFlag('owns_home'); gotHouse=true; }
+  if(cars>0 && aff>=50 && rng(0,100)<52 && S.assets){ const cv=Math.round((w>=1e9?rng(90000,450000):w>=1e6?rng(18000,90000):rng(3000,20000))*priceMult());
+    S.assets.vehicles=S.assets.vehicles||[]; S.assets.vehicles.push({name:pick(['Classic Car','Vintage Roadster','Luxury Sedan','Grand Tourer','Old Pickup']), makeModel:`${p.name.split(' ')[0]}'s car`, icon:'🚗', value:cv, g:true, parked:'garage', inherited:true, from:p.name}); gotCar=true; }
+  if(inh>0){ money(inh); setFlag('inherited_from_'+p.id); tags.push(['echo',`Inheritance +${cur()}${inh.toLocaleString()}`]); }
+  // the reveal — how much they REALLY had, and where it went
+  if(w>=1e6){
+    const others=[]; if(houses)others.push(`${houses} propert${houses===1?'y':'ies'}`); if(cars)others.push(`${cars} car${cars>1?'s':''}`); if(biz)others.push(`${biz} business${biz>1?'es':''}`);
+    txt+=`<br>📋 <b>The estate</b>: ${p.name.split(' ')[0]} died worth <b>${fcm(w)}</b> — ${others.join(', ')}, ${kids} child${kids>1?'ren':''}${lovers>=1?`, and ${lovers} lover${lovers>1?'s':''} the family don't discuss`:''}. After the taxman, charity and ${kids} other heir${kids>1?'s':''}, your share: <b>${cur()}${inh.toLocaleString()}</b>${gotHouse?` + a ${'🏡'} property`:''}${gotCar?`${gotHouse?' and':' + a'} 🚗 car`:''}.`;
+  } else if(inh>0){ txt+=` They left you ${cur()}${inh.toLocaleString()}${gotHouse?` and a home 🏡`:''}${gotCar?`${gotHouse?', plus':' and'} a car 🚗`:''}.`; }
+  if(gotHouse||gotCar) tags.push(['good',`Inherited ${gotHouse?'a home':''}${gotHouse&&gotCar?' & ':''}${gotCar?'a car':''}`]);
   pushLog(txt,tags);
   (S._deathQueue=S._deathQueue||[]).push({id:p.id,name:p.name,rel:p.rel,age:p.age,cause,aff:p.affinity||40});   // → a funeral pop-up with choices (fired via the event system)
 }
