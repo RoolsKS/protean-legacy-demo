@@ -1716,7 +1716,17 @@ function firstFamilyInit(){
   p.job='President'; p.potus=true;
   const actualRel = /Mother|Father/.test(p.rel)?'parent' : /Grand/.test(p.rel)?'grandparent' : /Brother|Sister/.test(p.rel)?'sibling' : /Aunt|Uncle/.test(p.rel)?'aunt' : 'parent';   // relation MUST match the NPC actually chosen
   const goodness=rng(-60,85);
+  // 🌍 GOVERNMENT RULE (mirrors royalty-in-exile): you head a PRESIDENTIAL republic. If your birth country HAS a president,
+  // that is the office your relative holds. If it is a monarchy / PM state, they preside over ANOTHER country that does.
+  let presCountry=S.country;
+  if((COUNTRIES[S.country]&&COUNTRIES[S.country].gov)!=='President'){
+    const reps=Object.keys(COUNTRIES).filter(c=>c!==S.country && COUNTRIES[c].gov==='President');
+    presCountry = reps.length ? reps[rng(0,reps.length-1)] : S.country;
+  }
+  const foreign = presCountry!==S.country;
+  if(P(p.id)) P(p.id).job = foreign ? `President of ${countryName(presCountry)}` : 'President';
   S.potus={ id:p.id, name:p.name, relation:actualRel, title:'President', party:pick(POTUS_PARTIES),
+    country:presCountry, foreign,
     approval: clamp(50 + Math.round(goodness/4) + rng(-12,12), 20, 88),
     goodness, inOffice:true, term:1, yearsInOffice:0, endYear:rng(9,18),   // stays in office through much of your childhood/teens, then leaves
     codeName: pick(POTUS_CODENAMES), secretService:true };
@@ -1732,11 +1742,11 @@ function potusYear(){
     // a mid-run re-election beat (once), then the term runs until roughly your teen years — or ends early if they are deeply unpopular
     if(!pt._reelected && pt.yearsInOffice>=4 && S.age < (pt.endYear||14)-1){
       if(pt.approval>=44){ pt._reelected=true; pt.term=2; pushLog(`🗳️ ${pt.name} won <b>re-election</b> — another term in the highest office.`,[['good','Re-elected']]); }
-      else { pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job='former President'; setFlag('former_first_family');
+      else { pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job = pt.foreign ? 'former President of '+countryName(pt.country) : 'former President'; setFlag('former_first_family');
         pushLog(`🗳️ ${pt.name} <b>lost re-election</b>. The family packs up the residence; the motorcades thin.`,[['bad','Voted out']]); }
     }
     if(pt.inOffice && (S.age>=(pt.endYear||14) || (pt.approval<24 && rand()<0.12))){
-      pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job='former President'; setFlag('former_first_family');
+      pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job = pt.foreign ? 'former President of '+countryName(pt.country) : 'former President'; setFlag('former_first_family');
       pushLog(`🏛️ ${pt.name}'s time in office has <b>ended</b>. The motorcades thin, the world moves on — but you will always be a former first-family member.`,[['echo','The term ends']]);
     }
   } else {
@@ -2856,7 +2866,9 @@ function birthNarrative(){
   else if(S.origin==='royal') t+=`<br>I was born <b>ROYAL</b> — but not here. The crown of <b>${S.royal?countryName(S.royal.crownCountry):'a distant kingdom'}</b> ${S.royal?countryFlag(S.royal.crownCountry):''} sits with my grandfather. My ${P('dad')?'father':'parent'} walked away from court to raise me in ${COUNTRIES[S.country].name} — "just for a few years," they say. A trust of <b>${fcm(S.money)}</b> waits in my name, and so does the palace. 👑`;
   else if(S.origin==='rich_kid') t+=`<br>I was born into serious <b>wealth</b> — a <b>trust fund of ${fcm(S.money)}</b> waits in my name. 💰`;
   else if(S.origin==='famous_kid') t+=`<br>My family is <b>famous</b> — paparazzi outside the nursery, the spotlight found me early. 🌟`;
-  else if(S.origin==='first_family' && S.potus) t+=`<br>I was born into the <b>FIRST FAMILY</b> — my ${S.potus.relation==='parent'?(P(S.potus.id)&&/Mother/.test(P(S.potus.id).rel)?'mother':'father'):S.potus.relation} <b>${S.potus.name}</b> is the <b>President</b> (${S.potus.party}). Secret Service call me <b>"${S.potus.codeName}"</b>. Motorcades, the residence, the whole world watching — and it depends entirely on whether they love ${S.potus.name} or hate them. 🏛️`;
+  else if(S.origin==='first_family' && S.potus){ const _rel=S.potus.relation==='parent'?(P(S.potus.id)&&/Mother/.test(P(S.potus.id).rel)?'mother':'father'):S.potus.relation;
+    if(S.potus.foreign) t+=`<br>I was born into a <b>FIRST FAMILY</b> — but not of this country. My ${_rel} <b>${S.potus.name}</b> is the <b>President of ${countryName(S.potus.country)}</b> ${countryFlag(S.potus.country)} (${S.potus.party}), an ocean from where I was raised. Their protective detail calls me <b>"${S.potus.codeName}"</b>. We are watched wherever we go — and it all depends on whether ${countryName(S.potus.country)} loves ${S.potus.name} or wants them gone. 🏛️`;
+    else t+=`<br>I was born into the <b>FIRST FAMILY</b> — my ${_rel} <b>${S.potus.name}</b> is the <b>President</b> (${S.potus.party}). Secret Service call me <b>"${S.potus.codeName}"</b>. Motorcades, the residence, the whole world watching — and it depends entirely on whether they love ${S.potus.name} or hate them. 🏛️`; }
   else if(S.origin==='poor') t+=`<br>We had <b>next to nothing</b> — I was born into hard poverty. 🪫`;
   else if(S.origin==='middle') t+=`<br>We were comfortable — a solid <b>middle-class</b> home, with <b>${fcm(S.money)}</b> put aside for my start. 🏡`;
   const pet=Object.values(S.people).find(p=>p.pet&&p.alive);
