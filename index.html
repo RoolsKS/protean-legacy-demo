@@ -7405,7 +7405,7 @@ const FLIGHT={
   intl:    { economy:[900,1800], business:[5000,8000], first:[12000,18000], jetSeat:13, jetCost:[110000,250000], famJet:[70000,140000] },
   domestic:{ economy:[200,500],  business:[1200,2200], first:[3000,6000],   jetSeat:8,  jetCost:[28000,70000],   famJet:[18000,45000] },
 };
-function celebFee(c){ return Math.round(c.fame*c.fame*rng(8,20)); }   // greater artists cost a LOT more
+function celebFee(c){ return Math.round(c.fame*c.fame*rng(40,90)); }   // greater artists cost a LOT more
 function gatherEveryone(){
   if(!S){ toast('Start a life first.'); return; }
   if(isLocked()){ toast('You have passed on. ⚰️'); return; }
@@ -7452,9 +7452,11 @@ function partyCeleb(){ closeModal();
   const eligible = S.celebs?Object.values(S.celebs).filter(c=>c.met && c.affinity>=55):[];
   if(!eligible.length){ S._party.celeb=null; return resolveParty(); }
   const choices = eligible.slice(0,4).map(c=>({label:`Invite ${c.name} · fee ${cur()}${celebFee(c).toLocaleString()}`, alt:true, fn:()=>partyHype(c.id)}));
+  if(eligible.length>=2){ const est=eligible.reduce((t,c)=>t+Math.round(celebFee(c)*0.85),0);
+    choices.unshift({label:`🌟 Invite ALL your celebrity friends (${eligible.length}) · ~${cur()}${fmn(est)}`, tip:'The bulk booking — a star-studded night if they show', fn:()=>{ S._party.celeb=null; S._party.celebAll=eligible.map(c=>c.id); S._party.hype=false; resolveParty(); }}); }
   choices.push({label:'No celebrity guest', fn:()=>{ S._party.celeb=null; resolveParty(); }});
   openModal({banner:'Gathering', title:'A Famous Guest?', icon:'⭐', closable:true,
-    text:`You're close enough with some stars to invite one — for a price. Bigger artists cost far more, and even paid they might bail early or stay all night.`,
+    text:`You're close enough with some stars to invite one — for a price. Bigger artists cost far more, and even paid they might bail early or stay all night.${eligible.length>=2?`<br><br>Or go big: <b>invite every star you know</b> at a bulk rate.`:''}`,
     choices});
 }
 function partyHype(celebId){ S._party.celeb=celebId; closeModal();
@@ -7495,7 +7497,14 @@ function resolveParty(){
   let cost = v.base + v.per*headCount + Math.round(v.per*headCount*headCount/40) + travelCost;   // superlinear: big groups cost a LOT more
   if(p.pay==='contribute') cost = Math.round(cost*0.45);
   let celeb=p.celeb?S.celebs[p.celeb]:null, celebFeePaid=0, celebCame=false, celebHours=0;
-  if(celeb){ celebFeePaid=celebFee(celeb); cost+=celebFeePaid;
+  const celebsAll=(p.celebAll||[]).map(id=>S.celebs[id]).filter(Boolean); let allResults=[];
+  if(celebsAll.length){ celeb=null;   // 🌟 the star-studded option — every celebrity friend, each rolling their own show-up
+    for(const c of celebsAll){ const fee=Math.round(celebFee(c)*0.85); celebFeePaid+=fee;
+      const showChance = 55 + c.affinity*0.3 + (S.karma||0)/5 + c.mood/4;
+      allResults.push({c, came:rng(0,100)<showChance}); }
+    cost+=celebFeePaid;
+  }
+  else if(celeb){ celebFeePaid=celebFee(celeb); cost+=celebFeePaid;
     const showChance = 55 + celeb.affinity*0.3 + (S.karma||0)/5 + celeb.mood/4;
     celebCame = rng(0,100) < showChance;
     if(celebCame) celebHours = (rng(0,100)<40)?rng(1,2):rng(3,8);   // sometimes leaves early, sometimes stays all night
@@ -7510,7 +7519,16 @@ function resolveParty(){
   for(const g of came) g._lastParty=S.age;
   money(-cost);
   for(const g of came) rel(g.id, +rng(3,9), +rng(1,4), `Came to your ${v.name.toLowerCase()}.`);
-  if(celeb){
+  if(celebsAll.length){
+    const cameStars=allResults.filter(r=>r.came);
+    if(cameStars.length){ setFlag('hosted_celeb'); if(cameStars.length>=3) setFlag('star_studded');
+      for(const g of came) rel(g.id, +rng(6,14), +rng(2,6), `Partied with the stars at your ${v.name.toLowerCase()}.`);
+      for(const r of cameStars) r.c.affinity=clamp((r.c.affinity||0)+rng(2,5));
+      bumpFame(Math.min(8,cameStars.length*2));
+      if(S.sm&&S.sm.joined) bumpFollowers(cameStars.length*rng(3000,12000));
+    }
+  }
+  else if(celeb){
     if(celebCame){ for(const g of came) rel(g.id, +rng(5,12), +rng(2,5), `Met ${celeb.name} at your party!`); setFlag('hosted_celeb'); celeb.affinity=clamp((celeb.affinity||0)+rng(1,4)); }
     else if(p.hype){ for(const g of came.concat(noShow)) rel(g.id, -rng(6,14), -rng(8,18), `You promised ${celeb.name} and they didn’t show.`); setFlag('lost_credibility'); }
   }
@@ -7519,7 +7537,11 @@ function resolveParty(){
   const lines=[`You hosted at <b>${v.name}</b>. <b>${came.length}</b> of ${guests.length} showed up.`];
   if(travelNote) lines.push(`${travelNote} — ${cur()}${travelCost.toLocaleString()} in flights.`);
   lines.push(`Total cost: <b>${cur()}${cost.toLocaleString()}</b>${p.pay==='contribute'?' (guests chipped in)':''}.`);
-  if(celeb) lines.push(celebCame?`⭐ <b>${celeb.name}</b> showed and stayed ~${celebHours}h — everyone went wild!`:`💔 <b>${celeb.name}</b> took the ${cur()}${celebFeePaid.toLocaleString()} fee but <b>never showed</b>.${p.hype?' Your guests feel lied to — your word is mud until you rebuild it.':''}`);
+  if(celebsAll.length){ const cs=allResults.filter(r=>r.came), ns=allResults.filter(r=>!r.came);
+    if(cs.length) lines.push(`🌟 <b>${cs.map(r=>r.c.name).join(', ')}</b> showed up — a genuinely <b>star-studded</b> night. Your guests will talk about this for years.`);
+    if(ns.length) lines.push(`💨 ${ns.map(r=>r.c.name).join(', ')} took the fee${ns.length>1?'s':''} but never appeared.`);
+    lines.push(`Star fees: <b>${cur()}${fmn(celebFeePaid)}</b> total.`); }
+  else if(celeb) lines.push(celebCame?`⭐ <b>${celeb.name}</b> showed and stayed ~${celebHours}h — everyone went wild!`:`💔 <b>${celeb.name}</b> took the ${cur()}${celebFeePaid.toLocaleString()} fee but <b>never showed</b>.${p.hype?' Your guests feel lied to — your word is mud until you rebuild it.':''}`);
   if(drunk) lines.push(`…but the night isn't over — <b>${drunk.name}</b> is in trouble. 🥴`);
   if(!came.length) lines.push(`…almost nobody came. Brutal.`);
   pushLog(`I gathered ${p.scope==='everyone'?'everyone':'the family'} at a <b>${v.name}</b> — ${came.length} came.${celeb?(celebCame?` ${celeb.name} showed! ⭐`:` ${celeb.name} no-showed. 💔`):''}`,[[celebCame?'good':(celeb&&p.hype)?'bad':'flag', v.name]]);
@@ -10126,6 +10148,12 @@ const REAL_CELEBS=[
   {name:'Lola Mont',type:'Pop Star',g:'f',fame:92},    {name:'Jax Vortex',type:'Influencer',g:'m',fame:95},
   {name:'Sienna Rye',type:'Actor',g:'f',fame:88},      {name:'Kane Dusk',type:'Pop Star',g:'m',fame:90},
   {name:'Vera Knox',type:'Athlete',g:'f',fame:90},     {name:'Lexi Glow',type:'Influencer',g:'f',fame:89},
+  {name:'Orson Wilde',type:'Director',g:'m',fame:87},  {name:'Tally Marsh',type:'Comedian',g:'f',fame:85},
+  {name:'Bram Steele',type:'Rock Star',g:'m',fame:92}, {name:'Ivy Lark',type:'Author',g:'f',fame:84},
+  {name:'Kofi Dray',type:'DJ',g:'m',fame:88},          {name:'Margaux Finch',type:'TV Host',g:'f',fame:86},
+  {name:'Enzo Ferri',type:'Racing Driver',g:'m',fame:91},{name:'Anya Volkov',type:'Model',g:'f',fame:87},
+  {name:'Duke Mercer',type:'Boxer',g:'m',fame:93},     {name:'Pia Nakamura',type:'Chef',g:'f',fame:82},
+  {name:'Zed Ryker',type:'Streamer',g:'m',fame:86},    {name:'June Calloway',type:'Country Singer',g:'f',fame:85},
 ];
 // World's Richest — ORIGINAL fictional people, parody companies
 const BILLIONAIRES=[
@@ -10137,7 +10165,7 @@ const BILLIONAIRES=[
 ];
 function buildCelebs(){
   const pool=[...REAL_CELEBS], out={};
-  for(let i=0;i<8;i++){
+  for(let i=0;i<Math.min(16,pool.length);i++){
     const c=pool.splice(rng(0,pool.length-1),1)[0], fame=clamp(c.fame+rng(-8,1),40,99);
     out['c'+i]={id:'c'+i,name:c.name,type:c.type,gender:c.g,fame,mood:rng(-20,55),
       followers:Math.round(fame*fame*rng(80,200)),affinity:0,rel:'stranger',met:false,memory:[]};
@@ -11789,16 +11817,18 @@ function interactCeleb(id,action){
   logAct('call',{fn:'interactCeleb',args:[id,action]});
   const before=c.rel; let msg='';
   if(action==='meet'){
-    if(!spend(c.fame*150))return;
+    if(!spend(c.fame*1200))return;
     if(celebLuck(c)+35>40){ c.rel='acquaintance'; c.affinity=clamp(c.affinity+rng(25,40)); c.memory.push({age:S.age,note:`You met at a concert and clicked.`}); msg=`🤩 ${c.name} actually liked you!`; }
     else { c.affinity=clamp(c.affinity+rng(0,8)); c.mood=clamp(c.mood-5,-100,100); msg=`${c.name} was polite but distant.`; }
   } else if(action==='hangout'){
-    if(!spend(c.fame*80))return;
+    const gate=celebAccess(c); if(gate){ toast('🚪 '+gate); return; }
+    if(!spend(c.fame*650))return;
     if(celebLuck(c)+45>40){ c.affinity=clamp(c.affinity+rng(10,22)); if(c.affinity>=50&&c.rel==='acquaintance')c.rel='friend'; chg('happy',3); msg=`Great time with ${c.name}!`; }
     else { c.affinity=clamp(c.affinity-rng(2,8)); msg=`${c.name} seemed off today.`; }
   } else if(action==='date'){
     if(c.affinity<55){ toast('Get closer before asking them out.'); return; }
-    if(!spend(c.fame*120))return;
+    const gate=celebAccess(c); if(gate){ toast('🚪 '+gate); return; }
+    if(!spend(c.fame*950))return;
     if(celebLuck(c)+30>45){ c.rel='dating'; c.affinity=clamp(c.affinity+rng(8,18)); chg('happy',8); msg=`💘 You're dating ${c.name}!`; }
     else { c.affinity=clamp(c.affinity-rng(3,10)); msg=`${c.name} just wants to be friends.`; }
   } else if(action==='propose'){
@@ -11814,6 +11844,13 @@ function interactCeleb(id,action){
   resultModal('Celebrity', c.name, '⭐', [msg, statBar('Closeness with '+c.name, c.affinity)], ()=>setTab('stars'));
 }
 
+function celebAccess(c){   // 🚪 how you get in the room: bigger stars will not take the meeting unless YOU matter
+  if(c.rel==='dating'||c.rel==='spouse') return null;
+  const f=S.fame||0, fol=(typeof totalFollowers==='function'?totalFollowers():0);
+  if(c.fame>=90 && f<40 && c.affinity<60) return `${c.name} runs with A-listers — build your own fame to 40+ first (or grow close another way).`;
+  if(c.fame>=80 && f<20 && fol<100000 && c.affinity<50) return `${c.name}'s people screen everything — get famous (fame 20+) or build a 100k+ following first.`;
+  return null;
+}
 function renderStars(){
   const v=document.getElementById('starsView'); if(!v||!S)return;
   if(!S.celebs){ v.innerHTML=''; return; }
@@ -11832,14 +11869,15 @@ function renderStars(){
     const spouseTerm=c.gender==='f'?'wife':c.gender==='m'?'husband':'spouse';
     const relLabel={acquaintance:'Acquaintance',friend:'Friend',dating:`💘 Dating · ${term}`,spouse:`💍 Married · ${spouseTerm}`}[c.rel]||'Acquaintance';
     const col=c.affinity>66?'var(--good)':c.affinity>33?'var(--warn)':'var(--dim)';
+    const gate=celebAccess(c);
     let acts='';
     if(S.sm&&S.sm.joined) acts+=`<button onclick="celebPic('${c.id}')">📸 Pic & Post<span class="cc">+followers</span></button>`;
     if(c.rel==='dating'||c.rel==='spouse') acts+=`<button onclick="celebIntimate('${c.id}')">🔥 Get Intimate<span class="cc">protection optional</span></button>`;
     if(c.rel==='spouse') acts+=`<button disabled style="opacity:.6">Married 💍</button>`;
     else {
-      acts+=`<button onclick="interactCeleb('${c.id}','hangout')">Hang out<span class="cc">${cur()}${(c.fame*80).toLocaleString()}</span></button>`;
-      if(c.rel!=='dating' && c.affinity>=55) acts+=`<button onclick="interactCeleb('${c.id}','date')">Ask on a date<span class="cc">${cur()}${(c.fame*120).toLocaleString()}</span></button>`;
-      if(c.rel==='dating') acts+=`<button onclick="interactCeleb('${c.id}','date')">Date night<span class="cc">${cur()}${(c.fame*120).toLocaleString()}</span></button>`;
+      acts+=`<button onclick="interactCeleb('${c.id}','hangout')">Hang out<span class="cc">${cur()}${(c.fame*650).toLocaleString()}</span></button>`;
+      if(c.rel!=='dating' && c.affinity>=55) acts+=`<button onclick="interactCeleb('${c.id}','date')">Ask on a date<span class="cc">${cur()}${(c.fame*950).toLocaleString()}</span></button>`;
+      if(c.rel==='dating') acts+=`<button onclick="interactCeleb('${c.id}','date')">Date night<span class="cc">${cur()}${(c.fame*950).toLocaleString()}</span></button>`;
       if(c.rel==='dating' && c.affinity>=85) acts+=`<button onclick="interactCeleb('${c.id}','propose')">Propose 💍<span class="cc">${cur()}${(c.fame*1000).toLocaleString()}</span></button>`;
     }
     return `<div class="celeb"><div class="top">
@@ -11848,6 +11886,7 @@ function renderStars(){
       <div style="font-size:12px">${mood}</div></div>
       <div class="relrow"><b>${relLabel}</b><span>Closeness ${c.affinity}</span></div>
       <div class="minibar"><i style="width:${c.affinity}%;background:${col}"></i></div>
+      ${gate?`<div style="font-size:11px;color:var(--warn);margin-top:4px">🚪 ${gate}</div>`:''}
       <div class="cacts">${acts}</div></div>`;
   }).join('');
   v.innerHTML=h;
@@ -12965,13 +13004,13 @@ function tripCloseFam(){
 const LODGING_TIERS=[
   {k:'hostel',       label:'🛏️ Backpacker hostel',        cost:120,   happy:0,
     note:`Twelve bunks, one snorer, free stories forever.`},
-  {k:'bnb',          label:'🏡 Cozy local BnB',            cost:600,   happy:1,
+  {k:'bnb',          label:'🏡 Cozy local BnB',            cost:1500,   happy:1,
     note:`A spare room, a chatty host, and the best breakfast tip in town.`},
-  {k:'boutique',     label:'🛎️ 4★ boutique hotel',        cost:2500,  happy:2,
+  {k:'boutique',     label:'🛎️ 4★ boutique hotel',        cost:9000,  happy:2,
     note:`Rooftop bar, rainfall shower, walking distance to everything.`},
-  {k:'grand',        label:'🏨 The landmark grand hotel',  cost:9000,  happy:4, fame:1,
+  {k:'grand',        label:'🏨 The landmark grand hotel',  cost:38000,  happy:4, fame:1,
     note:`THE hotel — the lobby alone is a tourist attraction, and the doorman learns your name.`},
-  {k:'presidential', label:'👑 The presidential suite',    cost:45000, happy:8, fame:3, flag:'lived_large',
+  {k:'presidential', label:'👑 The presidential suite',    cost:220000, happy:8, fame:3, flag:'lived_large',
     note:`Two floors, a grand piano, a butler on call — the suite heads of state fight over.`},
 ];
 
@@ -12984,13 +13023,13 @@ const LODGING_TIERS=[
 const TICKET_TIERS=[
   {k:'standing', label:'🎫 Standing / nosebleeds',  mult:1,   happy:0,
     note:`You can see the event. Technically.`},
-  {k:'decent',   label:'💺 Decent seats',           mult:2.5, happy:1,
+  {k:'decent',   label:'💺 Decent seats',           mult:5, happy:1,
     note:`Actual sightlines, actual legroom.`},
-  {k:'premium',  label:'✨ Premium seats',          mult:6,   happy:3,
+  {k:'premium',  label:'✨ Premium seats',          mult:16,   happy:3,
     note:`Padded seats, dead-center view, lounge access at halftime.`},
-  {k:'vip',      label:'🥂 VIP box with open bar',  mult:18,  happy:5, fame:2,
+  {k:'vip',      label:'🥂 VIP box with open bar',  mult:65,  happy:5, fame:2,
     note:`Glass-walled suite above the action — you spend the night rubbing shoulders with CEOs, retired legends, and one very loud pop star.`},
-  {k:'legend',   label:'🌟 The Legend package',     mult:60,  happy:10, fame:5, meet:true, memorab:true,
+  {k:'legend',   label:'🌟 The Legend package',     mult:280,  happy:10, fame:5, meet:true, memorab:true,
     note:`Pitchside / paddock / front row — plus a private meet-and-greet with the stars and a signed piece of the day to take home.`},
 ];
 
@@ -13004,14 +13043,14 @@ const TICKET_TIERS=[
 const TRIP_EXTRAS=[
 
   {k:'merch', label:'Merch spree', icon:'🧢',
-    cost:e=>300,
+    cost:e=>900,
     when:(S,e)=>true,
     apply(e){ chg('happy',3); S._tripMerch=true;
       const item=pick([`a scarf you will never wash`,`three shirts and a foam finger`,`a snow globe of the stadium`,`a flag bigger than your suitcase`,`a jersey with your own name pressed on the back`]);
       return {lines:[`🧢 You blitz the official stands and come home with ${item}. Peak souvenir energy.`]}; }},
 
   {k:'fanzone', label:'Fan-zone week pass', icon:'🎪',
-    cost:e=>400,
+    cost:e=>4500,
     when:(S,e)=>true,
     apply(e){ chg('happy',5);
       const lines=[`🎪 A whole week in the fan zone — face paint, chants, strangers who feel like old friends by day three.`];
@@ -13026,14 +13065,14 @@ const TRIP_EXTRAS=[
       return {lines:[`🍽️ A chef-guided crawl through the best kitchens in town — you eat things you cannot pronounce and love all of them.`]}; }},
 
   {k:'photog', label:'Hire a photographer', icon:'📸',
-    cost:e=>1500,
+    cost:e=>6500,
     when:(S,e)=>!!S.sm && totalFollowers()>0,
     apply(e){ const gain=Math.round(150+Math.min(50000,totalFollowers()*rng(2,6)/100));
       bumpFollowers(gain); chg('happy',2);
       return {lines:[`📸 A pro shadows you all week. The photo dump goes up and pulls in ${gain.toLocaleString()} new followers.`]}; }},
 
   {k:'afterparty', label:'Afterparty access', icon:'🍾',
-    cost:e=>2000,
+    cost:e=>15000,
     when:(S,e)=>(S.fame||0)>=15 || S._tripTicket==='vip' || S._tripTicket==='legend',
     apply(e){ chg('happy',5);
       const lines=[`🍾 Past the rope, into the real afterparty — the one that does not have a hashtag.`];
@@ -13044,13 +13083,13 @@ const TRIP_EXTRAS=[
       return {lines}; }},
 
   {k:'heli', label:'Helicopter transfer', icon:'🚁',
-    cost:e=>8000,
+    cost:e=>32000,
     when:(S,e)=>true,
     apply(e){ chg('happy',4);
       return {lines:[`🚁 While half a million people sit in traffic, you float over them with a drink in hand. Door to door in eleven minutes.`]}; }},
 
   {k:'family', label:'Bring the family', icon:'👨‍👩‍👧',
-    cost:e=>{ const n=tripCloseFam().length; return n*Math.round(e.travel/2); },
+    cost:e=>{ const n=tripCloseFam().length; return n*Math.round(e.travel*1.6); },
     when:(S,e)=>tripCloseFam().length>0,
     apply(e){ const fam=tripCloseFam(); chg('happy',8);
       for(const p of fam){ rel(p.id,+rng(4,8),+rng(2,4),`You flew the family to the ${e.name}. Nobody will ever forget it.`); }
@@ -13069,14 +13108,14 @@ const TRIP_EXTRAS=[
       return {lines:[`🎰 The chips evaporate in ninety very expensive minutes. The dealer says better luck next time like he means it.`]}; }},
 
   {k:'yacht', label:'Charter a yacht for the week', icon:'🛥️',
-    cost:e=>60000,
+    cost:e=>220000,
     when:(S,e)=>['monacogp','cannes','riocarn','biennale'].includes(e.id),
     apply(e){ chg('happy',7); bumpFame(2); setFlag('lived_large');
       return {lines:[`🛥️ Sixty meters of white hull parked where everyone can see it. You watch the ${e.name} from the deck with a crew of new best friends.`]}; }},
 
   {k:'sponsor', label:'Sponsor the event', icon:'💎',
-    cost:e=>Math.max(250000,Math.min(2000000,e.cost*500)),
-    when:(S,e)=>(S.fame||0)>=32 || (S.money||0)>=500000,
+    cost:e=>Math.max(1500000,Math.min(12000000,e.cost*2500)),
+    when:(S,e)=>(S.fame||0)>=32 || (S.money||0)>=2000000,
     apply(e){ const f=bumpFame(rng(6,12)); chg('happy',6); setFlag('event_sponsor');
       const lines=[`💎 Your name goes up on the boards at the ${e.name}. Every camera pan, every replay — there you are.${f>0?` Your profile explodes.`:''}`];
       if(S.sm) bumpFollowers(Math.round(rng(2000,20000)));
@@ -18365,6 +18404,112 @@ const LUXURY_EVENTS = [
 
 ];
 
+/* ⭐ CELEBRITY STORYLINES — the stars you know weave into your life story */
+function _celPick(pred){ const cs=Object.values(S.celebs||{}).filter(c=>c.met&&(!pred||pred(c))); return cs.length?pick(cs):null; }
+function _celAny(pred){ return Object.values(S.celebs||{}).some(c=>c.met&&(!pred||pred(c))); }
+const CELEB_EVENTS=[
+{ id:'cel_dm', once:false, weight:34, when:S=>S.age>=18 && (S.fame||0)>=32 && S.sm && S.sm.joined && _celAny(c=>!c.met||true)===true && (S.age-(S._lastCel||-99)>=2),
+  build:S=>{ S._lastCel=S.age; const c=Object.values(S.celebs||{}).filter(x=>!x.met)[0]||_celPick(); const who=c?c.name:'A verified name';
+    return { yr:S.age, title:'📩 A Star in Your DMs', text:`<b>${who}</b> slides into your DMs: <i>"love what you are doing. we should link up."</i> The blue check is real.`,
+    choices:[
+      {label:'Meet up — say yes', apply:()=>{ if(c&&!c.met){ c.met=true; c.rel='acquaintance'; c.affinity=clamp((c.affinity||0)+rng(20,35)); c.memory.push({age:S.age,note:'They reached out to YOU first.'}); }
+        chg('happy',5); bumpFame(rng(1,3)); return {text:`You meet for coffee that turns into four hours. ${who} follows you back — the internet notices immediately.`, tags:[['good',`${who} reached out`]]}; }},
+      {label:'Play it cool — leave them on read', tip:'Power move', apply:()=>{ if(rng(0,100)<40 && c){ c.affinity=clamp((c.affinity||0)+rng(5,12)); return {text:`The read receipt sits there for a week. Then: <i>"ok i respect it."</i> Somehow this made you MORE interesting.`, tags:[['flag','Left a star on read']]}; }
+        return {text:`You play it too cool for too long, and the moment quietly expires.`, tags:[['flag','Missed the moment']]}; }},
+      {label:'Screenshot and post it', tip:'Clout · tacky', apply:()=>{ if(S.sm&&S.sm.joined) bumpFollowers(rng(2000,15000)); karma(-2); if(c){ c.affinity=clamp((c.affinity||0)-rng(10,20)); }
+        return {text:`The screenshot does numbers — and ${who} deletes the message and blocks you. Clout has a price.`, tags:[['bad','Blocked by a star']]}; }},
+    ]};} },
+{ id:'cel_feud', once:false, weight:30, when:S=>S.age>=18 && (S.fame||0)>=40 && (S.age-(S._lastCel2||-99)>=3),
+  build:S=>{ S._lastCel2=S.age; const c=_celPick(x=>x.affinity<40)||_celPick(); const who=c?c.name:'A-lister Kane Dusk';
+    return { yr:S.age, title:'⚔️ A Star Takes a Shot at You', text:`Out of nowhere, <b>${who}</b> mocks you in an interview — a joke at your expense that the whole internet clips.`,
+    choices:[
+      {label:'Fire back — funnier and meaner', tip:'Feud mode', apply:()=>{ if(rng(0,100)<55){ bumpFame(rng(3,7)); if(S.sm&&S.sm.joined)bumpFollowers(rng(5000,25000)); if(c)c.affinity=clamp((c.affinity||0)-rng(8,18));
+          return {text:`Your reply is surgical. The clip of THEIR face reading it becomes the bigger meme. Feud: won.`, tags:[['good','Won the feud']]}; }
+        chg('happy',-4); bumpFame(rng(0,2)); return {text:`Your comeback lands flat and their fans descend on your mentions for a week.`, tags:[['bad','Ratioed']]}; }},
+      {label:'Kill them with kindness', tip:'Class', apply:()=>{ karma(3); chg('happy',2); if(c)c.affinity=clamp((c.affinity||0)+rng(4,10));
+        return {text:`You respond with a compliment and an invitation to coffee. The internet calls it the classiest move of the year — and ${who} actually shows up.`, tags:[['good','Took the high road']]}; }},
+      {label:'Ignore it entirely', apply:()=>{ chg('happy',-1); return {text:`You let it blow over. In a week the internet has forgotten; you have not, quite.`, tags:[['flag','Rose above it']]}; }},
+    ]};} },
+{ id:'cel_wedding', once:false, weight:26, when:S=>S.age>=21 && _celAny(c=>c.rel==='friend'&&c.affinity>=60) && (S.age-(S._lastCel3||-99)>=4),
+  build:S=>{ S._lastCel3=S.age; const c=_celPick(x=>x.rel==='friend'&&x.affinity>=60); const who=c?c.name:'your famous friend';
+    return { yr:S.age, title:'💒 A Celebrity Wedding Invite', text:`A thick gold-leaf envelope: <b>${who}</b> is getting married at a private villa, and you are on the list. NDAs at the door, phones confiscated, paparazzi drones overhead.`,
+    choices:[
+      {label:'Go — and bring a serious gift', tip:`${cur()}${fmn(8000)}`, apply:()=>{ money(-Math.min(S.money,8000)); chg('happy',8); if(c)c.affinity=clamp((c.affinity||0)+rng(8,15)); bumpFame(rng(1,4));
+        return {text:`The most surreal night of your life — a first-dance performed by a legend, a guest list that reads like an awards show. ${who} hugs you at the end: <i>"you being here meant everything."</i>`, tags:[['good','Wedding of the decade']]}; }},
+      {label:'Go, but leak one photo after', tip:'Tabloids pay big', apply:()=>{ const pay=rng(20000,80000); money(pay); karma(-5); if(c){ c.affinity=clamp((c.affinity||0)-rng(30,50)); c.rel='acquaintance'; }
+        return {text:`The tabloid wires you ${cur()}${fmn(pay)} for the shot of the first dance. Two days later ${who} texts: <i>"we know it was you."</i> The friendship is over.`, tags:[['bad',`Sold out a friend +${cur()}${fmn(pay)}`]]}; }},
+      {label:'Send regrets and a gift', apply:()=>{ money(-Math.min(S.money,2000)); if(c)c.affinity=clamp((c.affinity||0)+rng(1,4));
+        return {text:`You send something thoughtful and watch the blurry drone photos like everyone else.`, tags:[['flag','Sent regrets']]}; }},
+    ]};} },
+{ id:'cel_borrow', once:false, weight:24, when:S=>S.age>=22 && S.money>=50000 && _celAny(c=>c.rel==='friend') && (S.age-(S._lastCel4||-99)>=4),
+  build:S=>{ S._lastCel4=S.age; const c=_celPick(x=>x.rel==='friend'); const who=c?c.name:'your famous friend'; const ask=Math.round(Math.min(S.money*0.4,rng(30000,200000)));
+    return { yr:S.age, title:'🥀 The Broke Star', text:`<b>${who}</b> calls late. The voice is different — small. <i>"Everything is tied up. The label, the lawyers… can you float me ${cur()}${fmn(ask)}? Nobody can know."</i>`,
+    choices:[
+      {label:`Lend the ${cur()}${fmn(ask)}`, tip:'They may never repay', apply:()=>{ money(-ask); if(rng(0,100)<45){ const back=Math.round(ask*rng(12,20)/10);
+          return {text:`Eighteen months later a wire lands: <b>${cur()}${fmn(Math.round(ask*1.5))}</b> — the loan plus interest, plus a note: <i>"you saved my life."</i> ${who} never forgets it.`, tags:[['good','Loyalty repaid']]}; }
+        if(c)c.affinity=clamp((c.affinity||0)+rng(5,10)); return {text:`The money vanishes into the mess of their life. They dodge the subject forever after — but they show up for YOU, always, like a debt they cannot say out loud.`, tags:[['flag','Never repaid']]}; }},
+      {label:'Offer help, not cash', tip:'A real friend move', apply:()=>{ karma(3); if(c)c.affinity=clamp((c.affinity||0)+rng(3,8));
+        return {text:`You say no to the wire but yes to everything else — a place to stay, a good lawyer, a long dinner. It stings them, then saves them.`, tags:[['good','Helped the right way']]}; }},
+      {label:'Decline — and quietly distance yourself', apply:()=>{ if(c)c.affinity=clamp((c.affinity||0)-rng(10,20)); return {text:`You make an excuse. The calls get shorter after that, then stop.`, tags:[['bad','A friendship cooled']]}; }},
+    ]};} },
+{ id:'cel_rumor', once:false, weight:28, when:S=>S.age>=18 && (S.fame||0)>=25 && _celAny(c=>c.rel==='friend'||c.rel==='acquaintance') && !S.spouse && (S.age-(S._lastCel5||-99)>=3),
+  build:S=>{ S._lastCel5=S.age; const c=_celPick(x=>x.rel==='friend'||x.rel==='acquaintance'); const who=c?c.name:'a star';
+    return { yr:S.age, title:'💞 "JUST FRIENDS?"', text:`A paparazzi shot of you and <b>${who}</b> leaving the same restaurant makes the rounds. The headline: <i>"JUST FRIENDS? Body language experts weigh in."</i>`,
+    choices:[
+      {label:'Let the rumor breathe', tip:'Free fame', apply:()=>{ bumpFame(rng(2,6)); if(S.sm&&S.sm.joined)bumpFollowers(rng(4000,20000)); if(c&&rng(0,100)<25){ c.affinity=clamp((c.affinity||0)+rng(5,14));
+          return {text:`You never confirm, never deny. The speculation runs for months — and somewhere in the middle of pretending, something real sparks with ${who}.`, tags:[['good','A rumor came true']]}; }
+        return {text:`You say nothing and let the internet write fan fiction. The mystery is excellent for business.`, tags:[['good','Fed the mystery']]}; }},
+      {label:'Shut it down publicly', apply:()=>{ if(c)c.affinity=clamp((c.affinity||0)+rng(2,6)); return {text:`A short statement: "We are friends. Let people be friends." ${who} reposts it with a heart. Respect earned.`, tags:[['flag','Set the record straight']]}; }},
+      {label:'Joke about it relentlessly', tip:'Comedy angle', apply:()=>{ if(S.sm&&S.sm.joined)bumpFollowers(rng(3000,12000)); chg('happy',3); return {text:`You post the photo captioned "wedding registry below." The bit runs for weeks; even ${who} plays along.`, tags:[['good','Made it a bit']]}; }},
+    ]};} },
+{ id:'cel_scandal', once:false, weight:24, when:S=>S.age>=20 && _celAny(c=>c.rel==='friend'&&c.affinity>=55) && (S.age-(S._lastCel6||-99)>=4),
+  build:S=>{ S._lastCel6=S.age; const c=_celPick(x=>x.rel==='friend'&&x.affinity>=55); const who=c?c.name:'your famous friend';
+    return { yr:S.age, title:'🔥 Your Friend Is Cancelled', text:`<b>${who}</b> is in a full-blown scandal — old clips, a bad apology, sponsors fleeing. They call you: <i>"You know who I am. Say something. Please."</i>`,
+    choices:[
+      {label:'Defend them publicly', tip:'Loyalty · risk', apply:()=>{ if(rng(0,100)<50){ if(c)c.affinity=clamp((c.affinity||0)+rng(15,25)); bumpFame(rng(1,4)); karma(2);
+          return {text:`You post what you know to be true about them. It gets torn apart for a day — then the tide turns, and your loyalty becomes part of their redemption story.`, tags:[['good','Stood by a friend']]}; }
+        bumpFame(-rng(2,6)); karma(1); ledgerAdd('scandal',10,{pub:true,note:'Defended a cancelled star.'});
+        return {text:`The internet decides you are complicit. Your mentions are a warzone for a month — but ${who} will remember this forever.`, tags:[['bad','Caught the splash']]}; }},
+      {label:'Stay silent', apply:()=>{ if(c)c.affinity=clamp((c.affinity||0)-rng(8,16)); return {text:`You watch it burn from a distance. ${who} notices the silence — everyone does.`, tags:[['flag','Kept your distance']]}; }},
+      {label:'Pile on for clout', tip:'Ruthless', apply:()=>{ if(S.sm&&S.sm.joined)bumpFollowers(rng(8000,30000)); karma(-6); if(c){ c.affinity=0; c.rel='acquaintance'; }
+        return {text:`Your dunk tweet does half a million likes. ${who} unfollows, blocks, and tells the group chat what you are.`, tags:[['bad','Betrayed a friend']]}; }},
+    ]};} },
+{ id:'cel_collab', once:false, weight:26, when:S=>S.age>=18 && S.sm && S.sm.joined && (typeof totalFollowers==='function'&&totalFollowers()>=100000) && _celAny() && (S.age-(S._lastCel7||-99)>=3),
+  build:S=>{ S._lastCel7=S.age; const c=_celPick(); const who=c?c.name:'a star';
+    return { yr:S.age, title:'🤝 The Collab Offer', text:`<b>${who}</b> wants to do a collab — a video, a track, a livestream. Their team sends a brief. Your following is about to meet theirs.`,
+    choices:[
+      {label:'Go all-in on the collab', apply:()=>{ if(rng(0,100)<65){ const f=rng(30000,150000); bumpFollowers(f); bumpFame(rng(3,7)); if(c)c.affinity=clamp((c.affinity||0)+rng(8,15)); chg('happy',6);
+          return {text:`It is chaos and magic. The collab trends for three days and +${fc(f)} followers pour in. ${who} calls you "criminally underrated" on camera.`, tags:[['good',`Collab hit +${fc(f)}`]]}; }
+        chg('happy',-3); return {text:`Schedules slip, the edit is rushed, and the algorithm shrugs. Not every collab is a moment.`, tags:[['flag','Collab fizzled']]}; }},
+      {label:'Negotiate a paid feature instead', tip:'Business first', apply:()=>{ const pay=Math.round(rng(10000,60000)*priceMult()); money(pay); return {text:`Their team grumbles but pays <b>${cur()}${fmn(pay)}</b> for your slot. Professional, if a little cold.`, tags:[['good',`Feature fee +${cur()}${fmn(pay)}`]]}; }},
+      {label:'Pass — protect your lane', apply:()=>{ return {text:`Wrong fit, wrong time. You pass politely and keep building your own thing.`, tags:[['flag','Stayed independent']]}; }},
+    ]};} },
+{ id:'cel_housesit', once:true, weight:22, when:S=>S.age>=20 && _celAny(c=>c.rel==='friend'),
+  build:S=>{ const c=_celPick(x=>x.rel==='friend'); const who=c?c.name:'your famous friend';
+    return { yr:S.age, title:'🏰 Keys to the Mansion', text:`<b>${who}</b> is shooting abroad for a month and hands you the keys: <i>"water the plants, feed the koi, do NOT touch the car."</i> The mansion is yours.`,
+    choices:[
+      {label:'Be the perfect house-sitter', apply:()=>{ karma(2); chg('happy',6); if(c)c.affinity=clamp((c.affinity||0)+rng(8,15));
+        return {text:`A month of infinity-pool mornings and museum-quality naps. You leave it spotless; ${who} finds the fridge stocked and a thank-you note. Trust: maxed.`, tags:[['good','Perfect guest']]}; }},
+      {label:'Throw ONE party', tip:'What could go wrong', apply:()=>{ if(rng(0,100)<50){ chg('happy',9); S.popularity=clamp((S.popularity||50)+rng(4,10)); if(S.sm&&S.sm.joined)bumpFollowers(rng(3000,15000));
+          return {text:`One legendary, meticulously-cleaned-up night. Nobody breaks anything, the koi survive, and the story becomes myth among your friends.`, tags:[['good','Legendary house party']]}; }
+        const dmg=rng(8000,40000); money(-Math.min(S.money,dmg)); if(c)c.affinity=clamp((c.affinity||0)-rng(15,30)); karma(-2);
+        return {text:`Someone drives a golf cart into the koi pond. The repair bill is ${cur()}${fmn(dmg)} and ${who} finds out from a neighbor before you can call.`, tags:[['bad',`Trashed the mansion -${cur()}${fmn(dmg)}`]]}; }},
+      {label:'Touch the car', tip:'Obviously', apply:()=>{ if(rng(0,100)<55){ chg('happy',7); return {text:`One perfect midnight drive up the coast, returned to the millimeter. Some crimes are victimless.`, tags:[['flag','The forbidden drive']]}; }
+        const dmg=rng(15000,60000); money(-Math.min(S.money,dmg)); if(c)c.affinity=clamp((c.affinity||0)-rng(20,35));
+        return {text:`A parking pillar jumps out of nowhere. ${cur()}${fmn(dmg)} of carbon fiber later, ${who} knows exactly what you touched.`, tags:[['bad',`Scratched the one thing -${cur()}${fmn(dmg)}`]]}; }},
+    ]};} },
+{ id:'cel_gala', once:false, weight:24, when:S=>S.age>=21 && (S.fame||0)>=30 && _celAny(c=>c.affinity>=45) && (S.age-(S._lastCel8||-99)>=3),
+  build:S=>{ S._lastCel8=S.age; const c=_celPick(x=>x.affinity>=45); const who=c?c.name:'a star';
+    return { yr:S.age, title:'🕊️ Co-Host the Charity Gala', text:`<b>${who}</b> asks you to co-host their annual charity gala — your name next to theirs on the invitation. It is an honor. It is also a fundraising TARGET.`,
+    choices:[
+      {label:'Co-host and donate big', tip:`${cur()}${fmn(50000)}`, when:S=>S.money>=50000, apply:()=>{ money(-50000); karma(6); bumpFame(rng(3,7)); if(c)c.affinity=clamp((c.affinity||0)+rng(10,18)); ledgerAdd('charity',18,{pub:true,note:'Co-hosted a charity gala.'});
+        return {text:`You open the bidding yourself with ${cur()}${fmn(50000)} and the room follows. The night raises millions; the photo of you and ${who} runs everywhere.`, tags:[['good','Gala co-host']]}; }},
+      {label:'Co-host, donate modestly', apply:()=>{ const d=Math.min(S.money,rng(2000,8000)); money(-d); karma(3); bumpFame(rng(1,4)); if(c)c.affinity=clamp((c.affinity||0)+rng(4,10));
+        return {text:`You give what you can and host with everything you have. Charm, it turns out, also raises money.`, tags:[['good','Hosted with heart']]}; }},
+      {label:'Decline the spotlight', apply:()=>{ if(c)c.affinity=clamp((c.affinity||0)-rng(2,6)); return {text:`Big rooms, big asks — not your night. You send a quiet donation instead.`, tags:[['flag','Declined politely']]}; }},
+    ]};} },
+];
+try{ EVENTS.push(...CELEB_EVENTS); }catch(e){}
 try{ EVENTS.push(...LUXURY_EVENTS); }catch(e){}
 try{ RIBBONS.push(...TRIP_RIBBONS); }catch(e){}   // 🧳 globetrotter / superfan / high-roller / once-in-a-lifetime
 /* 💎 LUXURY HUB — the BitLife-style VIP menu on the Activities tab: the luxury experiences ON DEMAND
