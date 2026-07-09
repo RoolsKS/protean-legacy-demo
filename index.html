@@ -98,6 +98,22 @@
   .empty .em-t{ font-size:15px; font-weight:800; color:var(--text); margin-bottom:4px }
   .empty .em-s{ font-size:12.5px; line-height:1.5 }
 
+  /* 🍬 JUICE — celebration popups, fly-text, button punch */
+  .celebrate{ position:fixed; inset:0; z-index:9998; display:flex; align-items:center; justify-content:center; pointer-events:none; opacity:0; transition:opacity .2s }
+  .celebrate.show{ opacity:1; pointer-events:auto }
+  .celebrate-card{ text-align:center; padding:22px 30px; border-radius:22px; background:linear-gradient(180deg,rgba(30,38,58,.96),rgba(18,24,38,.98)); border:2px solid var(--accent); box-shadow:0 0 0 4px rgba(91,140,255,.18),0 20px 60px rgba(0,0,0,.6); transform:scale(.6) translateY(10px); transition:transform .35s cubic-bezier(.2,1.4,.4,1) }
+  .celebrate.show .celebrate-card{ transform:scale(1) translateY(0) }
+  .celebrate-ic{ font-size:64px; line-height:1; filter:drop-shadow(0 4px 14px rgba(0,0,0,.5)); animation:celebPop .5s ease }
+  .celebrate-t{ font-size:22px; font-weight:900; color:#fff; margin-top:8px; letter-spacing:.3px }
+  .celebrate-s{ font-size:13.5px; color:var(--dim); margin-top:5px; max-width:280px }
+  @keyframes celebPop{ 0%{transform:scale(.3) rotate(-12deg)} 60%{transform:scale(1.25) rotate(6deg)} 100%{transform:scale(1) rotate(0)} }
+  .flytext{ position:fixed; z-index:9997; pointer-events:none; font-weight:900; font-size:22px; text-shadow:0 2px 8px rgba(0,0,0,.6); animation:flyUp 1.1s ease-out forwards }
+  @keyframes flyUp{ 0%{opacity:0; transform:translate(-50%,0) scale(.6)} 15%{opacity:1; transform:translate(-50%,-14px) scale(1.1)} 100%{opacity:0; transform:translate(-50%,-70px) scale(1)} }
+  .tb-age.punch .tb-age-plus{ animation:agePunch .32s cubic-bezier(.2,1.5,.4,1) }
+  @keyframes agePunch{ 0%{transform:scale(1)} 40%{transform:scale(.9)} 70%{transform:scale(1.12)} 100%{transform:scale(1)} }
+  .money-pop{ animation:moneyFlash .5s ease }
+  @keyframes moneyFlash{ 0%,100%{transform:scale(1)} 50%{transform:scale(1.14); filter:brightness(1.5)} }
+
   /* Choices */
   .choices{display:flex;flex-direction:column;gap:8px;margin-top:12px}
   button.choice{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--text);
@@ -546,6 +562,7 @@
     <button class="mi" onclick="importSagaPrompt()">📜 Load a Saga</button>
     <button class="mi" onclick="openVault()">📦 Character Vault</button>
     <button class="mi" id="hapticMi" onclick="toggleHaptics()">📳 Haptics: On</button>
+    <button class="mi" id="soundMi" onclick="toggleSound()">🔊 Sound: On</button>
     <button class="mi" onclick="themeMenu()">🎨 Theme</button>
     <button class="mi" data-i18n="menu_language" onclick="languageMenu()">🌐 Language</button>
     <button class="mi" data-i18n="menu_close" onclick="closeMenu()">✖ Close</button>
@@ -565,7 +582,7 @@
       <button class="tb-btn ic-career" onclick="setTab('career')"><span class="tb-ic">💼</span><span class="tb-lb" data-i18n="tab_career">Career</span></button>
       <button class="tb-btn ic-assets" onclick="setTab('assets')"><span class="tb-ic">🔑</span><span class="tb-lb" data-i18n="tab_assets">Assets</span></button>
       <div class="age-wrap">
-        <button class="tb-age" id="ageBtn" onclick="ageUp()"><span class="tb-age-plus">＋</span><span class="tb-age-lb" data-i18n="tab_age">Advance Age</span></button>
+        <button class="tb-age" id="ageBtn" onclick="ageUpJuice(this)"><span class="tb-age-plus">＋</span><span class="tb-age-lb" data-i18n="tab_age">Advance Age</span></button>
         <button class="tt-btn" id="ttBtn" onclick="timeTravel()" aria-label="Time Travel (Premium)">－</button>
       </div>
       <button class="tb-btn ic-conn" onclick="setTab('connections')"><span class="tb-ic">🤝</span><span class="tb-lb" data-i18n="tab_connections">Connections</span></button>
@@ -6172,6 +6189,11 @@ function render(){
   const moneyEl=document.getElementById('pmoney');
   moneyEl.textContent=(S.money<0?'-':'')+cur()+Math.abs(S.money).toLocaleString();
   moneyEl.style.color=S.money<0?'var(--bad)':'var(--good)';
+  // 🍬 juice: coin + flash + fly-text when the balance jumps up (UI-only, never during replay)
+  { const gain=S.money-(S._lastShownMoney==null?S.money:S._lastShownMoney);
+    if(_juiceOK() && S._lastShownMoney!=null && gain>=2500){ sfx('coin'); moneyEl.classList.remove('money-pop'); void moneyEl.offsetWidth; moneyEl.classList.add('money-pop');
+      try{ const r=moneyEl.getBoundingClientRect(); flyText(`+${cur()}${gain.toLocaleString()}`,'var(--good)', r.left+r.width/2, r.top-6); }catch(_){} }
+    S._lastShownMoney=S.money; }
   document.getElementById('pocc').textContent=statusText();
   const av=document.getElementById('pAvatar'); if(av) av.textContent = S.gender==='f'?'👩':'🧑';
   // Wellbeing rows — emoji · label · bar · percent (green when high, amber/red when low)
@@ -12573,6 +12595,7 @@ function jobTitle(j){ const r=jobRanks(j); return (r[j.level]||r[r.length-1]||''
 function promote(){ const j=S.job; if(!j||j.level>=jobMaxLevel(j))return false;
   j.level++; j.promo=0; j.salary=Math.round(j.base*(1+j.level*0.42));
   pushLog(`I was promoted to <b>${jobTitle(j)}</b>! Salary now ${cur()}${j.salary.toLocaleString()}/yr. 📈`,[['good','Promotion']]);
+  if(typeof winFx==='function') winFx('level','📈 Promoted!');   // 🍬
   return true; }
 function askPromotion(){
   if(!S.job)return; const j=S.job;
@@ -12741,7 +12764,8 @@ function collectCareer(title){ S.careers=S.careers||{}; if(S.careers[title])retu
 function unlockAchievement(key,name,desc){ S.achievements=S.achievements||{}; if(S.achievements[key])return; S.achievements[key]={name,desc,age:S.age};
   pushLog(`🏅 <b>Achievement unlocked — ${name}</b>: ${desc}`,[['good','Achievement']]);
   ledgerAdd('triumph', 30, {note:`${name}: ${desc}`});   // a proud chapter the family remembers
-  addSelfWorth(5); addMood(3); driftPers('boldness',1); }   // success builds you up
+  addSelfWorth(5); addMood(3); driftPers('boldness',1);   // success builds you up
+  if(typeof celebrate==='function') celebrate(name, desc, '🏅', {sfx:'levelup'}); }   // 🍬 fanfare + confetti
 const ACH_MILESTONES=[
   {k:'first_job',      name:'💼 On the Payroll',     desc:'Land your first job.',            when:S=>!!S.job},
   {k:'graduate',       name:'🎓 Graduate',           desc:'Earn a university degree.',       when:S=>has('graduated_college')},
@@ -13852,6 +13876,64 @@ function passAgeGate(){ try{ localStorage.setItem(AGE_GATE_KEY,'1'); }catch(e){}
 function failAgeGate(){ const g=document.getElementById('ageGate'); if(g) g.style.display='none'; const b=document.getElementById('ageGateBlock'); if(b) b.style.display='flex'; }
 function checkAgeGate(){ let ok=false; try{ ok=localStorage.getItem(AGE_GATE_KEY)==='1'; }catch(e){ ok=true; } if(!ok){ const g=document.getElementById('ageGate'); if(g) g.style.display='block'; } }
 /* ============================================================
+   🍬 JUICE — synthesized SFX (no asset files), confetti, celebration popups & fly-text.
+   Pure presentation: everything is guarded to no-op in headless/replay, so the sim core &
+   the leaderboard are untouched. Audio is lazily created on the first user gesture (browser rule).
+   ============================================================ */
+function _juiceOK(){ return typeof document!=='undefined' && document.body && !(typeof S!=='undefined'&&S&&S._replaying); }
+let _actx=null, _soundOn=true;
+try{ _soundOn = localStorage.getItem('pl_sound')!=='0'; }catch(e){}
+function _ac(){ try{ if(!_actx) _actx=new (window.AudioContext||window.webkitAudioContext)(); if(_actx.state==='suspended') _actx.resume(); }catch(e){} return _actx; }
+function _tone(freq,dur,type,vol,off,slideTo){ if(!_soundOn) return; const ac=_ac(); if(!ac) return; try{ const t0=ac.currentTime+(off||0);
+  const o=ac.createOscillator(), g=ac.createGain(); o.type=type||'sine'; o.frequency.setValueAtTime(freq,t0); if(slideTo)o.frequency.exponentialRampToValueAtTime(slideTo,t0+dur);
+  g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(vol||0.18,t0+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  o.connect(g); g.connect(ac.destination); o.start(t0); o.stop(t0+dur+0.03); }catch(e){} }
+const SFX={
+  tap:()=>_tone(430,0.06,'triangle',0.10,0,640),
+  coin:()=>{ _tone(940,0.06,'square',0.11); _tone(1400,0.10,'square',0.11,0.05); },
+  ding:()=>_tone(1180,0.16,'sine',0.15,0,1650),
+  good:()=>{ _tone(660,0.09,'triangle',0.13); _tone(990,0.12,'triangle',0.13,0.07); },
+  bad:()=>_tone(210,0.28,'sawtooth',0.13,0,80),
+  levelup:()=>{ [523,659,784,1047].forEach((f,i)=>_tone(f,0.13,'square',0.12,i*0.075)); },
+  fanfare:()=>{ [523,523,659,784].forEach((f,i)=>_tone(f,0.16,'triangle',0.14,i*0.10)); _tone(1047,0.55,'triangle',0.12,0.42); _tone(1568,0.55,'triangle',0.08,0.42); },
+  whoosh:()=>_tone(280,0.28,'sine',0.07,0,1300),
+};
+function sfx(name){ if(_juiceOK() && SFX[name]) try{ SFX[name](); }catch(e){} }
+function toggleSound(){ _soundOn=!_soundOn; try{localStorage.setItem('pl_sound',_soundOn?'1':'0');}catch(e){} const el=document.getElementById('soundMi'); if(el)el.textContent='🔊 Sound: '+(_soundOn?'On':'Off'); if(_soundOn)sfx('ding'); if(typeof toast==='function')toast('🔊 Sound '+(_soundOn?'on':'off')); }
+function confetti(opts){ if(!_juiceOK())return; opts=opts||{}; try{
+  const n=opts.count||90, cv=document.createElement('canvas');
+  cv.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:9999'; cv.width=innerWidth; cv.height=innerHeight;
+  document.body.appendChild(cv); const ctx=cv.getContext('2d');
+  const cols=['#ff5b6e','#ffc24b','#3ecf8e','#5b8cff','#b56bff','#ff8adf','#fff'];
+  const ox=opts.x!=null?opts.x:innerWidth/2, oy=opts.y!=null?opts.y:innerHeight*0.38, P=[];
+  for(let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, sp=4+Math.random()*10; P.push({x:ox,y:oy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-7,g:0.26+Math.random()*0.22,s:5+Math.random()*7,rot:Math.random()*6,vr:(Math.random()-0.5)*0.4,c:cols[i%cols.length],life:1}); }
+  let fr=0; (function tick(){ fr++; ctx.clearRect(0,0,cv.width,cv.height); let live=false;
+    for(const p of P){ p.vy+=p.g; p.x+=p.vx; p.y+=p.vy; p.rot+=p.vr; p.life-=0.011;
+      if(p.life>0&&p.y<cv.height+30){ live=true; ctx.save(); ctx.globalAlpha=Math.max(0,p.life); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.c; ctx.fillRect(-p.s/2,-p.s/2,p.s,p.s*0.62); ctx.restore(); } }
+    if(live&&fr<170) requestAnimationFrame(tick); else cv.remove(); })();
+}catch(e){} }
+function celebrate(title,sub,icon,opts){ if(!_juiceOK())return; opts=opts||{};
+  sfx(opts.sfx||'fanfare'); confetti({count:opts.count||120});
+  if(typeof haptics!=='undefined'&&haptics.heavy) try{ haptics.heavy(); }catch(_){}
+  try{ const d=document.createElement('div'); d.className='celebrate';
+    d.innerHTML=`<div class="celebrate-card"><div class="celebrate-ic">${icon||'🎉'}</div><div class="celebrate-t">${title||''}</div>${sub?`<div class="celebrate-s">${sub}</div>`:''}</div>`;
+    document.body.appendChild(d); if(typeof emojify==='function')emojify(d); requestAnimationFrame(()=>d.classList.add('show'));
+    const kill=()=>{ if(!d._k){ d._k=1; d.classList.remove('show'); setTimeout(()=>d.remove(),320);} };
+    d.onclick=kill; setTimeout(kill, opts.ms||2600);
+  }catch(e){} }
+function flyText(txt,color,x,y){ if(!_juiceOK())return; try{ const el=document.createElement('div'); el.className='flytext'; el.textContent=txt; el.style.color=color||'var(--good)';
+  el.style.left=(x!=null?x:innerWidth/2)+'px'; el.style.top=(y!=null?y:innerHeight*0.34)+'px'; document.body.appendChild(el); setTimeout(()=>el.remove(),1200); }catch(e){} }
+/* one call for any "you won something" beat — sound + fly-text (+ optional confetti) */
+function winFx(kind, text){ if(!_juiceOK())return;
+  if(kind==='money'){ sfx('coin'); if(text)flyText(text,'var(--good)'); }
+  else if(kind==='level'){ sfx('levelup'); if(text)flyText(text,'#b9a6ff'); }
+  else if(kind==='bad'){ sfx('bad'); }
+  else { sfx('good'); if(text)flyText(text,'var(--good)'); } }
+/* the core-loop tap: punch + sound, then advance the year */
+function ageUpJuice(btn){ if(_juiceOK()){ sfx('tap'); if(btn){ btn.classList.remove('punch'); void btn.offsetWidth; btn.classList.add('punch'); } } ageUp(); }
+function initSoundLabel(){ try{ const el=document.getElementById('soundMi'); if(el)el.textContent='🔊 Sound: '+(_soundOn?'On':'Off'); }catch(e){} }
+
+/* ============================================================
    🛠️ DEV CONSOLE — a hidden debug panel (à la BitLife's SRDebugger). Tap the title 7× to open.
    Pure dev/UI tooling: the info readout is harmless; the cheat buttons mutate S OUTSIDE the action
    tape, which by design makes the run un-replayable → the server rejects it, so cheats can't touch
@@ -13899,6 +13981,7 @@ function openDevConsole(){ if(typeof closeMenu==='function')closeMenu(); closeMo
   openModal({banner:'Dev Console', title:'🛠️ Dev Console', icon:'🛠️', closable:true, text:info, choices});
 }
 try{ applyTheme(currentTheme()); }catch(e){}   // 🎨 apply the saved appearance theme on load
+try{ initSoundLabel(); }catch(e){}             // 🔊 sync the sound-toggle label
 try{ initLang(); }catch(e){}      // apply saved UI language on load
 try{ initHaptics(); }catch(e){}   // delegated tap-feedback + sync the settings toggle label
 try{ checkAgeGate(); }catch(e){}
