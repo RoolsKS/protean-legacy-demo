@@ -14451,12 +14451,12 @@ function openCollegeChoice(){
 function openMajorField(f){
   const grp=MAJORS.filter(m=>m.field===f).slice().sort((a,b)=>a.name.localeCompare(b.name));
   const label=(MAJOR_FIELDS.find(x=>x[0]===f)||[f,f])[1];
-  const choices=grp.map(m=>({label:`${m.icon} ${m.name}`, tip:m.careerHint, alt:true, fn:()=>enrollUni(m.k)}));
+  const choices=grp.map(m=>({label:`${m.icon} ${m.name}`, tip:m.careerHint, alt:true, fn:()=>enrollUni(m.k, f)}));
   choices.push({label:'← Back to fields', fn:openCollegeChoice});
   openModal({banner:'Education', title:`🎓 ${label}`, icon:'🎓', closable:false,
     text:`Choose your <b>major</b>. Each opens a different set of careers.`, choices});
 }
-function enrollUni(majorKey){ closeModal();
+function enrollUni(majorKey, field){ closeModal();
   S.major=majorKey;
   const tuit=uniTuition();                                              // deterministic school tier + real tuition
   openUniFinance(tuit,
@@ -14465,7 +14465,8 @@ function enrollUni(majorKey){ closeModal();
           pushLog(`I declared a major in <b>${majorName(majorKey)}</b> at ${tuit.label}. 🎓`,[['flag',majorName(majorKey)]]);
           setTab('school'); },
     ()=>{ if(!S.eduLevel || S.eduLevel==='high'){ S.eduLevel='done'; pushLog(`I skipped university to start working.`,[['flag','No degree']]); }
-          setTab('life'); });   // trade/gap/enlist diverts already set their own eduLevel
+          setTab('life'); },
+    ()=>{ closeModal(); if(field) openMajorField(field); else openCollegeChoice(); });   // ← back to the major list to pick another
 }
 function studyHarder(){
   if(!['primary','high','college'].includes(S.eduLevel)){ toast('You’re not in school.'); return; }
@@ -14890,7 +14891,7 @@ function studentDebtYear(){
    divert path     -> apply then onSkip()  (trade/gap/enlist set their own path)
    A plain number may be passed as `tuit` (it is wrapped into a quote object).
    ========================================================================= */
-function openUniFinance(tuit, onPaid, onSkip){
+function openUniFinance(tuit, onPaid, onSkip, onBack){
   if(typeof tuit==='number'){
     tuit={ tierKey:'state_in', label:'University', icon:'🎓',
            prestige:S.schoolPrestige||40, years:4,
@@ -14912,6 +14913,7 @@ function openUniFinance(tuit, onPaid, onSkip){
         ()=> (p.divert? onSkip() : onPaid()) );
     }
   }));
+  if(onBack) choices.push({ label:'← Back — pick another major', fn:()=>{ closeModal(); onBack(); } });
   choices.push({ label:'✋ Do not enrol — start adult life', fn:()=>{ closeModal(); onSkip(); } });
 
   openModal({ banner:'University', title:`${tuit.icon} ${tuit.label}`, icon:tuit.icon, closable:false,
