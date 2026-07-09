@@ -6376,7 +6376,7 @@ function render(){
   // once you're dead, the tabs are locked — a ghost only haunts; a corpse only has the Legacy hub
   const navLocked = !S.alive;
   document.querySelectorAll('#dock .tb-btn').forEach(b=>{ b.disabled=navLocked; b.style.opacity=navLocked?'.35':'1'; });
-  const tt=document.getElementById('ttBtn'); if(tt) tt.style.display = S.alive?'flex':'none';   // no time travel for the dead
+  const tt=document.getElementById('ttBtn'); if(tt) tt.style.display = (S.alive || (typeof isPremium==='function'&&isPremium()))?'flex':'none';   // ⏳ the dead can rewind too (Premium) — cheat death
 
   // life feed — chronological, newest at the BOTTOM (scroll down like a story).
   // Pending events are shown as a pop-up modal, not inline.
@@ -9146,12 +9146,47 @@ function renderActivities(){ const v=document.getElementById('activitiesView'); 
   h+=rest.map(e=>actCard(e,false)).join('');
   v.innerHTML=h;
 }
+/* ⏳ TIME TRAVEL (Premium) — rewind years and live them differently, even from BEYOND THE GRAVE.
+   Mechanically it TRUNCATES the replay tape back to the chosen year and re-plays it, so the resulting
+   life is a fully valid, deterministic tape (the rewritten future is a real, replayable path). */
+function ttYearsLived(){ return (S.actions||[]).filter(a=>a.t==='age').length; }   // total years on the tape (dynasty-wide)
 function timeTravel(){
   if(!S){ toast('Start a life first.'); return; }
-  if(!S.alive){ toast('Only the living can time travel.'); return; }
-  openModal({banner:'Premium', title:'⏳ Time Travel', icon:'⏳', closable:true,
-    text:`Rewind the clock and replay a past year — undo a mistake, take the road you didn't.<br><br>✨ <b>Time Travel is a Premium feature</b>, unlocking with Protean Legacy Premium at launch. (Your slot is reserved right here.)`,
-    choices:[{label:'Maybe later', fn:closeModal}] });
+  if(typeof isPremium==='function' && !isPremium()){
+    openModal({banner:'Premium', title:'⏳ Time Travel', icon:'⏳', closable:true,
+      text:`Rewind the clock and live a past year differently — undo a mistake, dodge a disaster, even <b>cheat death itself</b>.<br><br>✨ <b>Time Travel is a Premium feature.</b> Unlock Premium to bend your own timeline.`,
+      choices:[{label:'Unlock Premium', fn:()=>{ closeModal(); openPremium&&openPremium(); }},{label:'Maybe later', alt:true, fn:closeModal}] });
+    return;
+  }
+  const dead=!S.alive, curAge=S.age;
+  if(curAge<2){ toast('⏳ Not enough of your life has passed to rewind yet.'); return; }
+  const maxBack=Math.min(curAge, ttYearsLived()-1);   // never rewind past your own birth (stay within this life)
+  const jumps=[1,2,3,5,10,20].filter(n=>n<=maxBack);
+  const choices=jumps.map(n=>({label:`⏪ Back ${n} year${n>1?'s':''} — to age ${curAge-n}`, alt:n>1, fn:()=>doTimeTravel(n)}));
+  choices.push({label:'Cancel', fn:closeModal});
+  openModal({banner:'Time Travel', title:'⏳ Time Travel', icon:'⏳', closable:true,
+    text:`${dead?`<b>You died at ${curAge}.</b> But the machine can pull you back to <b>before the end</b> — relive those years and change your fate. 💀→🕰️<br><br>`:''}Rewind the clock. Everything after the year you land on is <b>erased and rewritten</b> — your choices, the world, all of it. How far back?`,
+    choices});
+}
+function doTimeTravel(yearsBack){
+  closeModal();
+  const full=(S.actions||[]).slice();
+  const ageIdx=[]; full.forEach((a,i)=>{ if(a.t==='age') ageIdx.push(i); });
+  if(yearsBack>=ageIdx.length){ toast('Cannot rewind that far.'); return; }
+  const cutAt=ageIdx[ageIdx.length-yearsBack];       // index of the first year to ERASE
+  const kept=full.slice(0, cutAt);
+  const bo=JSON.parse(JSON.stringify(S.birthOpts||{}));
+  const wasDead=!S.alive;
+  try{ replayLife(bo, kept); }catch(e){ toast('⏳ The timeline resisted — could not rewind.'); return; }
+  if(!S){ toast('⏳ Rewind failed.'); return; }
+  S.actions=kept;                                    // the tape is now the truncated one; new years append to it
+  S._replaying=false; pending=null;
+  S.timeTraveled=(S.timeTraveled||0)+1; setFlag('time_traveler');
+  if(wasDead) setFlag('cheated_death');
+  pushLog(`⏳ <b>Time Travel.</b> I wound the clock back ${yearsBack} year${yearsBack>1?'s':''} — ${wasDead?'clawing my way back from the grave':'to take a different road'}. The future is unwritten again.`,[['echo',`Rewound ${yearsBack}yr`]]);
+  try{ saveGame(); }catch(e){}
+  render(); setTab('life');
+  toast(`⏳ Rewound to age ${S.age}. Live it differently.`);
 }
 /* ============================================================
    LICENSES — a real process: pass a test, pay the fee, then come back
