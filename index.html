@@ -1597,7 +1597,11 @@ function buildFamily(forceGender){
   // 👑 FAMILY WEALTH — the whole clan's fortunes scale with the origin (drives inheritances, school money, estimates)
   { const bChance=isPremium()?0.12:0.03;   // premium: far more likely to have a billionaire relative
     const W={poor:[0,9], normal:[0,500], adopted:[0,500], middle:[80,900], famous_kid:[1500,40000], rich_kid:[8000,120000], royal:[40000,500000]}[S.origin||'normal']||[0,500];
-    for(const p of Object.values(S.people)) if(p.fam) p.wealth=(p.age>25 && rand()<bChance)?rng(50,300)*1e9:rng(W[0],W[1])*1e3; }
+    const MOGUL_JOBS=['tech billionaire','real-estate mogul','hedge-fund founder','oil tycoon','media magnate','shipping magnate','industrialist','private-equity titan','retail-empire owner','mining tycoon','renowned investor','biotech founder','casino magnate','venture capitalist'];
+    for(const p of Object.values(S.people)){ if(!p.fam) continue;
+      if(p.age>25 && rand()<bChance){ p.wealth=rng(1,40)*1e9; p.job=pick(MOGUL_JOBS); }   // a mogul relative — with a title that actually explains the fortune
+      else if(p.age>25 && (W[1]>=8000) && rand()<0.35){ p.wealth=rng(Math.round(W[1]*0.4),W[1])*1e3; p.job=pick(['company founder','CEO','property investor','surgeon','corporate lawyer','fund manager']); }   // wealthy-family relatives get fitting high earners
+      else p.wealth=rng(W[0],W[1])*1e3; } }
   if(rand()<0.55) buildPet();   // many families have a pet
 }
 const PET_TYPES=[
@@ -1637,7 +1641,8 @@ function ageFamily(){
         pushLog(`<b>${p.name}</b>, my beloved ${p.rel.toLowerCase()}, has passed away at ${p.age}. 🌈`,[['bad','Lost a pet']]); } continue; }
     if(!p.fam) continue;
     p.age=(p.age||0)+1;
-    const risk=p.age<55?0.002:(p.age-55)/300+0.01;
+    // gentler mortality — relatives live longer, deaths cluster less (was ~7% at 74; now ~3.5%)
+    const risk=p.age<58?0.0012:(p.age-58)/620+0.005;
     if(rand()<risk){ p.alive=false; onRelativeDeath(p); }
   }
 }
@@ -9166,7 +9171,7 @@ function openPerson(id){
   if(((p.keyMoments||[]).some(m=>m.sentiment>0)) || (p.memory||[]).length>2) ch.push({label:'💭 Reminisce', alt:true, fn:()=>personAction(id,'reminisce')});
   if((p.keyMoments||[]).some(m=>m.type==='betrayal')) ch.push({label:'⚡ Confront the Past', alt:true, fn:()=>personAction(id,'confront')});
   ch.push({label:'💸 Give Money', alt:true, fn:()=>personAction(id,'givemoney')});
-  ch.push({label:'🙏 Ask for Money', alt:true, fn:()=>personAction(id,'ask')});
+  ch.push({label:'🙏 Ask for Money', alt:true, fn:()=>askMoney(id)});
   ch.push({label:'😠 Insult', alt:true, fn:()=>personAction(id,'insult')});
   const occ=npcOcc(p), est=estNetWorth(p), last=p.memory.length?p.memory[p.memory.length-1].note:'No shared history yet.';
   const col=pbColor(p.affinity); const tr=npcTrait(p); ensureMem(p);
@@ -9273,6 +9278,60 @@ function stAllGo(mode){ closeModal();   // modalpick leaf → no logAct
     mishap,
     (!mishap && invested>=Math.max(2,Math.round(ppl.length*0.7)))?`A day well spent — the whole family feels closer for it. 💛`:''
   ].filter(Boolean),()=>setTab('people')); }
+/* 🙏 ASK FOR MONEY — a wealthy relative rarely just hands it over. If they like you, they'll make you EARN it:
+   answer their trivia or pull off a task. The pot scales to their real fortune (a billionaire granny gives real money). */
+function moneyPot(p){ const w=p.wealth||0;
+  const b = w>=1e10?rng(200000,2000000) : w>=1e9?rng(60000,600000) : w>=1e8?rng(15000,120000) : w>=1e7?rng(4000,35000) : w>=1e6?rng(1200,9000) : rng(150,2500);
+  const gen=(npcDial(p,'warmth')+npcDial(p,'loyalty'))/2; return Math.max(50,Math.round(b*(0.55+gen/140)*priceMult())); }
+const MONEY_TRIVIA=[
+  {q:'How many continents are there?', a:['Five','Six','Seven','Eight'], c:2},
+  {q:'What is the capital of Japan?', a:['Kyoto','Tokyo','Osaka','Seoul'], c:1},
+  {q:'What year did the Titanic sink?', a:['1905','1912','1919','1926'], c:1},
+  {q:'How many sides does a hexagon have?', a:['Five','Six','Seven','Eight'], c:1},
+  {q:'Which planet is closest to the Sun?', a:['Venus','Earth','Mercury','Mars'], c:2},
+  {q:'What gas do plants take in to grow?', a:['Oxygen','Nitrogen','Carbon dioxide','Helium'], c:2},
+  {q:'How many strings does a standard guitar have?', a:['Four','Five','Six','Seven'], c:2},
+  {q:'Who painted the Mona Lisa?', a:['Van Gogh','Picasso','Da Vinci','Monet'], c:2},
+  {q:'How many minutes are in a full day?', a:['720','1,440','1,600','2,000'], c:1},
+  {q:'What is the largest ocean?', a:['Atlantic','Indian','Arctic','Pacific'], c:3},
+  {q:'How many legs does a spider have?', a:['Six','Eight','Ten','Twelve'], c:1},
+  {q:'What is 15% of 200?', a:['20','25','30','35'], c:2},
+  {q:'Which of these is a prime number?', a:['9','15','17','21'], c:2},
+  {q:'What is the freezing point of water (°C)?', a:['0','10','32','-10'], c:0},
+];
+const MONEY_TASKS=[
+  {s:n=>`"Earn it," ${n} grunts. "Wash and detail my car till it shines."`, o:[{l:'🧽 Do a meticulous job', b:76},{l:'💨 Rush through it', b:40}]},
+  {s:n=>`${n} points at the garage. "Clear it out. A full day's work."`, o:[{l:'💪 Put your back into it', b:80,fit:true},{l:'🙄 Do the bare minimum', b:36}]},
+  {s:n=>`"Beat me at chess," ${n} smirks, "and the money's yours."`, o:[{l:'♟️ Play your sharpest', b:44,smart:true},{l:'🤝 Play the long game', b:56}]},
+  {s:n=>`"Give the toast at my party. Impress the room and we'll talk."`, o:[{l:'🎤 Speak from the heart', b:58,looks:true},{l:'📝 Read a safe prepared speech', b:66,smart:true}]},
+  {s:n=>`${n} hands you a list. "Every errand, done before sundown."`, o:[{l:'🏃 Sprint through it', b:72,fit:true},{l:'🚶 Steady and thorough', b:58}]},
+  {s:n=>`"Fix my leaky sink and the busted fence."`, o:[{l:'🔧 Watch a tutorial, nail it', b:64,smart:true},{l:'🔨 Just wing it', b:38}]},
+  {s:n=>`"Make me laugh," ${n} deadpans. "A real one."`, o:[{l:'😂 Swing for the big joke', b:50},{l:'😅 Play it safe', b:60}]},
+  {s:n=>`"Mind the grandkids all weekend and it's yours."`, o:[{l:'🍼 Be the fun one', b:66},{l:'📺 Park them at the TV', b:44}]},
+  {s:n=>`"There's a 5K charity run in my name. Finish it."`, o:[{l:'🏅 Train and race hard', b:55,fit:true},{l:'😮‍💨 Just survive it', b:62}]},
+];
+function askMoney(id){ const p=S.people[id]; if(!p||!p.alive){ closeModal(); return; } closeModal();   // reached via openPerson (logged) → modalpick chain
+  if((p.affinity||0)<30){ rel(id,-3,-2);   // only the distant/estranged flatly refuse now
+    resultModal('Relationship',p.name,'😕',[`You asked ${p.name} for money.`,`They barely look up. "We're not that close." Turned down flat.`, statBar('Relationship',p.affinity)],()=>openPerson(id)); return; }
+  const pot=moneyPot(p), fn=p.name.split(' ')[0], m=rng(0,100);
+  if(m<30){ money(pot); rel(id,-1,+1);   // sometimes they just help
+    resultModal('Relationship',p.name,'💵',[`You asked ${p.name} for a hand.`,`They peel off <b>${cur()}${pot.toLocaleString()}</b> without much fuss. "Don't make a habit of it."`, statBar('Relationship',p.affinity)],()=>openPerson(id)); return; }
+  if(m<64){ const Q=MONEY_TRIVIA[rng(0,MONEY_TRIVIA.length-1)];
+    openModal({banner:'Prove It', title:fn, icon:'🧠', closable:false,
+      text:`${fn} folds their arms. "I'll give you <b>${cur()}${pot.toLocaleString()}</b> — <i>if</i> you can answer me this."<br><br><b>${Q.q}</b>`,
+      choices: Q.a.map((ans,i)=>({label:ans, alt:i>0, fn:()=>askMoneyResolve(id,pot,i===Q.c,'trivia')})) }); return; }
+  const T=MONEY_TASKS[rng(0,MONEY_TASKS.length-1)];
+  openModal({banner:'Earn It', title:fn, icon:'🤝', closable:false,
+    text:`${T.s(fn)}<br><br>Pull it off and you pocket <b>${cur()}${pot.toLocaleString()}</b>.`,
+    choices: T.o.map((o,i)=>({label:o.l, alt:i>0, fn:()=>{ const chance=clamp(o.b + (o.smart?(S.stats.smarts-50)/3:0) + (o.looks?(S.stats.looks-50)/3:0) + (o.fit?((S.fitness||50)-50)/6:0), 10, 94); askMoneyResolve(id,pot, rng(0,100)<chance,'task'); }})) });
+}
+function askMoneyResolve(id,pot,win,kind){ closeModal(); const p=S.people[id]; if(!p)return; const fn=p.name.split(' ')[0];
+  if(win){ money(pot); rel(id,+rng(3,7),+rng(2,5),`You ${kind==='trivia'?'answered their challenge':'did the job they set'} — and earned their respect.`); chg('happy',rng(1,4));
+    pushLog(`🙏 I ${kind==='trivia'?'aced':'earned'} ${p.name}'s challenge for <b>${cur()}${pot.toLocaleString()}</b>.`,[['good',`+${cur()}${pot.toLocaleString()} from ${fn}`]]);
+    resultModal('Relationship',p.name,'💰',[ kind==='trivia'?`"…Correct. Well, I'll be." ${fn} hands over <b>${cur()}${pot.toLocaleString()}</b>, grudgingly impressed.`:`You pulled it off. ${fn} pays up — <b>${cur()}${pot.toLocaleString()}</b> — and looks at you a little differently now.`, statBar('Relationship',p.affinity)],()=>openPerson(id)); }
+  else { rel(id,-1,0);
+    resultModal('Relationship',p.name,'😬',[ kind==='trivia'?`"Wrong. Better luck next time." No money today — but nice try.`:`It didn't go the way you hoped. ${fn} shakes their head. No money this time.`, statBar('Relationship',p.affinity)],()=>openPerson(id)); }
+}
 function personAction(id,action){
   const p=S.people[id]; if(!p||!p.alive)return;
   const before=p.affinity, warm=p.affinity>=45;
