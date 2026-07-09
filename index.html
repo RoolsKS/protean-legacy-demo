@@ -2408,6 +2408,7 @@ function lifeRecord(){
     whistleblower: has('whistleblower'), gotClean: has('got_clean'), greekPresident: has('greek_president'),
     volunteered: has('volunteer'), breachedContract: has('breached_contract'), endedHazing: has('ended_hazing'),
     founder: has('founder'), founderPeak: S.founderPeak||0,
+    marqueeTrips:S.marqueeTrips||0, tripEventsDistinct:Object.keys(S.tripCounts||{}).length, tripSameMax:Object.values(S.tripCounts||{}).reduce((a,b)=>Math.max(a,b),0), tripSpendMax:Math.round((S.tripSpendMax||0)/priceMult()),
     hobbyMaster: Object.values(S.hobbies||{}).some(h=>h.level>=100),
     hobbyMasterCount: Object.values(S.hobbies||{}).filter(h=>h.level>=100).length,
     hobbyWins: Object.values(S.hobbies||{}).reduce((a,h)=>a+(h.compWins||0),0),
@@ -6166,7 +6167,7 @@ function continueAsHeir(id){
   if(heir.eduInvest){ const bonus=clamp(Math.round(heir.eduInvest*2.5),0,22); S.stats.smarts=clamp(S.stats.smarts+bonus); setFlag('privately_educated'); }   // 🎓 a privately-schooled heir starts life sharper (dynasty payoff)
   S.personality = freshPersonality();                  // PERSONALITY reseeds from the inherited genome (mind/adverse set AFTER the flag wipe below)
   S.money=inheritance; S.peakMoney=Math.max(S.peakMoney||0,inheritance);
-  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.founderPeak=0; S.flipProfit=0; S.ems=null; S._cel=null; S._lastShownMoney=null; S._lastShownAge=null; S._agentEarnings=0; S.endurance=-1; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
+  S.job=null; S.jobPerf=50; S.stds=[]; S.pregnant=null; S.spouse=null; S.primaryHeir=null; S.virgin=true; S.greek=null; S.seasonHistory=[]; S._actsUsed=[]; S._breach=null; S.legalDebt=null; S.founderPeak=0; S.flipProfit=0; S.ems=null; S.tripLog=[]; S.marqueeTrips=0; S.tripCounts={}; S.tripSpendMax=0; S._trip=null; S._cel=null; S._lastShownMoney=null; S._lastShownAge=null; S._agentEarnings=0; S.endurance=-1; S.partiesThisYear=0; S.schoolTuition=0; S.schoolPayer='free'; S.schoolRetry=null; S.licenses={}; S.flightHours=0; S.driveHours=0; S.illnesses=[]; S.addictions=[]; S.fitness=50; S.assets={properties:[],vehicles:[],belongings:[]}; S.storageUnits=[]; S.carStorage=[]; S.shopHomes=null; S._shopCat=null; S.hasID=false; S.fakeID=false; S.hasGun=false; S.housing='parents'; S.rentalHome=null; S.rentedCars=[]; S.friendStayEnds=null;
   S.rentOwed=0; S.rentMult=1; S.autopayRent=true; S.karma=0; S.landlord=null;
   // 🌍 P4 DIASPORA SPLIT — an heir who grew up ABROAD continues the dynasty from THEIR country;
   // the family re-sorts around them: relatives in the heir's country are near, everyone else is now the long-distance side.
@@ -12480,6 +12481,1125 @@ const VENUE_EVENTS=[
   {id:'mlb',     name:'Baseball Game',  icon:'⚾', cost:90,  happy:6,  fame:0, sport:true,  countries:['us','jp','kr','mx']},
   {id:'f1',      name:'F1 Grand Prix',  icon:'🏎️', cost:400, happy:12, fame:1, sport:true,  countries:['ae','it','es','uk','jp','br','mx','au']},
 ];
+
+/* ===== 🌍 WORLD-TRIP EXPERIENCE ENGINE (hosts+outcomes / tiers / beats / aftermath) ===== */
+/* ============================================================================
+   🗺️ EVENT HOSTS + 🏆 MARQUEE OUTCOMES — rotating host countries and
+   "how did this edition end" outcome lines for every OVERSEAS event.
+   DETERMINISM: consumes rng()/pick()/rand() ONLY when marqueeOutcome() is
+   called — call it inside a logged, replay-safe path. No DOM, no Date, no
+   Math.random. All state is read-only pools (module constants are static
+   data, never RNG-derived caches).
+   ============================================================================ */
+
+/* ---- Host pools (researched real host histories; codes limited to COUNTRIES) ----
+   Rotating events get their real historical/announced host set; fixed-location
+   events get a single-element pool. Pick the edition host deterministically,
+   e.g. hosts[econHash(_evtHash(id)+S.worldYear)*hosts.length|0 % hosts.length]
+   (pure fn of seed+world year → same host on replay, no RNG consumed) — or
+   pick() inside a logged call. */
+const EVENT_HOSTS = {
+  // FIFA World Cup hosts past+announced: Uruguay(n/a) Italy France Brazil Switzerland Sweden Chile England Mexico Germany Argentina Spain USA Japan/Korea SouthAfrica Russia Qatar US/CA/MX Spain/Portugal/Morocco SaudiArabia
+  worldcup:  ['qa','us','br','de','fr','ru','za','ar','mx','jp','kr','es','it','uk','ca','cl','se','ch','pt','ma','sa'],
+  // Summer Olympics hosts: Athens Paris London LA Tokyo Beijing Rio Sydney Barcelona Seoul Munich Rome Montreal Mexico City Brisbane(au)...
+  olympics:  ['fr','us','jp','br','uk','cn','gr','au','it','de','es','kr','ca','mx','fi','be','nl','se'],
+  // Winter Olympics hosts: Milan-Cortina Beijing Pyeongchang Sochi Vancouver Turin SaltLake Nagano Lillehammer Albertville Calgary Sarajevo(n/a) LakePlacid Innsbruck Sapporo Grenoble StMoritz Oslo GarmischPartenkirchen
+  wolympics: ['it','cn','kr','ru','ca','no','jp','fr','at','ch','us','de'],
+  // UEFA Euro hosts: Germany England France Italy Spain Netherlands Portugal Belgium Austria Poland Ukraine Sweden Switzerland Denmark
+  eurofinal: ['de','uk','fr','it','es','nl','pt','be','at','pl','ua','se','ch','dk'],
+  // Cricket WC hosts: India England Australia NewZealand SouthAfrica Pakistan Bangladesh SriLanka(n/a) WestIndies(n/a)
+  cricketwc: ['in','uk','au','nz','za','pk','bd'],
+  // Rugby WC hosts: France Japan England NewZealand Australia SouthAfrica Wales(uk) Ireland USA(2031)
+  rugbywc:   ['fr','uk','nz','au','za','jp','ie','us'],
+  // World Expo hosts: Dubai Osaka Riyadh Milan Shanghai Aichi Hanover Lisbon Seville Paris...
+  expo:      ['ae','jp','sa','cn','it','de','kr','es','pt','fr'],
+  // Ryder Cup alternates USA <-> Europe (England Scotland Wales Ireland France Spain Italy)
+  rydercup:  ['us','uk','ie','es','it','fr'],
+  // Eurovision — the winner hosts; pool = frequent winners/hosts
+  eurovision:['se','ch','uk','it','nl','pt','at','dk','ie','de','fi','no','is','gr','es','fr','ua','pl','cz'],
+  // Fashion week rotates the fashion capitals: Paris Milan New York London Tokyo
+  fashion:   ['fr','it','us','uk','jp'],
+  // ---- fixed-location events (single-element pools) ----
+  biennale:  ['it'], superbowl: ['us'], wimbledon: ['uk'], tourfr: ['fr'],
+  monacogp:  ['mc'], cannes: ['fr'], metgala: ['us'], riocarn: ['br'],
+  oktober:   ['de'], sanfermin: ['es'], tomatina: ['es'], glasto: ['uk'],
+  sakura:    ['jp'], harbin: ['cn'], holi: ['in'], muertos: ['mx'],
+  comiccon:  ['us'], burning: ['us'],
+};
+
+/* ---- Name pools (deterministic flavor — combined via pick() at call time) ---- */
+const STAR_SURNAMES=['Marchetti','Okafor','Silva','Yamamoto','Kovac','Dupont','Fernandez','Eriksen','Botha','Rossi','Petrov','Nakamura','Diallo','Weber','Costa','Novak','Larsen','Moreau','Santos','Kim','Tanaka','Osei','Vidal','Karlsson','Ferreira','Ivanov','Mbeki','Laurent','Ricci','Andersen'];
+const STAR_INITIALS=['A','B','C','D','E','F','G','H','J','K','L','M','N','P','R','S','T','V'];
+function starName(){ return pick(STAR_INITIALS)+'. '+pick(STAR_SURNAMES); }
+
+/* Football nations (display names for team lines — uk plays as England) */
+const FOOT_NATIONS=['Brazil','Argentina','France','Germany','Spain','Italy','England','Netherlands','Portugal','Uruguay','Belgium','Croatia','Morocco','Japan','Mexico','Colombia'];
+const EURO_NATIONS=['France','Germany','Spain','Italy','England','Netherlands','Portugal','Belgium','Croatia','Denmark','Switzerland','Poland','Austria','Sweden','Czechia','Greece'];
+const CRICKET_NATIONS=['India','Australia','England','New Zealand','Pakistan','South Africa','Sri Lanka','West Indies','Bangladesh','Afghanistan'];
+const RUGBY_NATIONS=['New Zealand','South Africa','England','France','Australia','Ireland','Wales','Argentina','Scotland','Fiji'];
+const MEDAL_NATIONS=['the United States','China','Japan','Great Britain','Australia','France','Germany','Italy','the Netherlands','South Korea'];
+const WINTER_NATIONS=['Norway','Germany','the United States','Canada','Austria','Sweden','Switzerland','the Netherlands','France','Italy'];
+const HOST_NAMES={ us:'the United States', ca:'Canada', ht:'Haiti', mx:'Mexico', br:'Brazil', ar:'Argentina', cl:'Chile', co:'Colombia', pe:'Peru', uk:'the United Kingdom', ie:'Ireland', fr:'France', de:'Germany', nl:'the Netherlands', be:'Belgium', es:'Spain', it:'Italy', pt:'Portugal', ch:'Switzerland', at:'Austria', se:'Sweden', no:'Norway', dk:'Denmark', fi:'Finland', is:'Iceland', pl:'Poland', cz:'Czechia', gr:'Greece', ru:'Russia', ua:'Ukraine', mc:'Monaco', ng:'Nigeria', za:'South Africa', ke:'Kenya', eg:'Egypt', ma:'Morocco', gh:'Ghana', ae:'the UAE', sa:'Saudi Arabia', qa:'Qatar', il:'Israel', tr:'Turkey', jp:'Japan', cn:'China', kr:'South Korea', in:'India', id:'Indonesia', th:'Thailand', ph:'the Philippines', vn:'Vietnam', my:'Malaysia', sg:'Singapore', pk:'Pakistan', bd:'Bangladesh', hk:'Hong Kong', au:'Australia', nz:'New Zealand' };
+function hostName(code){ return HOST_NAMES[code]||'the host nation'; }
+
+/* Two DIFFERENT entries from a pool */
+function pickTwo(arr){ const a=pick(arr); let b=pick(arr); let guard=0; while(b===a && guard++<20) b=pick(arr); if(b===a) b=arr[(arr.indexOf(a)+1)%arr.length]; return [a,b]; }
+
+/* Sport award/event/flavor pools */
+const OLY_EVENTS=['the 100m final','the 200m','the 400m hurdles','all-around gymnastics','the 200m IM in the pool','the pole vault','the marathon','the long jump','the 4x100m relay','skeet shooting'];
+const WOLY_EVENTS=['the downhill','figure skating','short-track speed skating','the biathlon pursuit','the snowboard halfpipe','ski jumping','the giant slalom','the 1500m speed skate','freestyle aerials','the skeleton'];
+const SB_CITIES=['Kansas City','Philadelphia','Dallas','Chicago','Miami','Seattle','Denver','Atlanta','Buffalo','New Orleans','San Francisco','Detroit','Baltimore','Houston','Green Bay','Minneapolis'];
+const DESIGNERS=['Maison Verlaine','Studio Okonkwo','Atelier Sato','House of Marchetti','Kova & Kova','Lindqvist','Casa Ferreira','Yoruba Noir','Delacroix','Ando Atelier','Petrova','Blanc et Or'];
+const FASHION_MOMENTS=['a dress that changed color under the lights','a model walking a live falcon down the runway','a finale gown with a 12-meter train','glow-in-the-dark tailoring','a surprise front-row proposal','a hologram closing the show','recycled-ocean-plastic couture','a 90-year-old model closing the finale'];
+const MET_THEMES=['Gilded Futures','Celestial Bodies','Notes on Decay & Rebirth','The Garden of Machines','Saints & Cinema','Heirlooms','After Midnight','Paper & Thread'];
+const CELEB_FIRST=['Zara','Milo','Anya','Dev','Lucia','Kofi','Sienna','Rafael','Noor','Jasper','Amara','Theo'];
+const CELEB_LAST=['Vance','Adeyemi','Kuroda','Delgado','Whitlock','Moreau','Castellan','Brandt','Iwu','Sorrell','Lindgren','Park'];
+function celebName(){ return pick(CELEB_FIRST)+' '+pick(CELEB_LAST); }
+const FILM_TITLES=['The Salt Orchard','Winter in Tangier','A Field of Radios','Her Violent Quiet','The Cartographer','Dogs of the Harbor','Milk Teeth','The Last Projectionist','Sirocco','A House Made of Sundays','The Apiarist','Glass Country'];
+const ART_TITLES=['Archive of Breath','The Drowned Library','Ten Thousand Doors','Static Bloom','A Chorus of Rust','Borrowed Light','The Weather Inside','Monument to a Rumor'];
+const SONG_WORDS1=['Golden','Midnight','Broken','Electric','Paper','Wild','Neon','Silent','Burning','Crystal'];
+const SONG_WORDS2=['Hearts','Rain','Carousel','Echoes','Fire','Promise','Horizon','Tango','Lullaby','Thunder'];
+const BAND_NAMES=['The Velvet Antlers','Ghost Cartel','Peach Static','The Lowland Choir','Neon Ravine','Sister Comet','The Borrowed Suits','Aurora Kettle','Dry River Club','The Night Bakers'];
+const TRAILER_FRANCHISES=['Starfall: Reckoning','The Umbra Chronicles','Iron Covenant II','Galaxy of Thieves','The Ninth Portal','Crimson Vale','Mecha Dynasty','Voidwalkers'];
+const EXPO_PAVILIONS=['a zero-gravity garden','a pavilion that rained indoors','an AI symphony hall','a walk-through coral reef','a levitating tea house','a building grown from mushrooms','a hall of ten million mirrors','a robot-staffed night market'];
+const SAMBA_SCHOOLS=['Estrela do Norte','Filhos da Lua','Imperio da Mare','Aguia Dourada','Coracao Verde','Tambor Real'];
+const F1_DRIVERS=['V. Castellane','M. Okonkwo','L. Virtanen','R. Delacroix','A. Sassari','J. van der Berg','T. Nakagawa','P. Almeida','K. Zielinski','D. Marlowe'];
+const F1_TEAMS=['Scuderia Vela','Apex Racing','Equipe Bleu','Kestrel GP','Northwind','Meteore'];
+const TENNIS_NATIONS=['Spanish','Serbian','Italian','American','Australian','Polish','Japanese','British','Russian','Greek'];
+const CYCLING_NATIONS=['Slovenian','Danish','Belgian','British','Colombian','French','Spanish','Dutch'];
+
+/* ---- MARQUEE_OUTCOMES — one generator per event id; each returns 2-4 HTML lines
+   describing how the edition ENDED. host = the country code of this edition. ---- */
+const MARQUEE_OUTCOMES = {
+
+  worldcup:(host)=>{
+    const [w,l]=pickTwo(FOOT_NATIONS);
+    const mode=rng(0,9);
+    const score= mode<5 ? `${rng(1,3)}–${rng(0,1)}`
+              : mode<8 ? `${rng(2,3)}–${rng(1,2)} after extra time`
+              : `${rng(0,2)}–${rng(0,2)} (${rng(3,5)}–${rng(1,4)} on penalties)`;
+    const boot=starName(), goals=rng(5,8);
+    const lines=[
+      `🏆 <b>${w}</b> beat <b>${l}</b> ${score} in the final in ${hostName(host)}.`,
+      `👟 The Golden Boot went to <b>${boot}</b> (${goals} goals).`,
+    ];
+    const extra=rng(0,3);
+    if(extra===0) lines.push(`🟥 A red card in the ${rng(18,88)}th minute nearly turned the final on its head.`);
+    else if(extra===1) lines.push(`😱 The shock of the tournament: a group-stage upset that sent a favorite home early.`);
+    else if(extra===2) lines.push(`🧤 The winning keeper was named Player of the Tournament for a string of miracle saves.`);
+    else lines.push(`🎉 ${hostName(host)} threw a party that did not stop for three days.`);
+    return lines;
+  },
+
+  olympics:(host)=>{
+    const leader=pick(MEDAL_NATIONS), star=starName(), ev=pick(OLY_EVENTS);
+    const lines=[
+      `🥇 <b>${leader.charAt(0).toUpperCase()+leader.slice(1)}</b> topped the medal table with ${rng(28,48)} golds at the ${hostName(host)} Games.`,
+      `⭐ Breakout star: <b>${star}</b>, who stunned the world in ${ev}.`,
+    ];
+    const rec=rng(0,2);
+    if(rec===0) lines.push(`⏱️ A world record fell in ${pick(OLY_EVENTS)} — the crowd roared for ten straight minutes.`);
+    else if(rec===1) lines.push(`🔥 The closing ceremony ended with a drone display shaped like the host skyline.`);
+    else lines.push(`🥹 An underdog from a nation with no prior medals took a shock gold — the moment of the Games.`);
+    return lines;
+  },
+
+  wolympics:(host)=>{
+    const leader=pick(WINTER_NATIONS), star=starName(), ev=pick(WOLY_EVENTS);
+    const lines=[
+      `⛷️ <b>${leader.charAt(0).toUpperCase()+leader.slice(1)}</b> led the medal table (${rng(12,20)} golds) at the ${hostName(host)} Winter Games.`,
+      `⭐ <b>${star}</b> became a household name after ${ev}.`,
+    ];
+    if(rng(0,1)) lines.push(`❄️ An Olympic record fell in ${pick(WOLY_EVENTS)} despite brutal winds on the mountain.`);
+    else lines.push(`😮 A crash-and-recover run in ${pick(WOLY_EVENTS)} became the most replayed clip of the Games.`);
+    return lines;
+  },
+
+  eurofinal:(host)=>{
+    const [w,l]=pickTwo(EURO_NATIONS);
+    const pens=rng(0,9)<3;
+    const score= pens ? `${rng(0,1)}–${rng(0,1)} (${rng(3,5)}–${rng(2,4)} on penalties)` : `${rng(1,3)}–${rng(0,1)}`;
+    return [
+      `⚽ <b>${w}</b> beat <b>${l}</b> ${score} in the final in ${hostName(host)}.`,
+      `🏅 Player of the Tournament: <b>${starName()}</b>, who ran the midfield all summer.`,
+      rng(0,1) ? `🎯 The winner came from a ${rng(20,90)}th-minute strike that will be replayed for decades.`
+               : `😭 The losing captain stayed on the pitch long after the whistle — a photo for the ages.`,
+    ];
+  },
+
+  cricketwc:(host)=>{
+    const [w,l]=pickTwo(CRICKET_NATIONS);
+    const byRuns=rng(0,1);
+    const margin= byRuns ? `by ${rng(6,120)} runs` : `by ${rng(2,7)} wickets with ${rng(2,30)} balls to spare`;
+    return [
+      `🏏 <b>${w}</b> beat <b>${l}</b> ${margin} in the final in ${hostName(host)}.`,
+      `🏆 The Golden Bat went to <b>${starName()}</b> (${rng(480,760)} runs across the tournament).`,
+      rng(0,1) ? `🎳 <b>${starName()}</b> took the Golden Ball with ${rng(18,27)} wickets.`
+               : `🌧️ A rain-shortened semifinal produced the most dramatic chase in tournament history.`,
+    ];
+  },
+
+  rugbywc:(host)=>{
+    const [w,l]=pickTwo(RUGBY_NATIONS);
+    const a=rng(18,38), b=a-rng(1,15);
+    return [
+      `🏉 <b>${w}</b> beat <b>${l}</b> ${a}–${b} in a bruising final in ${hostName(host)}.`,
+      `🏅 Player of the Tournament: <b>${starName()}</b>, immense at the breakdown all month.`,
+      rng(0,1) ? `💪 The final was decided by a last-quarter try after ${rng(15,25)} phases of pressure.`
+               : `🚑 A brutal semifinal left both finalists patched together — and it showed in the trenches.`,
+    ];
+  },
+
+  expo:(host)=>{
+    const pav=pick(EXPO_PAVILIONS);
+    return [
+      `🌍 The World Expo in ${hostName(host)} closed after drawing <b>${rng(18,30)} million</b> visitors.`,
+      `🏛️ The pavilion everyone queued hours for: <b>${pav}</b>.`,
+      rng(0,1) ? `🤖 The theme — the future of cities — spawned a dozen technologies you will hear about for years.`
+               : `🎆 The closing night fireworks were visible from ${rng(30,60)} kilometers away.`,
+    ];
+  },
+
+  rydercup:(host)=>{
+    const usWins=rng(0,1)===1;
+    const wPts=rng(15,19), halves=rng(0,1)===1;   // matchplay points always total 28
+    const scoreline= halves ? `${wPts}½–${27-wPts}½` : `${wPts}–${28-wPts}`;
+    const wn=usWins?'The United States':'Europe', ln=usWins?'Europe':'the United States';
+    return [
+      `⛳ <b>${wn}</b> took the Ryder Cup ${scoreline} over ${ln} in ${hostName(host)}.`,
+      `🏌️ The cup was clinched by <b>${starName()}</b> with a ${rng(6,25)}-foot putt on the ${rng(15,18)}th.`,
+      rng(0,1) ? `📣 The Sunday singles swung wildly — three matches flipped on the back nine.`
+               : `🤝 The captains embraced on the green; even the losing fans applauded.`,
+    ];
+  },
+
+  biennale:()=>{
+    const artist=starName(), work=pick(ART_TITLES);
+    return [
+      `🎨 The Golden Lion went to <b>${artist}</b> for <i>${work}</i>.`,
+      `🏛️ The ${pick(['Nordic','German','Brazilian','Japanese','Ghanaian','Korean'])} pavilion drew the longest queues of the Biennale.`,
+      rng(0,1) ? `🌊 One installation flooded its own pavilion on purpose — critics are still arguing about it.`
+               : `📰 A guerrilla artwork appeared overnight in the Giardini and was gone by noon.`,
+    ];
+  },
+
+  superbowl:()=>{
+    const [c1,c2]=pickTwo(SB_CITIES);
+    const a=rng(24,41), b=a-rng(1,21);   // never a tie
+    return [
+      `🏈 The <b>${c1}</b> side beat the <b>${c2}</b> side ${a}–${b} in the Super Bowl.`,
+      `🏆 MVP: <b>${starName()}</b>, ${pick(['3 touchdowns','2 defensive takeaways','a 98-yard kickoff return','380 passing yards','4 sacks'])}.`,
+      rng(0,1) ? `🎤 The halftime show set became the most talked-about ${rng(12,15)} minutes of television this year.`
+               : `😱 A go-ahead score with ${rng(3,58)} seconds left flipped the game at the death.`,
+    ];
+  },
+
+  fashion:(host)=>{
+    const house=pick(DESIGNERS), moment=pick(FASHION_MOMENTS);
+    const city={fr:'Paris',it:'Milan',us:'New York',uk:'London',jp:'Tokyo'}[host]||'the capital';
+    return [
+      `👗 <b>${house}</b> stole ${city} Fashion Week with a collection critics called "${pick(['ferocious','weightless','a funeral for minimalism','pure cinema','armor for soft people'])}".`,
+      `📱 The viral runway moment: ${moment}.`,
+      rng(0,1) ? `🪑 Front row: <b>${celebName()}</b> and <b>${celebName()}</b>, pointedly not speaking to each other.`
+               : `🧵 A tiny unknown label got picked up by every major buyer overnight.`,
+    ];
+  },
+
+  wimbledon:()=>{
+    const champ=`${pick(TENNIS_NATIONS)} star <b>${starName()}</b>`;
+    const sets=pick(['in straight sets','in four sets','in a five-set epic']);
+    return [
+      `🎾 The ${champ} won the title ${sets} on Centre Court.`,
+      rng(0,1) ? `⏱️ The final tiebreak finished ${rng(7,13)}–${rng(3,6)} after ${rng(3,5)} hours of play.`
+               : `🌧️ Rain closed the roof mid-final — the momentum flipped the moment play resumed.`,
+      `🍓 A record ${rng(28,38)} tonnes of strawberries were eaten this fortnight.`,
+    ];
+  },
+
+  tourfr:()=>{
+    const nat=pick(CYCLING_NATIONS);
+    return [
+      `🚴 The yellow jersey went to the ${nat} rider <b>${starName()}</b>, by ${pick([`${rng(12,58)} seconds`,`${rng(2,6)} minutes ${rng(1,59)} seconds`])}.`,
+      rng(0,1) ? `⛰️ The race was decided on a savage mountain stage — a solo attack ${rng(20,60)} km from the summit.`
+               : `💥 A mass crash on the cobbles reshuffled the entire general classification in week one.`,
+      `👑 <b>${starName()}</b> took the polka-dot jersey as king of the mountains.`,
+    ];
+  },
+
+  monacogp:()=>{
+    const [d1,d2]=pickTwo(F1_DRIVERS);
+    return [
+      `🏎️ <b>${d1}</b> (${pick(F1_TEAMS)}) won the Monaco Grand Prix, ${rng(1,9)}.${rng(0,9)}s ahead of <b>${d2}</b>.`,
+      rng(0,1) ? `🚧 A crash at the harbor chicane brought out the safety car with ${rng(8,30)} laps to go — strategy chaos.`
+               : `🌧️ A late shower turned the streets into glass; three cars kissed the barriers at Sainte Devote.`,
+      `🍾 The winner jumped into the harbor, trophy and all.`,
+    ];
+  },
+
+  cannes:()=>{
+    const film=pick(FILM_TITLES), dir=starName();
+    return [
+      `🎬 The Palme d’Or went to <i>${film}</i>, directed by <b>${dir}</b>.`,
+      `👏 Its premiere earned a ${rng(8,17)}-minute standing ovation.`,
+      rng(0,1) ? `😳 A jury feud leaked to the press hours before the ceremony — the announcement was pure theater.`
+               : `🌟 Best Actress went to <b>${celebName()}</b> for a nearly wordless performance.`,
+    ];
+  },
+
+  metgala:()=>{
+    const theme=pick(MET_THEMES);
+    return [
+      `🎭 This year’s theme: <b>${theme}</b>.`,
+      `👑 Best dressed by every outlet: <b>${celebName()}</b>, in ${pick(['an outfit that took 4 people to carry','a gown grown from living moss','liquid chrome','a 40-kilo beaded cape','vintage couture no one could identify'])}.`,
+      rng(0,1) ? `📸 The stairs moment of the night broke the internet within minutes.`
+               : `🤫 Two A-listers arrived in the same custom look — the cold stares fed the tabloids for a week.`,
+    ];
+  },
+
+  riocarn:()=>{
+    const school=pick(SAMBA_SCHOOLS);
+    return [
+      `🎉 <b>${school}</b> won the samba parade with a float ${pick(['shaped like a burning phoenix','carrying a full waterfall','of ten thousand mirrors','that unfolded into a giant jaguar','lit by a thousand lanterns'])}.`,
+      `🥁 Their drum section — ${rng(250,400)} strong — never dropped the beat for ${rng(70,85)} straight minutes.`,
+      rng(0,1) ? `🌧️ A downpour hit mid-parade and the crowd only danced harder.`
+               : `😭 The winning school’s flag-bearer wept through the final stretch of the Sambadrome.`,
+    ];
+  },
+
+  oktober:()=>{
+    return [
+      `🍺 This Oktoberfest poured <b>${(rng(58,74)/10).toFixed(1)} million liters</b> of beer for ${rng(5,7)} million visitors.`,
+      `🎶 The moment of the year: ${pick(['an entire tent singing the same song for twenty minutes','a brass band that refused to stop at closing','a marriage proposal on the bandstand','the mayor tapping the first keg in a record 2 strikes'])}.`,
+      rng(0,1) ? `🥨 A pretzel the size of a wagon wheel toured the tents on a wooden litter.`
+               : `⛈️ A storm emptied the grounds for an hour — then everyone came right back.`,
+    ];
+  },
+
+  sanfermin:()=>{
+    return [
+      `🐂 The fastest encierro this year ran the course in <b>${rng(135,170)} seconds</b>.`,
+      pick([
+        `😅 A pile-up at Dead Man’s Corner sent ${rng(3,9)} runners to the medics — all walked out grinning.`,
+        `🏃 One bull broke from the herd and cleared the street solo — the most replayed run of the week.`,
+        `🎺 The opening chupinazo rocket misfired twice before the plaza erupted.`,
+      ]),
+      `⚪ The white-and-red crowd sang Pobre de Mi at midnight to close the fiesta.`,
+    ];
+  },
+
+  tomatina:()=>{
+    return [
+      `🍅 <b>${rng(120,160)} tonnes</b> of tomatoes were hurled in exactly one hour in Bunol.`,
+      pick([
+        `🧗 The ham-on-the-greased-pole was actually claimed this year — the crowd went feral.`,
+        `📸 A drone shot of the red-soaked square became the photo of the summer.`,
+        `🚿 Locals hosed down strangers from their balconies like it was a sacred duty.`,
+      ]),
+      `🥫 The street ran ankle-deep red; everyone agreed it was a great year for pulp.`,
+    ];
+  },
+
+  eurovision:(host)=>{
+    const winner=pick(['Sweden','Italy','Finland','Norway','Ukraine','Israel','Greece','Ireland','Spain','Austria','the Netherlands','Portugal']);
+    const song=`${pick(SONG_WORDS1)} ${pick(SONG_WORDS2)}`;
+    return [
+      `🎤 <b>${winner}</b> won Eurovision in ${hostName(host)} with "<i>${song}</i>" — ${rng(430,620)} points.`,
+      pick([
+        `🕺 The staging involved ${pick(['a burning piano','wind machines set to hurricane','a 360-degree treadmill','holographic wolves','a costume reveal nobody saw coming'])}.`,
+        `😤 The jury vote and the televote disagreed wildly — the winner was decided on the very last envelope.`,
+        `🎉 The green room shot of the winning delegation became an instant meme.`,
+      ]),
+      `📊 The fan favorite finished a heartbreaking second by ${rng(4,40)} points.`,
+    ];
+  },
+
+  glasto:()=>{
+    const band=pick(BAND_NAMES);
+    return [
+      `🎸 <b>${band}</b> closed the Pyramid Stage with a set people are calling the best in a decade.`,
+      `🤫 The surprise guest slot: <b>${pick(BAND_NAMES)}</b> playing under a fake name at ${rng(1,4)} in the afternoon.`,
+      pick([
+        `🌧️ The mud was biblical — and nobody would have had it any other way.`,
+        `☀️ A freak heatwave turned the farm golden all weekend.`,
+        `🌈 A double rainbow appeared over the Stone Circle during the Sunday legend slot.`,
+      ]),
+    ];
+  },
+
+  sakura:()=>{
+    return [
+      `🌸 Peak bloom hit ${pick(['three days early','right on forecast','a week late'])} this year — the petals fell like warm snow.`,
+      pick([
+        `🏮 The evening lantern viewing along the river drew the biggest crowds in years.`,
+        `🍱 You could not find a free hanami spot in the park after 7 a.m.`,
+        `📷 One ancient tree — ${rng(300,900)} years old — bloomed brighter than it has in living memory.`,
+      ]),
+      `🍶 Strangers shared picnic blankets and sake; that is simply what the season does.`,
+    ];
+  },
+
+  harbin:()=>{
+    return [
+      `🏮 The centerpiece this year: ${pick(['a full-scale ice cathedral','a 40-meter frozen dragon','an entire glowing ice city block','a translucent replica of a famous palace','an ice Ferris wheel that actually turned'])}.`,
+      `🥶 Carved from ${rng(150,220)},000 cubic meters of river ice at −${rng(18,32)}°C.`,
+      rng(0,1) ? `🎆 The night illumination made the whole park glow like stained glass.`
+               : `⛸️ The ice slides had two-hour queues — worth every frozen minute.`,
+    ];
+  },
+
+  holi:()=>{
+    return [
+      `🌈 The squares vanished under clouds of ${pick(['pink and gold','green and violet','every color at once','saffron and turquoise'])} gulal.`,
+      pick([
+        `💦 Water balloons rained from every rooftop — no one within three streets stayed dry.`,
+        `🥁 A dhol procession swept the old town for hours, growing as it went.`,
+        `🧓 The oldest resident on the street led the first color throw, as tradition demands.`,
+      ]),
+      `🍬 Strangers fed each other gujiya and forgave old grudges — that is the point, after all.`,
+    ];
+  },
+
+  muertos:()=>{
+    return [
+      `💀 The grand parade carried ${pick(['a five-story La Catrina puppet','ten thousand candlelit marigold floats','a river of dancing skeletons','giant illuminated alebrijes'])} through the center.`,
+      pick([
+        `🕯️ The cemetery at midnight — thousands of candles, families singing — was the true heart of it.`,
+        `🎨 One home ofrenda, seven generations deep, drew quiet lines of visitors all night.`,
+        `🎻 Mariachis played at the gravesides until dawn.`,
+      ]),
+      `🌼 The scent of cempasuchil hung over the whole city for days.`,
+    ];
+  },
+
+  comiccon:()=>{
+    const t=pick(TRAILER_FRANCHISES);
+    return [
+      `🎪 Hall H detonated when the surprise <b>${t}</b> trailer dropped — servers buckled within minutes.`,
+      pick([
+        `🎭 A-lister <b>${celebName()}</b> walked the floor in a full costume all day and nobody clocked it until they unmasked on a panel.`,
+        `📚 A hand-drawn indie comic sold out its entire print run by Saturday morning.`,
+        `🤖 The cosplay masquerade was won by a functioning 3-meter mech that took 2 years to build.`,
+      ]),
+      `📈 The trailer hit ${rng(80,240)} million views before the weekend ended.`,
+    ];
+  },
+
+  burning:()=>{
+    return [
+      `🔥 The Man burned ${pick(['under a perfect desert moon','in a ring of two hundred fire dancers','during a break between whiteout dust storms','beneath a once-in-a-decade meteor shower'])}.`,
+      pick([
+        `🏜️ A ${rng(2,9)}-hour whiteout swallowed the playa mid-week — veterans called it a rite of passage.`,
+        `🚲 An art car shaped like ${pick(['a galleon','a giant anglerfish','a rolling cathedral','a dragon with working flame throat'])} became the unofficial mayor of deep playa.`,
+        `🌅 The Temple burn on Sunday was dead silent — ${rng(50,70)},000 people and not one voice.`,
+      ]),
+      `✨ You either understand why people go, or you have not been.`,
+    ];
+  },
+};
+
+/* ---- safe accessor ---- */
+function marqueeOutcome(id, hostCode){ const f=MARQUEE_OUTCOMES[id]; return f?f(hostCode):[]; }
+
+/* ============================================================================
+   🌍 WORLD-EVENT TRIP TIERS — lodging, tickets, and money-no-object extras
+   ----------------------------------------------------------------------------
+   Drop-in tables for the OVERSEAS trip flow. Pure data + pure-ish functions:
+   NO DOM, NO Math.random/Date — only rng()/rand()/pick() inside apply().
+   All costs are BASE numbers: the CALLER multiplies by priceMult() (and a
+   per-event size factor for lodging) at spend time. Caller also handles the
+   actual spend() — apply() never deducts the sticker price itself.
+
+   Integration notes for the caller:
+   - LODGING_TIERS[i].flag: if present, setFlag(it) after a successful spend.
+   - TICKET_TIERS: mult is applied to e.cost. meet/memorab are handled in
+     apply-side code (see notes on the tiers). Before gating TRIP_EXTRAS,
+     set S._tripTicket = <chosen ticket k> so extras can gate on VIP+.
+   - TRIP_EXTRAS[i].cost(e) is DETERMINISTIC (no RNG) — safe to call at
+     render time. apply(e) MAY consume RNG, so only call it once the player
+     has committed (inside the logged action), after deducting cost*priceMult.
+     Just before each extra's apply(e), set S._tripExtraCost to the inflated
+     amount you deducted for it (the 🎰 high-roller stake uses it for payouts).
+   ========================================================================== */
+
+/* who counts as "close family" for the bring-the-family extra */
+function tripCloseFam(){
+  return Object.values(S.people).filter(p=>p && p.alive && !p.pet &&
+    /Mother|Father|Husband|Wife|Partner|Fianc|Son|Daughter|Brother|Sister/.test(p.rel||''));
+}
+
+/* ---------------------------------------------------------------------------
+   1) WHERE YOU STAY — one pick per trip. Base cost; caller scales by
+      priceMult() and its own per-event size factor (a Super Bowl week costs
+      more than a Tomatina afternoon).
+   ------------------------------------------------------------------------- */
+const LODGING_TIERS=[
+  {k:'hostel',       label:'🛏️ Backpacker hostel',        cost:120,   happy:0,
+    note:`Twelve bunks, one snorer, free stories forever.`},
+  {k:'bnb',          label:'🏡 Cozy local BnB',            cost:600,   happy:1,
+    note:`A spare room, a chatty host, and the best breakfast tip in town.`},
+  {k:'boutique',     label:'🛎️ 4★ boutique hotel',        cost:2500,  happy:2,
+    note:`Rooftop bar, rainfall shower, walking distance to everything.`},
+  {k:'grand',        label:'🏨 The landmark grand hotel',  cost:9000,  happy:4, fame:1,
+    note:`THE hotel — the lobby alone is a tourist attraction, and the doorman learns your name.`},
+  {k:'presidential', label:'👑 The presidential suite',    cost:45000, happy:8, fame:3, flag:'lived_large',
+    note:`Two floors, a grand piano, a butler on call — the suite heads of state fight over.`},
+];
+
+/* ---------------------------------------------------------------------------
+   2) WHAT TICKET YOU BUY — mult applies to e.cost (the event base ticket).
+      Legend package on a Super Bowl ≈ 60 × 2000 = $120k base — realistic for
+      the once-in-a-lifetime bundles. meet:true → caller rolls a star meeting;
+      memorab:true → caller sets S._tripMemorab=true (signed memorabilia).
+   ------------------------------------------------------------------------- */
+const TICKET_TIERS=[
+  {k:'standing', label:'🎫 Standing / nosebleeds',  mult:1,   happy:0,
+    note:`You can see the event. Technically.`},
+  {k:'decent',   label:'💺 Decent seats',           mult:2.5, happy:1,
+    note:`Actual sightlines, actual legroom.`},
+  {k:'premium',  label:'✨ Premium seats',          mult:6,   happy:3,
+    note:`Padded seats, dead-center view, lounge access at halftime.`},
+  {k:'vip',      label:'🥂 VIP box with open bar',  mult:18,  happy:5, fame:2,
+    note:`Glass-walled suite above the action — you spend the night rubbing shoulders with CEOs, retired legends, and one very loud pop star.`},
+  {k:'legend',   label:'🌟 The Legend package',     mult:60,  happy:10, fame:5, meet:true, memorab:true,
+    note:`Pitchside / paddock / front row — plus a private meet-and-greet with the stars and a signed piece of the day to take home.`},
+];
+
+/* ---------------------------------------------------------------------------
+   3) CRAZY EXTRAS — optional add-ons, each gated by when(S,e).
+      cost(e) returns a BASE figure (deterministic, RNG-free — safe at render).
+      apply(e) runs AFTER the caller has already deducted cost×priceMult();
+      it mutates S (stats, flags, side wins/losses via money()) and returns
+      {lines:[html strings]} for the trip recap. NO spend() inside.
+   ------------------------------------------------------------------------- */
+const TRIP_EXTRAS=[
+
+  {k:'merch', label:'Merch spree', icon:'🧢',
+    cost:e=>300,
+    when:(S,e)=>true,
+    apply(e){ chg('happy',3); S._tripMerch=true;
+      const item=pick([`a scarf you will never wash`,`three shirts and a foam finger`,`a snow globe of the stadium`,`a flag bigger than your suitcase`,`a jersey with your own name pressed on the back`]);
+      return {lines:[`🧢 You blitz the official stands and come home with ${item}. Peak souvenir energy.`]}; }},
+
+  {k:'fanzone', label:'Fan-zone week pass', icon:'🎪',
+    cost:e=>400,
+    when:(S,e)=>true,
+    apply(e){ chg('happy',5);
+      const lines=[`🎪 A whole week in the fan zone — face paint, chants, strangers who feel like old friends by day three.`];
+      if(rand()<0.18){ const loss=Math.round(rng(60,400)*priceMult()); money(-loss); chg('happy',-2);
+        lines.push(`🖐️ Somewhere between the drum circle and the big screen, a pickpocket lifts ${cur()}${loss.toLocaleString()} off you.`); }
+      return {lines}; }},
+
+  {k:'chefTour', label:'Michelin tasting tour', icon:'🍽️',
+    cost:e=>1200,
+    when:(S,e)=>true,
+    apply(e){ chg('happy',3);
+      return {lines:[`🍽️ A chef-guided crawl through the best kitchens in town — you eat things you cannot pronounce and love all of them.`]}; }},
+
+  {k:'photog', label:'Hire a photographer', icon:'📸',
+    cost:e=>1500,
+    when:(S,e)=>!!S.sm && totalFollowers()>0,
+    apply(e){ const gain=Math.round(150+Math.min(50000,totalFollowers()*rng(2,6)/100));
+      bumpFollowers(gain); chg('happy',2);
+      return {lines:[`📸 A pro shadows you all week. The photo dump goes up and pulls in ${gain.toLocaleString()} new followers.`]}; }},
+
+  {k:'afterparty', label:'Afterparty access', icon:'🍾',
+    cost:e=>2000,
+    when:(S,e)=>(S.fame||0)>=15 || S._tripTicket==='vip' || S._tripTicket==='legend',
+    apply(e){ chg('happy',5);
+      const lines=[`🍾 Past the rope, into the real afterparty — the one that does not have a hashtag.`];
+      if(rng(1,100)<=35+Math.round((S.fame||0)/2)){ const f=bumpFame(2);
+        lines.push(`🤩 You end up deep in conversation with one of the stars of the night${f>0?` — and a few cameras notice`:''}.`); }
+      if(rand()<0.30){ chg('health',-3); chg('happy',-1);
+        lines.push(`🥴 The next morning arrives like a personal insult. Worth it. Probably.`); }
+      return {lines}; }},
+
+  {k:'heli', label:'Helicopter transfer', icon:'🚁',
+    cost:e=>8000,
+    when:(S,e)=>true,
+    apply(e){ chg('happy',4);
+      return {lines:[`🚁 While half a million people sit in traffic, you float over them with a drink in hand. Door to door in eleven minutes.`]}; }},
+
+  {k:'family', label:'Bring the family', icon:'👨‍👩‍👧',
+    cost:e=>{ const n=tripCloseFam().length; return n*Math.round(e.travel/2); },
+    when:(S,e)=>tripCloseFam().length>0,
+    apply(e){ const fam=tripCloseFam(); chg('happy',8);
+      for(const p of fam){ rel(p.id,+rng(4,8),+rng(2,4),`You flew the family to the ${e.name}. Nobody will ever forget it.`); }
+      const names=fam.slice(0,4).map(p=>p.name).join(', ')+(fam.length>4?` and ${fam.length-4} more`:'');
+      return {lines:[`👨‍👩‍👧 You fly everyone out — ${names}. ${fam.length>1?`The group photo in front of the venue becomes the family lockscreen.`:`Just the two of you, and a memory that outlives the trip.`}`]}; }},
+
+  {k:'highroller', label:'High-roller side trip', icon:'🎰',
+    cost:e=>Math.max(10000,Math.min(100000,Math.round((S.money||0)/20/1000)*1000)),
+    when:(S,e)=>['monacogp','cannes','superbowl','riocarn'].includes(e.id),
+    apply(e){ /* caller convention: S._tripExtraCost = the inflated amount just deducted for THIS extra */
+      const stake=S._tripExtraCost || Math.round(10000*priceMult());
+      if(rand()<0.42){ const win=Math.round(stake*rng(150,320)/100); money(win); chg('happy',6);
+        if(win>=stake*2.5) setFlag('casino_legend');
+        return {lines:[`🎰 The table gets loud, the pit boss gets nervous — you walk out ${cur()}${win.toLocaleString()} heavier and floating three inches off the carpet.`]}; }
+      chg('happy',-4);
+      return {lines:[`🎰 The chips evaporate in ninety very expensive minutes. The dealer says better luck next time like he means it.`]}; }},
+
+  {k:'yacht', label:'Charter a yacht for the week', icon:'🛥️',
+    cost:e=>60000,
+    when:(S,e)=>['monacogp','cannes','riocarn','biennale'].includes(e.id),
+    apply(e){ chg('happy',7); bumpFame(2); setFlag('lived_large');
+      return {lines:[`🛥️ Sixty meters of white hull parked where everyone can see it. You watch the ${e.name} from the deck with a crew of new best friends.`]}; }},
+
+  {k:'sponsor', label:'Sponsor the event', icon:'💎',
+    cost:e=>Math.max(250000,Math.min(2000000,e.cost*500)),
+    when:(S,e)=>(S.fame||0)>=32 || (S.money||0)>=500000,
+    apply(e){ const f=bumpFame(rng(6,12)); chg('happy',6); setFlag('event_sponsor');
+      const lines=[`💎 Your name goes up on the boards at the ${e.name}. Every camera pan, every replay — there you are.${f>0?` Your profile explodes.`:''}`];
+      if(S.sm) bumpFollowers(Math.round(rng(2000,20000)));
+      if(rand()<0.35){ const bonus=Math.round(rng(50000,250000)*priceMult()); money(bonus); bumpFame(3);
+        lines.push(`🏆 And then your side WINS. The victory montage runs your logo worldwide — endorsement calls pour in worth ${cur()}${bonus.toLocaleString()}.`); }
+      return {lines}; }},
+];
+
+/* ---------------------------------------------------------------------------
+   4) BUDGET SUMMARY — compact HTML line-item breakdown, no DOM.
+      picks = { cls:{label,cost}, lodging:{label,cost}, ticket:{label,cost},
+                extras:[{label,cost}, ...] }
+      Costs here are FINAL figures (already scaled by priceMult / size factor
+      / ticket mult by the caller). Missing pieces are simply skipped.
+   ------------------------------------------------------------------------- */
+function tripBudgetSummary(picks){
+  const rows=[]; let total=0;
+  const add=(label,cost)=>{ total+=cost;
+    rows.push(`<div style="display:flex;justify-content:space-between;gap:12px"><span>${label}</span><b>${cur()}${Math.round(cost).toLocaleString()}</b></div>`); };
+  if(picks.cls)     add(picks.cls.label,     picks.cls.cost);
+  if(picks.lodging) add(picks.lodging.label, picks.lodging.cost);
+  if(picks.ticket)  add(picks.ticket.label,  picks.ticket.cost);
+  for(const x of (picks.extras||[])) add(x.label, x.cost);
+  rows.push(`<div style="display:flex;justify-content:space-between;gap:12px;border-top:1px solid rgba(128,128,128,.35);margin-top:4px;padding-top:4px"><span><b>Trip total</b></span><b>${cur()}${Math.round(total).toLocaleString()}</b></div>`);
+  return `<div style="font-size:.92em;opacity:.95">${rows.join('')}</div>`;
+}
+
+/* ============================================================
+   TRIP BEATS — one interactive story moment while attending a
+   marquee OVERSEAS world event. Deterministic: seeded rng/rand/pick only.
+   Beat shape:
+     { id, when?:(S,e)=>bool, text:(e)=>html, choices:[{label,tip?,apply:(e)=>({text,tags})}] }
+   `e` is the OVERSEAS event object ({id,name,icon,cost,...}).
+   ============================================================ */
+
+const TRIP_BEATS = {
+
+  /* ---------------- SPORT ---------------- */
+  sport:[
+
+  { id:'tb_sp_ball',
+    text:e=>`A ${e.id==='cricketwc'?'six sails':'stray ball rockets'} into your section at ${e.name} ${e.icon}. It is coming <b>right at you</b>. Half a second to decide.`,
+    choices:[
+      {label:'🧤 Catch it', tip:'Keepsake of a lifetime', apply:e=>{ const ok=rand()<0.7; if(ok){ S._tripMemorab=true; chg('happy',10); return {text:`SMACK — dead in your palms. The whole section roars. You hold it up like a trophy. That ball is going on a shelf forever.`, tags:[['good','Caught it!'],['flag','Keepsake']]}; } chg('happy',-4); chg('health',-3); return {text:`It clanks off your fingers and bloodies your thumb. The guy behind you scoops it up and does YOUR celebration.`, tags:[['bad','Fumbled'],['bad','-3 health']]}; }},
+      {label:'🙈 Duck', apply:e=>{ chg('happy',-2); return {text:`You hit the deck. Dignity: gone. Skull: intact. The person behind you catches it one-handed while holding a beer.`, tags:[['bad','Ducked']]}; }},
+      {label:'🧒 Hand it to the kid next to you', tip:'Karma', apply:e=>{ const ok=rand()<0.6; karma(6); chg('happy',8); if(ok){ bumpFollowers(rng(200,900)); return {text:`It lands in your lap and you pass it straight to the wide-eyed kid beside you. The stadium camera catches it. Strangers applaud. Someone clips it and it does numbers online.`, tags:[['good','+karma'],['good','Went viral']]}; } return {text:`You hand it over and the kid looks at you like you invented joy. Their parents mouth THANK YOU across the seats.`, tags:[['good','+karma'],['good','Made their year']]}; }}
+    ]},
+
+  { id:'tb_sp_legend',
+    text:e=>`The seat next to you at ${e.name} has been empty all game — until a retired <b>legend of the sport</b> quietly slides into it, cap pulled low. Nobody else has noticed yet.`,
+    choices:[
+      {label:'💬 Strike up a quiet chat', apply:e=>{ chg('happy',9); chg('smarts',2); return {text:`You keep your voice down and talk the game, not the fame. They relax, point out things you would never have seen — a run here, a switch there. Ninety minutes of free masterclass.`, tags:[['good','Once-in-a-lifetime chat'],['echo','A legend remembers you']]}; }},
+      {label:'🤳 Ask for a selfie', apply:e=>{ if(rand()<0.5){ bumpFollowers(rng(400,1500)); chg('happy',6); return {text:`They sigh, then grin — "one, and you sit on it till the final whistle." Deal. The photo detonates online after full time.`, tags:[['good','Legendary selfie']]}; } chg('happy',-4); return {text:`"Please. I just want to watch a game." The cap goes lower. The rest of the half is extremely awkward.`, tags:[['bad','Shot down']]}; }},
+      {label:'😶 Say nothing, respect the peace', tip:'Small karma', apply:e=>{ karma(3); chg('happy',4); return {text:`You give the smallest nod and go back to the game. At the final whistle they tap your shoulder: "Thanks for that." That is the whole story, and it is enough.`, tags:[['good','+karma']]}; }}
+    ]},
+
+  { id:'tb_sp_jumbotron',
+    text:e=>`The jumbotron camera sweeps the crowd at ${e.name}... and locks onto <b>YOU</b>. Sixty thousand people are watching your face on a screen the size of a house.`,
+    choices:[
+      {label:'🕺 Dance like nobody is watching', tip:'Everyone is watching', apply:e=>{ const viral=rand()<0.5; chg('happy',8); if(viral){ bumpFollowers(rng(1000,5000)); bumpFame(1); return {text:`You give it EVERYTHING. The crowd loses it, the camera refuses to leave, and by the time you land your finisher the clip is already everywhere.`, tags:[['good','Jumbotron legend'],['good','Went viral']]}; } return {text:`You throw shapes with total commitment. The section around you eats it up. The internet, mercifully or tragically, never finds out.`, tags:[['good','Crowd favorite']]}; }},
+      {label:'🧊 Freeze completely', apply:e=>{ chg('happy',-5); return {text:`You stare into the lens like a deer into headlights for a full seven seconds. The camera operator holds the shot out of pure cruelty. The crowd <i>oooohs</i>.`, tags:[['bad','Froze on the big screen']]}; }},
+      {label:'❤️ Point at the person next to you', apply:e=>{ karma(2); chg('happy',6); return {text:`You deflect the spotlight to your neighbor, who blows a kiss to the stadium. Class move. They buy the next round.`, tags:[['good','Smooth deflection']]}; }}
+    ]},
+
+  { id:'tb_sp_proposal',
+    text:e=>`During the break at ${e.name}, the guy TWO SEATS OVER drops to one knee. Ring out. Jumbotron on. His partner has both hands over her mouth. You are fully inside the blast radius of this moment.`,
+    choices:[
+      {label:'📣 Lead the section in cheering', apply:e=>{ chg('happy',8); karma(3); return {text:`You start the chant. She says YES, the section explodes, and the couple hugs you like family. You appear, mid-scream, in their engagement photos forever.`, tags:[['good','Part of the moment'],['good','+karma']]}; }},
+      {label:'🎥 Offer to film it properly', tip:'Karma', apply:e=>{ karma(6); chg('happy',6); return {text:`You grab his phone and get the whole thing steady and centered — the kneel, the yes, the ugly-cry. He wires you a beer and calls you "the most important guest at our wedding."`, tags:[['good','+karma'],['echo','In their wedding toast']]}; }},
+      {label:'🙄 Mutter that this is not the place', apply:e=>{ karma(-4); chg('happy',-2); return {text:`"People are trying to watch a GAME." She heard you. He heard you. The jumbotron, thankfully, did not. The vibes in row K are ruined.`, tags:[['bad','-karma'],['bad','Grinch of row K']]}; }}
+    ]},
+
+  { id:'tb_sp_trouble',
+    text:e=>`Full time approaches at ${e.name} and the losing fans behind you have gone from bitter to <b>ugly</b>. Shoving starts. A cup flies. This is one bad decision away from a brawl.`,
+    choices:[
+      {label:'🕊️ Step in and defuse it', tip:'Brave, slightly dangerous', apply:e=>{ if(rand()<0.7){ karma(8); chg('happy',5); return {text:`You get between them, palms up, crack a joke about the referee everyone can agree to hate. Laughter breaks the tension. Stewards arrive to find peace already made.`, tags:[['good','+karma'],['good','Peacemaker']]}; } chg('health',-8); karma(5); return {text:`You step in and catch a stray elbow to the jaw for your trouble. The brawl dies anyway — partly out of collective guilt about your face.`, tags:[['bad','-8 health'],['good','+karma']]}; }},
+      {label:'👊 Honestly? Join in', apply:e=>{ karma(-8); if(rand()<0.5){ chg('health',-10); chg('happy',-4); return {text:`You wade in swinging and get exactly what you ordered: a split lip and an escort to the exit by three stewards. Your seat watches the finish without you.`, tags:[['bad','-karma'],['bad','Ejected & bruised']]}; } chg('happy',3); return {text:`You throw one glorious shove, the crowd surges, and somehow you slip out of the scrum unscathed as security wades in. Your heart is pounding for an hour.`, tags:[['bad','-karma'],['good','Got away with it']]}; }},
+      {label:'🚪 Move seats, not your luck', apply:e=>{ return {text:`You quietly relocate ten rows down. Two minutes later, security drags four people out of your old row. Veteran instincts.`, tags:[['good','Dodged it']]}; }}
+    ]},
+
+  { id:'tb_sp_scalper',
+    text:e=>`At halftime a wild-eyed scalper finds you on the concourse of ${e.name}: "Buddy. BUDDY. I got a whale who missed kickoff. I will pay you <b>triple face value</b> for that seat, RIGHT NOW. You walk, you profit."`,
+    choices:[
+      {label:'💰 Take the money and walk', apply:e=>{ const pay=Math.round((e.cost||500)*(rng(220,320)/100)); money(pay); chg('happy',-6); return {text:`Cash in hand — ${cur()}${pay.toLocaleString()} — you walk out of the biggest event on Earth at halftime. You hear the roar of the winning moment from the taxi rank and feel absolutely nothing good.`, tags:[['good',`+${cur()}${pay.toLocaleString()}`],['bad','Missed the ending']]}; }},
+      {label:'🎟️ Not for sale', apply:e=>{ chg('happy',7); return {text:`"Some things you cannot buy back," you tell him, and return to your seat. The second half turns out to be one of the greatest you will ever witness. Money was never the point of today.`, tags:[['good','Priceless second half']]}; }},
+      {label:'🤝 Haggle him higher first', apply:e=>{ if(rand()<0.4){ const pay=Math.round((e.cost||500)*(rng(380,480)/100)); money(pay); chg('happy',-4); return {text:`You squeeze him to nearly QUINTUPLE face — ${cur()}${pay.toLocaleString()} — before handing the ticket over. Cold-blooded. The taxi driver gives you the score updates.`, tags:[['good',`+${cur()}${pay.toLocaleString()}`],['bad','Missed the ending']]}; } chg('happy',2); return {text:`You push too hard and he vanishes into the crowd mid-sentence. You keep your seat, and honestly? Relief. Back to the game.`, tags:[['good','Kept the seat']]}; }}
+    ]},
+
+  { id:'tb_sp_tunnel',
+    text:e=>`After the final whistle at ${e.name} you spot it: a gap in the barrier near the <b>players tunnel</b>. Stewards distracted. Sharpie in your pocket. This is extremely against the rules.`,
+    choices:[
+      {label:'🖊️ Sneak down for autographs', apply:e=>{ if(rand()<0.45){ S._tripMemorab=true; chg('happy',12); return {text:`You slip through, heart hammering, and a sweat-soaked star signs your shirt WHILE a steward shouts at you both. He winks. You are escorted out grinning like an idiot, shirt held above your head.`, tags:[['good','Signed shirt!'],['flag','Keepsake']]}; } chg('happy',-5); return {text:`You make it four steps before a steward the size of a vending machine lifts you by the collar. Marched out past the whole queue. Someone films it.`, tags:[['bad','Ejected'],['bad','Humiliating']]}; }},
+      {label:'📸 Zoom lens from the barrier', apply:e=>{ chg('happy',5); return {text:`You work within the rules and get a genuinely great shot of the captain saluting the fans. Legal. Framed. Perfect.`, tags:[['good','Great photo']]}; }},
+      {label:'🚶 The moment was the moment', apply:e=>{ chg('happy',3); return {text:`You let it go and file out with sixty thousand people singing the same song. Some experiences do not need a signature.`, tags:[['good','Content']]}; }}
+    ]},
+
+  { id:'tb_sp_anthem',
+    text:e=>`Before kickoff at ${e.name}, both anthems roll across the stadium and the crowd — every accent, every flag — sings as one animal. The hair on your arms stands up.`,
+    choices:[
+      {label:'🎶 Sing along, badly, at full volume', apply:e=>{ chg('happy',10); if(S.mind) S.mind.stress=Math.max(0,(S.mind.stress||0)-8); return {text:`You do not know half the words and it does not matter. For three minutes you are part of something enormous. You will think about this moment on ordinary Tuesdays for years.`, tags:[['good','+10 happy'],['good','Chills']]}; }},
+      {label:'🤫 Close your eyes and just listen', apply:e=>{ chg('happy',7); if(S.mind) S.mind.stress=Math.max(0,(S.mind.stress||0)-12); return {text:`Sixty thousand voices wash over you. Somewhere in the middle of it, a knot you have been carrying for months quietly unties itself.`, tags:[['good','Stress melts away']]}; }}
+    ]}
+  ],
+
+  /* ---------------- MOTOR ---------------- */
+  motor:[
+
+  { id:'tb_mo_pit',
+    text:e=>`Your pass at ${e.name} ${e.icon} gets you close enough to the pit wall to feel it: a car howls in and <b>twenty humans move as one organism</b>. Four tires. Under two seconds. It is over before your brain processes it started.`,
+    choices:[
+      {label:'🤯 Watch every stop like a hawk', apply:e=>{ chg('happy',8); chg('smarts',3); return {text:`You start predicting the calls before the radio does. A mechanic notices you noticing, and mimes a wheel-gun salute at you after their fastest stop of the day.`, tags:[['good','+3 smarts'],['good','Pit wall convert']]}; }},
+      {label:'📸 Film it for the feed', apply:e=>{ bumpFollowers(rng(300,1200)); chg('happy',5); return {text:`Your slow-mo of the stop — sparks, choreography, the lollipop drop — is the best thing you have ever posted and it is not close.`, tags:[['good','Great content']]}; }}
+    ]},
+
+  { id:'tb_mo_champagne',
+    text:e=>`You blagged your way to the podium fence at ${e.name}. The winner shakes the magnum, aims into the crowd and — direct hit. You are now <b>soaked head to toe in victory champagne</b>.`,
+    choices:[
+      {label:'🍾 Arms wide, drink the rain', apply:e=>{ chg('happy',12); S._tripMemorab=true; return {text:`You catch the cork on the way down and pocket it. Sticky, blinded, ecstatic. This shirt is never being washed and the cork is going on a shelf.`, tags:[['good','+12 happy'],['flag','Podium cork keepsake']]}; }},
+      {label:'😤 These clothes were EXPENSIVE', apply:e=>{ chg('happy',-4); money(-rng(80,250)); return {text:`Dry cleaning cannot save this outfit and neither can your mood. You spend the trophy ceremony doing angry laundry math while everyone around you celebrates.`, tags:[['bad','Outfit ruined'],['bad','Missed the joy']]}; }}
+    ]},
+
+  { id:'tb_mo_crash',
+    text:e=>`A gasp rips through ${e.name} — a ${e.id==='tourfr'?'rider goes down HARD in a tangle of carbon and bodies on the descent':'car snaps sideways at 280 and detonates against the barrier'}. The venue goes silent. Nobody is moving down there.`,
+    choices:[
+      {label:'🙏 Watch, heart in throat', apply:e=>{ if(S.mind) S.mind.stress=Math.min(100,(S.mind.stress||0)+6); chg('happy',3); return {text:`The longest ninety seconds of the day — then movement. A wave to the crowd. The whole venue exhales as one and the applause is louder than any victory cheer. You will never forget that sound.`, tags:[['good','They walked away'],['echo','The silence, then the roar']]}; }},
+      {label:'🎥 Film it', apply:e=>{ karma(-5); bumpFollowers(rng(800,2500)); chg('happy',-3); return {text:`Your footage spreads fast — and so do the replies calling you a ghoul for filming a human being at their worst moment. They walked away. Your comment section did not.`, tags:[['bad','-karma'],['good','Clicks, at a cost']]}; }},
+      {label:'😢 Look away until it is over', apply:e=>{ chg('happy',-2); return {text:`You stare at your shoes and listen to the crowd for the verdict. When the cheer comes, you finally breathe. Some things you do not need to see.`, tags:[['good','They walked away']]}; }}
+    ]},
+
+  { id:'tb_mo_celebrity',
+    text:e=>`The paddock at ${e.name} is a zoo of the absurdly famous. And there, alone by the coffee cart, is an <b>A-lister you grew up watching</b> — looking bored out of their mind.`,
+    choices:[
+      {label:'☕ Offer to grab them a coffee', apply:e=>{ if(rand()<0.6){ chg('happy',9); bumpFame(1); return {text:`They laugh — "finally, someone useful here." You talk nonsense about racing for twenty minutes. Their security guy takes a photo OF YOU TWO on your phone, unprompted.`, tags:[['good','Celebrity coffee buddy'],['echo','That paddock afternoon']]}; } chg('happy',-3); return {text:`A publicist materializes between you like a pop-up ad. "No interactions today, thank you." The star shrugs at you apologetically as they are steered away.`, tags:[['bad','Publicist-blocked']]}; }},
+      {label:'👀 Be cool. BE COOL.', apply:e=>{ chg('happy',4); return {text:`You settle for pretending to check your phone eleven feet away. They notice, nod at you like an equal, and stroll off. That nod sustains you for a week.`, tags:[['good','The nod']]}; }}
+    ]},
+
+  { id:'tb_mo_pass',
+    text:e=>`A stranger in expensive sunglasses at ${e.name} dangles a laminate: "Spare <b>paddock-club pass</b>. My plus-one bailed. Five hundred and it is yours — half what they go for."`,
+    choices:[
+      {label:'💳 Buy it', tip:'Real or fake?', apply:e=>{ money(-500); if(rand()<0.6){ chg('happy',12); return {text:`It scans GREEN. Suddenly you are eating tiny food above the garages, watching engineers argue over telemetry. Best five hundred you ever spent.`, tags:[['good','Paddock club!'],['good','Worth every cent']]}; } chg('happy',-8); return {text:`It scans red. The steward keeps the pass, radios something, and points you firmly back to general admission. The sunglasses guy is, of course, long gone.`, tags:[['bad',`Scammed: -${cur()}500`],['bad','Fake pass']]}; }},
+      {label:'🙅 Too good to be true', apply:e=>{ chg('smarts',2); return {text:`You pass. Twenty minutes later you watch security frog-march a different buyer away from the paddock gate. Your wallet purrs with vindication.`, tags:[['good','Dodged a scam']]}; }}
+    ]},
+
+  { id:'tb_mo_wager',
+    text:e=>`The fan next to you at ${e.name} — flag as a cape, beer in each hand — leans over: "Friendly wager. My pick versus yours for the podium. <b>Two hundred</b>. Loser also sings the winner's anthem."`,
+    choices:[
+      {label:'🎲 You are ON', apply:e=>{ if(rand()<0.5){ money(rng(180,220)); chg('happy',8); return {text:`Your pick holds on by 0.8 seconds. He pays up with theatrical grief and belts out an anthem he clearly does not know, to the delight of the entire grandstand.`, tags:[['good','Won the bet'],['good','+the anthem']]}; } money(-200); chg('happy',3); return {text:`A late-race disaster torches your pick. You pay, you sing, you butcher every word — and the grandstand loves you for it anyway. Expensive karaoke.`, tags:[['bad',`-${cur()}200`],['good','Good sport']]}; }},
+      {label:'🚫 Keep it friendly, not financial', apply:e=>{ chg('happy',4); return {text:`You decline the cash but shake on the anthem forfeit alone. You lose, you sing, everyone wins. Zero dollars changed hands and the memory is free.`, tags:[['good','Free fun']]}; }}
+    ]},
+
+  { id:'tb_mo_climb', when:(S,e)=>e.id==='tourfr',
+    text:e=>`You staked out a hairpin on the queen stage of ${e.name}. The breakaway grinds toward you at walking pace, faces carved from pain. Fans are <b>running alongside the riders</b>. The gap in the barrier is right there.`,
+    choices:[
+      {label:'🏃 RUN WITH THEM', apply:e=>{ if(rand()<0.75){ chg('happy',14); chg('health',-2); return {text:`Thirty seconds of sprinting uphill next to the best climbers alive, screaming encouragement in a language you do not speak. Your lungs file a formal complaint. Your soul has never been lighter.`, tags:[['good','Ran the mountain'],['echo','That hairpin, forever']]}; } chg('happy',-6); karma(-3); return {text:`You stumble, clip a barrier, and nearly take out a motorbike marshal. A gendarme removes you from the mountain with extreme prejudice. The riders never even noticed you.`, tags:[['bad','Ejected from the col'],['bad','-karma']]}; }},
+      {label:'🔔 Ring the cowbell, hold the line', apply:e=>{ chg('happy',8); return {text:`You ring that bell until your wrist gives out. A rider at the back of the break meets your eye and taps his heart. Message received. Message returned.`, tags:[['good','Part of the wall of sound']]}; }}
+    ]},
+
+  { id:'tb_mo_yacht', when:(S,e)=>e.id==='monacogp',
+    text:e=>`Watching from the harbor at ${e.name}, you get chatting with a deckhand. He glances around: "Owner is away till Sunday. Want to watch qualifying from the <b>top deck of a superyacht</b>? Do not touch anything."`,
+    choices:[
+      {label:'🛥️ Absolutely yes', apply:e=>{ if(rand()<0.7){ chg('happy',13); bumpFame(1); return {text:`Champagne view, engines screaming off the harbor walls, a billionaire's binoculars in your hands. A society photographer snaps the deck and you end up, unnamed, in a glossy magazine spread.`, tags:[['good','Superyacht qualifying'],['good','Magazine cameo']]}; } chg('happy',-7); return {text:`The owner comes back EARLY. There is shouting in three languages. You exit down the gangway at a dignified sprint while the deckhand invents an elaborate lie behind you.`, tags:[['bad','Caught trespassing-ish'],['bad','Undignified exit']]}; }},
+      {label:'⚓ Decline — that job is his to lose', apply:e=>{ karma(4); chg('happy',3); return {text:`"Your boss, your neck," you tell him, and buy him a drink at the quay instead. He tells you scandalous yacht stories worth more than any deck view.`, tags:[['good','+karma'],['good','Better stories anyway']]}; }}
+    ]}
+  ],
+
+  /* ---------------- GLAM ---------------- */
+  glam:[
+
+  { id:'tb_gl_opinion',
+    text:e=>`At ${e.name} ${e.icon}, a nervous designer materializes beside you, gesturing at their own showcase: "Be honest. Everyone here lies for a living. <b>What do you actually think?</b>"`,
+    choices:[
+      {label:'🗡️ Brutal honesty', tip:'Risky', apply:e=>{ if(rand()<0.55){ bumpFame(1); chg('happy',7); return {text:`You name the exact piece that does not work and why. Silence... then they grab your arm: "THANK YOU. Nobody says it." You spend the evening in their inner circle, introduced as "the only honest person here."`, tags:[['good','Trusted critic'],['echo','A designer owes you the truth']]}; } chg('happy',-5); return {text:`Their face collapses in real time. Turns out the piece you trashed was a tribute to their late mentor. The temperature around you drops ten degrees and invitations quietly evaporate.`, tags:[['bad','Read the room'],['bad','Frozen out']]}; }},
+      {label:'💐 Find the one thing you loved', apply:e=>{ karma(3); chg('happy',5); return {text:`You skip the flaws and describe, precisely, the single look that stopped your heart. They tear up a little. Honest AND kind — a rarer combination in this room than diamonds.`, tags:[['good','+karma'],['good','Made their night']]}; }},
+      {label:'🥂 Deflect with charm', apply:e=>{ return {text:`"I think the bar is criminally under-attended, come on." They laugh, you both escape the question, and the champagne does the diplomacy for you.`, tags:[['good','Smooth escape']]}; }}
+    ]},
+
+  { id:'tb_gl_mistaken',
+    text:e=>`A ripple moves through the crowd at ${e.name} — and it is aimed at YOU. Someone whispers a famous name. Phones rise. You have been <b>mistaken for somebody very famous</b>, and the misunderstanding is snowballing.`,
+    choices:[
+      {label:'😎 Play along', tip:'Ride the wave', apply:e=>{ if(rand()<0.5){ bumpFame(2); bumpFollowers(rng(1500,6000)); chg('happy',9); return {text:`You sign three napkins with an illegible flourish, pose with a wink, and vanish before anyone checks. The photos trend under the wrong name. Several land on YOUR profile anyway. Chaos. Beautiful chaos.`, tags:[['good','+2 fame'],['good','Identity heist']]}; } chg('happy',-7); return {text:`Mid-selfie, the ACTUAL celebrity walks past. The crowd looks at them, then you, then them. Someone films your soul leaving your body. The clip is titled IMPOSTOR and it does numbers.`, tags:[['bad','Busted publicly'],['bad','Meme of the week']]}; }},
+      {label:'🙋 Correct them immediately', apply:e=>{ karma(2); chg('happy',3); return {text:`"Wrong person — but I take it as a compliment." A few people take photos anyway, "just in case." One insists you are lying to protect your privacy, which is somehow flattering.`, tags:[['good','Honest'],['good','Still flattering']]}; }}
+    ]},
+
+  { id:'tb_gl_redcarpet',
+    text:e=>`A gap opens on the carpet at ${e.name} and a bored photographer bank waves you over — "You! Yes you! Give us something!" The flashes are already warming up.`,
+    choices:[
+      {label:'📸 Serve a full pose sequence', apply:e=>{ bumpFame(1); bumpFollowers(rng(500,2000)); chg('happy',8); return {text:`Hand on hip. Over the shoulder. The slow turn. You commit like your rent depends on it and the wall of flashes ROARS. Two agency photos of you end up captioned "guest" — a title you intend to put on business cards.`, tags:[['good','+1 fame'],['good','Carpet moment']]}; }},
+      {label:'🚶 Keep walking, mystery intact', apply:e=>{ chg('happy',4); return {text:`You give them nothing but a half-smile in motion. "WHO WAS THAT?" someone shouts behind you. Exactly. Exactly.`, tags:[['good','Mystique preserved']]}; }},
+      {label:'🤡 Do something deeply unserious', apply:e=>{ if(rand()<0.6){ bumpFollowers(rng(2000,8000)); chg('happy',9); return {text:`You hit the carpet with a move so unhinged the photographers break professional silence and LAUGH. The clip escapes containment within the hour. You are, briefly, the internet's favorite guest.`, tags:[['good','Viral bit'],['good','Committed to it']]}; } chg('happy',-4); bumpFame(1); return {text:`The bit does not land. The photos are eternal. A fashion account posts you under "choices were made" and gains ten thousand followers off your back.`, tags:[['bad','The bit flopped'],['good','Famous-ish anyway']]}; }}
+    ]},
+
+  { id:'tb_gl_critic',
+    text:e=>`Beside you at ${e.name}, a famous critic is loudly demolishing the showcase to their assistant: "Derivative. Cowardly. An insult to the medium." Heads are turning. The creator is <b>within earshot</b>.`,
+    choices:[
+      {label:'🛡️ Defend the work, out loud', apply:e=>{ karma(5); chg('happy',6); if(rand()<0.4) bumpFame(1); return {text:`"Cowardly is trashing it where they can hear you." The critic blinks — nobody talks back to them. The creator catches your eye across the room and mouths a thank-you they will remember longer than any review.`, tags:[['good','+karma'],['good','Stood up'],['echo','The creator remembers']]}; }},
+      {label:'🤝 Actually... agree with them', apply:e=>{ karma(-4); chg('smarts',2); chg('happy',3); return {text:`"The middle section WAS cowardly." The critic swivels, delighted to find a co-conspirator, and dissects the whole show with you over champagne. Educational. Vicious. The creator saw you nodding.`, tags:[['bad','-karma'],['good','A masterclass in venom']]}; }},
+      {label:'🎧 Not your circus', apply:e=>{ return {text:`You drift toward the far exhibit and let the drama happen at a safe distance. By tomorrow the feud will have three articles about it, and you will be in none of them. Perfect.`, tags:[['good','Stayed out of it']]}; }}
+    ]},
+
+  { id:'tb_gl_afterparty',
+    text:e=>`As ${e.name} winds down, a stranger in an impeccable suit taps your shoulder: "The REAL party is a penthouse thing. Very exclusive list. You have... an interesting energy. Coming?"`,
+    choices:[
+      {label:'🎉 Follow the stranger', tip:'Network or scam', apply:e=>{ if(rand()<0.55){ bumpFame(1); bumpFollowers(rng(800,3000)); chg('happy',10); return {text:`The penthouse is REAL and so is the guest list — faces you have only seen on screens, all bored of each other and delighted by someone new. You leave at dawn with four numbers you would never have gotten anywhere else.`, tags:[['good','Inner-circle night'],['echo','Penthouse contacts']]}; } money(-rng(300,900)); chg('happy',-7); return {text:`The "penthouse" is a rented room with a card reader at the door. By the time you realize the exclusive list is a pricing model, your card has been charged for "membership." The suit has evaporated.`, tags:[['bad','Scammed'],['bad','Fake party']]}; }},
+      {label:'🏨 Quit while the night is perfect', apply:e=>{ chg('happy',5); return {text:`You bow out gracefully. Tomorrow you learn the penthouse thing was either legendary or a scam depending on who tells the story — and you are content never knowing which.`, tags:[['good','Ended on a high']]}; }}
+    ]},
+
+  { id:'tb_gl_giftbag',
+    text:e=>`At the ${e.name} coat check, an usher presses a heavy gift bag into your hands with a deferential nod. One glance inside — designer sunglasses, a watch, an envelope — tells you this was meant for a <b>VIP who is not you</b>.`,
+    choices:[
+      {label:'🕶️ Walk. Fast.', apply:e=>{ money(rng(600,1800)); karma(-6); chg('happy',4); return {text:`You exit at the speed of guilt. The haul is worth a small fortune and the watch actually suits you, which somehow makes it worse. Somewhere, a mildly famous person is arguing with an usher.`, tags:[['good','Free luxury haul'],['bad','-karma']]}; }},
+      {label:'↩️ Hand it back', apply:e=>{ karma(6); if(rand()<0.5){ money(rng(150,400)); return {text:`"This is not mine." The usher goes pale, then grateful — and returns with a smaller, entirely legitimate guest bag "for your honesty." Integrity, with a gift receipt.`, tags:[['good','+karma'],['good','Honesty rewarded']]}; } return {text:`The usher nearly faints with relief — that bag belonged to someone with a publicist and a temper. You get a heartfelt thank-you and the moral high ground, which sadly does not come with sunglasses.`, tags:[['good','+karma']]}; }}
+    ]},
+
+  { id:'tb_gl_malfunction',
+    text:e=>`Halfway across the floor at ${e.name}, you feel it: a seam in your outfit gives way with an audible <b>rrrrip</b>. Heads turn. In this room, at this event, wardrobe is a blood sport.`,
+    choices:[
+      {label:'👑 Own it as a LOOK', apply:e=>{ if(rand()<0.6){ bumpFame(1); bumpFollowers(rng(1000,4000)); chg('happy',8); return {text:`You square your shoulders and wear the tear like it cost extra. By midnight a fashion account has credited the "deconstructed moment" to a designer who does not exist. You invented a trend by accident.`, tags:[['good','Fashion moment'],['good','Accidental trendsetter']]}; } chg('happy',-5); return {text:`You commit to the bit but the bit does not commit to you — the tear spreads with every step. You spend the last hour anchored to a pillar, radiating false confidence.`, tags:[['bad','The rip won']]}; }},
+      {label:'🪡 Emergency repair mission', apply:e=>{ chg('smarts',1); chg('happy',3); return {text:`A backstage seamstress takes pity and performs surgery with three safety pins and zero judgment. You return to the floor seamless and humbled. Tip your seamstresses.`, tags:[['good','Saved by a pro']]}; }}
+    ]},
+
+  { id:'tb_gl_singalong', when:(S,e)=>e.id==='eurovision',
+    text:e=>`The arena at ${e.name} erupts as the fan-favorite entry hits its key change. The delegation next to you — face paint, flags, matching sequins — grabs your arms: "SING WITH US OR LEAVE EUROPE."`,
+    choices:[
+      {label:'🎤 Full sequin commitment', apply:e=>{ chg('happy',12); bumpFollowers(rng(300,1500)); return {text:`They paint a flag on your cheek, drape you in glitter, and by the reprise you know every word of a song in a language you cannot name. Twelve points to whatever just happened to your heart.`, tags:[['good','Douze points'],['good','+12 happy']]}; }},
+      {label:'📊 You are here for the VOTING drama', apply:e=>{ chg('happy',7); chg('smarts',2); return {text:`You politely decline the sequins but spend the jury sequence trading increasingly conspiratorial voting-bloc theories with a superfan. You now understand European geopolitics better than most diplomats.`, tags:[['good','Voting scholar']]}; }}
+    ]}
+  ],
+
+  /* ---------------- FESTIVAL ---------------- */
+  festival:[
+
+  { id:'tb_fe_float',
+    text:e=>`A float rolls past at ${e.name} ${e.icon} and a performer locks eyes with you, grinning, hand outstretched over the barrier: "<b>COME ON THEN!</b>" The crew is already making room.`,
+    choices:[
+      {label:'🎉 Climb aboard', apply:e=>{ chg('happy',13); bumpFollowers(rng(200,1000)); return {text:`You are hauled up into a wall of drums and feathers and noise, and for six blocks you are not a tourist — you are IN the parade, waving at a city that waves back. You will never fully come down from this.`, tags:[['good','+13 happy'],['echo','You were IN the parade']]}; }},
+      {label:'📷 Some things are better witnessed', apply:e=>{ chg('happy',6); return {text:`You wave them on and drink in the spectacle from the barrier. The performer blows you a kiss as the float turns the corner. Right choice? Wrong choice? The question will visit you at 2am for years.`, tags:[['good','Front-row memory']]}; }}
+    ]},
+
+  { id:'tb_fe_drink',
+    text:e=>`A table of locals at ${e.name} slams down an empty stein in front of you. The challenge is understood in every language on Earth: <b>drinking contest</b>. The whole tent is watching.`,
+    choices:[
+      {label:'🍺 Honor demands it', apply:e=>{ chg('health',-8); if(rand()<0.5){ chg('happy',11); money(rng(30,90)); return {text:`You will pay for this tomorrow, but TONIGHT you are a legend. The table erupts, someone crowns you with a paper hat, and the losers cover your tab. Your liver files paperwork.`, tags:[['good','Champion of the tent'],['bad','-8 health']]}; } chg('happy',5); money(-rng(40,100)); return {text:`You go down swinging in round three to a grandmother who never broke eye contact. You buy the round, she adopts you for the evening, and honestly? Worth it.`, tags:[['bad','Defeated by a grandma'],['good','Adopted by the table']]}; }},
+      {label:'🥤 Counter-offer: a FOOD contest', apply:e=>{ chg('happy',7); chg('health',-2); return {text:`The table roars with laughter and pivots instantly. You lose narrowly at pretzels but win outright at dumplings. Diplomacy through gluttony. Everyone staggers away happy.`, tags:[['good','Diplomatic solution']]}; }},
+      {label:'🙏 Decline with a toast', apply:e=>{ karma(2); chg('happy',3); return {text:`You raise your glass, say the one local word you know, and bow out. They cheer the effort anyway. Knowing your limits is its own festival skill.`, tags:[['good','Graceful exit']]}; }}
+    ]},
+
+  { id:'tb_fe_lost',
+    text:e=>`One wrong turn at ${e.name} and the crowd swallows you whole. Your phone is dead. The streets have rearranged themselves out of spite. You are <b>spectacularly, hopelessly lost</b>.`,
+    choices:[
+      {label:'🧭 Surrender to the adventure', apply:e=>{ chg('happy',10); if(S.mind) S.mind.stress=Math.max(0,(S.mind.stress||0)-6); return {text:`You stop fighting it. Three hours of drifting delivers you a rooftop view no guidebook mentions, a tiny bar with no name, and a shortcut you could never find again. Being lost was the destination.`, tags:[['good','Best wrong turn ever'],['good','Stress relief']]}; }},
+      {label:'😰 Panic-navigate back', apply:e=>{ if(rand()<0.6){ chg('happy',2); return {text:`Forty sweaty minutes of dead reckoning and half-remembered landmarks later, you burst back into the main square like a returning explorer. Nobody noticed you were gone. You tell no one how scared you were.`, tags:[['good','Found your way']]}; } chg('happy',-4); money(-rng(30,80)); return {text:`You give up and flag a taxi that takes you on a scenic tour of everywhere except your hotel. The meter runs like it has a grudge. The driver waves goodbye warmly, as well he might.`, tags:[['bad','Taxi tax'],['bad','Pride wounded']]}; }}
+    ]},
+
+  { id:'tb_fe_pickpocket',
+    text:e=>`In the crush at ${e.name} you feel it — fingers, feather-light, sliding into your pocket. Your wallet is <b>leaving without you</b>. You have one heartbeat to react.`,
+    choices:[
+      {label:'✊ Grab the wrist', apply:e=>{ if(rand()<0.6){ chg('happy',6); return {text:`Your hand clamps down like a trap. A teenage pickpocket stares at you, caught, terrified. He drops the wallet and melts into the crowd before you can decide what justice looks like. Everything is still there.`, tags:[['good','Wallet saved'],['good','Cat-like reflexes']]}; } money(-rng(150,450)); chg('happy',-6); return {text:`You grab air. By the time you spin around there are forty identical backs of heads and your wallet is starting a new life. Cards cancelable, cash gone, faith in crowds: damaged.`, tags:[['bad','Wallet gone'],['bad','Festival tax']]}; }},
+      {label:'🗣️ Shout THIEF and point', apply:e=>{ if(rand()<0.5){ karma(3); chg('happy',5); return {text:`The crowd does something beautiful: it closes. Two strangers corner the kid, your wallet reappears via a chain of hands, and a street cop handles the rest. The crowd protects its own — today, that includes you.`, tags:[['good','Crowd justice'],['good','Wallet back']]}; } money(-rng(100,300)); chg('happy',-4); return {text:`Your shout dies in the drums and noise. The thief is gone, and half the crowd thinks YOU are the disturbance. You cancel your cards in a doorway, seething at a party.`, tags:[['bad','Lost in the noise'],['bad','Wallet gone']]}; }}
+    ]},
+
+  { id:'tb_fe_friend',
+    text:e=>`You and a total stranger at ${e.name} reach for the same last skewer at a food stall — and both insist the other take it. One shared skewer and three hours later, you have talked about <b>everything</b>.`,
+    choices:[
+      {label:'💛 Trade contacts — keep this one', apply:e=>{ setFlag('festival_friend'); karma(3); chg('happy',10); return {text:`Some people you meet for a reason. You swap every contact method you both have and promise to meet at another festival, another year, another country. Strangely, you both know you actually will.`, tags:[['good','A lifelong friend'],['flag','Festival friend'],['echo','Same time next year?']]}; }},
+      {label:'🌅 Let it be perfect and finite', apply:e=>{ chg('happy',7); return {text:`No numbers. No names, even. Just one perfect conversation that owes nothing to tomorrow. You part with a hug at sunrise and become a story the other person tells forever.`, tags:[['good','A perfect stranger']]}; }}
+    ]},
+
+  { id:'tb_fe_bulls', when:(S,e)=>e.id==='sanfermin',
+    text:e=>`Dawn in Pamplona. White shirt, red scarf, rolled newspaper in your fist. The rocket goes up, the street tenses, and somewhere behind you six hundred kilos per animal of <b>pure momentum</b> is released. Run, or watch from the balcony?`,
+    choices:[
+      {label:'🐂 RUN', tip:'Injury risk vs a story for life', apply:e=>{ setFlag('ran_with_bulls'); if(rand()<0.65){ chg('happy',15); return {text:`Two minutes of pure animal terror — hooves like thunder on cobblestone, the crowd screaming, your legs finding gears they never had. You dive into a doorway as the herd storms past close enough to touch. You have never felt more alive and may never again.`, tags:[['good','RAN WITH THE BULLS'],['flag','ran_with_bulls'],['echo','The thunder of hooves']]}; } chg('health',-rng(10,22)); chg('happy',4); return {text:`A horn clips you at the curve and the cobblestones finish the job. You come to in a medic tent, gloriously bruised, scarf still on. "Worth it?" asks the medic. Through a split lip: "Completely."`, tags:[['bad','Gored-adjacent'],['flag','ran_with_bulls'],['good','Legendary scar story']]}; }},
+      {label:'🏛️ The balcony is where the WISE watch', apply:e=>{ chg('happy',8); return {text:`From above, the run is a river of white and red parting around chaos. You watch a man lose his shoe, his dignity, and nearly more. Your drink stays perfectly level throughout. Wisdom has a view.`, tags:[['good','Wise spectator']]}; }}
+    ]},
+
+  { id:'tb_fe_burn', when:(S,e)=>e.id==='burning',
+    text:e=>`The Man burns tonight. Fifty thousand people ring the fire in the desert dark at ${e.name}, and as the figure collapses into sparks, something in your chest goes with it.`,
+    choices:[
+      {label:'🔥 Let it take something you have carried', apply:e=>{ chg('happy',12); if(S.mind) S.mind.stress=Math.max(0,(S.mind.stress||0)-18); karma(2); return {text:`You name the thing silently — the grudge, the grief, the version of you that no longer fits — and give it to the fire. When the embers settle, it is genuinely lighter in there. Whatever this is, it worked.`, tags:[['good','Something released'],['good','Deep stress relief'],['echo','What you left in the fire']]}; }},
+      {label:'🫂 Hold hands with strangers and watch', apply:e=>{ chg('happy',9); if(S.mind) S.mind.stress=Math.max(0,(S.mind.stress||0)-8); return {text:`A hand finds yours on each side, unasked. Nobody speaks. The fire roars, the drums roll across the playa, and for one long hour fifty thousand strangers are a single quiet animal breathing together.`, tags:[['good','The burn'],['good','Communion']]}; }}
+    ]},
+
+  { id:'tb_fe_secret',
+    text:e=>`A rumor tears through ${e.name} like wildfire: a <b>massive act is playing an unannounced set</b> at a tiny stage on the far side, starting NOW. It is a forty-minute scramble across the entire site. Could be true. Could be nothing.`,
+    choices:[
+      {label:'🏃 CHASE THE RUMOR', apply:e=>{ if(rand()<0.5){ chg('happy',14); bumpFollowers(rng(400,1600)); return {text:`It is TRUE. You squeeze into a crowd of two hundred as one of the biggest acts alive plays a stage the size of a garden shed, close enough to see their setlist. The best show of your life, and barely anyone can prove it happened.`, tags:[['good','Secret set!'],['echo','You were one of 200']]}; } chg('happy',-5); chg('health',-2); return {text:`Forty minutes of power-walking delivers you to... a poetry open mic. The rumor was a lie or a joke or both. Somewhere across the site, the act you ACTUALLY wanted just finished on the main stage.`, tags:[['bad','Wild goose chase'],['bad','Missed the main stage']]}; }},
+      {label:'⛺ Stay put — the grass is fine HERE', apply:e=>{ chg('happy',6); return {text:`You hold your excellent spot and let the rumor-chasers stampede past. The act in front of you plays a blinder to a half-empty field. Sometimes the secret set is the friends... no, it was just a good call.`, tags:[['good','Held the spot']]}; }}
+    ]},
+
+  { id:'tb_fe_costume',
+    text:e=>`A cackling group of locals at ${e.name} decides your outfit is UNACCEPTABLY boring. Before you can object, someone is holding festival garb against you and a grandmother is already adjusting the fit with pins.`,
+    choices:[
+      {label:'🎭 Full transformation', apply:e=>{ chg('happy',10); chg('looks',1); bumpFollowers(rng(150,700)); return {text:`Twenty minutes later you are unrecognizable and magnificent. The grandmother slaps your cheek approvingly. Every photo from this day will be your favorite photo for years, and you cannot explain half of what you are wearing.`, tags:[['good','Transformed'],['good','Best photos ever']]}; }},
+      {label:'🧢 Just the hat. Compromise.', apply:e=>{ chg('happy',5); return {text:`You accept the hat and the hat alone. The group boos theatrically but the grandmother declares the hat "the important part." You wear it the rest of the trip. You will keep it forever.`, tags:[['good','The hat stays']]}; }}
+    ]}
+  ],
+
+  /* ---------------- CULTURE ---------------- */
+  culture:[
+
+  { id:'tb_cu_family',
+    text:e=>`At ${e.name} ${e.icon}, a local family notices you hovering at the edge of their celebration — and instead of closing ranks, the grandmother beckons you in with a hand that will not take no for an answer.`,
+    choices:[
+      {label:'🙏 Join them fully', apply:e=>{ karma(6); chg('happy',12); return {text:`They feed you, teach you the words, correct your hands gently when you do the gesture wrong, and by nightfall the kids are climbing on you like furniture. You arrived a tourist. You leave, briefly, family. Nothing you paid for this trip mattered more than this free thing.`, tags:[['good','+karma'],['good','+12 happy'],['echo','A family across the world']]}; }},
+      {label:'📷 Join a little, keep respectful distance', apply:e=>{ karma(3); chg('happy',7); return {text:`You sit at the edge, accept one plate you could not refuse, and mostly just witness — which turns out to be its own way of honoring it. The grandmother nods at you as you go: seen, approved.`, tags:[['good','+karma'],['good','Respectful guest']]}; }}
+    ]},
+
+  { id:'tb_cu_food',
+    text:e=>`One stall at ${e.name} has a queue FOUR TIMES longer than any other. Locals only. No sign in any language you read. Whatever they are making smells like a religious experience.`,
+    choices:[
+      {label:'⏳ Queue like a believer', apply:e=>{ money(-rng(8,25)); chg('happy',11); return {text:`Fifty minutes of queueing, three pantomimed conversations, and then — the first bite rewires something in your brain. You immediately rejoin the queue. The vendor laughs and gives you a double portion the second time. You will chase this flavor for the rest of your life.`, tags:[['good','Best thing you ever ate'],['echo','The stall with no name']]}; }},
+      {label:'😈 Sidle toward the front', apply:e=>{ karma(-5); if(rand()<0.4){ money(-rng(8,25)); chg('happy',6); return {text:`You execute a shameless drift past forty patient people and get served. It IS incredible. It would taste better without the guilt seasoning, but only slightly.`, tags:[['bad','-karma'],['good','Ill-gotten deliciousness']]}; } chg('happy',-5); return {text:`An entire queue of locals turns to look at you at once, silent and absolute. You retreat to the back, where you belong. The wait is now fifty minutes AND everyone knows what you did.`, tags:[['bad','-karma'],['bad','Publicly shamed']]}; }},
+      {label:'🌮 Eat at the empty stall next door', apply:e=>{ money(-rng(5,15)); if(rand()<0.3){ chg('happy',9); return {text:`Contrarian genius: the empty stall is run by a former chef who talks you through every ingredient of the best meal nobody else discovered. The queue next door never learns what it missed.`, tags:[['good','Hidden gem']]}; } chg('happy',2); return {text:`It is... fine. Perfectly fine. You eat your fine food watching the queue people receive their life-changing portions, and you make peace with your choices. Mostly.`, tags:[['good','It was fine']]}; }}
+    ]},
+
+  { id:'tb_cu_cosplay', when:(S,e)=>e.id==='comiccon',
+    text:e=>`The cosplay contest at ${e.name} has a walk-in category, and the registration table is RIGHT THERE. You did not come dressed for this... but there is a vendor hall full of pieces and two hours on the clock.`,
+    choices:[
+      {label:'🦸 ENTER. Assemble something NOW.', apply:e=>{ money(-rng(60,200)); if(rand()<0.45){ S._tripMemorab=true; bumpFame(1); bumpFollowers(rng(1500,5000)); chg('happy',13); return {text:`Two frantic hours of vendor-hall scavenging produces a genuinely inspired mashup — and the crowd LOSES IT. You place, you get a ribbon, judges ask who designed it. "Me. Two hours ago." The clip goes everywhere.`, tags:[['good','Placed in the contest!'],['flag','Contest ribbon keepsake'],['good','Went viral']]}; } chg('happy',6); return {text:`Your speed-run costume is held together by hope and zip ties, and it shows. You do not place — but you strut that stage like you built it, the crowd cheers the audacity, and three people ask for photos anyway.`, tags:[['good','The audacity'],['bad','Did not place']]}; }},
+      {label:'📣 Judge from the crowd instead', apply:e=>{ chg('happy',7); return {text:`You install yourself front row and become the loudest supporter of every underdog entry. A kid in a cardboard mech suit wins the junior division largely on the back of your cheering. Their mom hugs you.`, tags:[['good','Hype human'],['good','Made a kid champion']]}; }}
+    ]},
+
+  { id:'tb_cu_ice', when:(S,e)=>e.id==='harbin',
+    text:e=>`Behind a rope at ${e.name}, a master ice sculptor is finishing a dragon the size of a bus. He catches you watching for the third hour, laughs, and holds out the chisel: "<b>You. Try.</b>"`,
+    choices:[
+      {label:'🧊 Take the chisel', apply:e=>{ if(rand()<0.6){ S._tripMemorab=true; chg('happy',11); chg('smarts',2); return {text:`He guides your hands through three cuts on a practice block, and something CLICKS — a curve of ice falls away clean and the shape underneath is almost, nearly, a bird. He carves your name beside it and photographs you both. The photo outlives the ice.`, tags:[['good','Carved ice with a master'],['flag','The photo keepsake'],['echo','Almost, nearly, a bird']]}; } chg('happy',4); return {text:`Your first swing takes the head clean off the practice block. Silence. Then the master laughs so hard he has to sit down in the snow, and names the headless block after you. It stays in his display all week. Immortality of a kind.`, tags:[['bad','Beheaded the block'],['good','Immortalized in failure']]}; }},
+      {label:'🙇 Too sacred to ruin — but watch closer', apply:e=>{ chg('happy',7); chg('smarts',2); return {text:`You decline the chisel but he waves you inside the rope anyway, and for an hour you watch a bus-sized dragon emerge from frozen river water at arm's length, his breath and yours fogging together. Some masterclasses are silent.`, tags:[['good','Inside the rope']]}; }}
+    ]},
+
+  { id:'tb_cu_peace',
+    text:e=>`It sneaks up on you at ${e.name}: a lull in the crowd, lanterns or blossoms or snowlight overhead, and suddenly — <b>total stillness</b>. The kind of quiet moment trips are secretly for.`,
+    choices:[
+      {label:'🧘 Stay in it as long as it lasts', apply:e=>{ chg('happy',9); if(S.mind) S.mind.stress=Math.max(0,(S.mind.stress||0)-15); return {text:`You do not take a photo. You do not move. You just stand inside the moment until it dissolves on its own, and carry the stillness out with you like something smuggled. Weeks from now, stressed at home, you will close your eyes and be right back here.`, tags:[['good','Pure peace'],['good','Deep stress relief'],['echo','The still moment']]}; }},
+      {label:'📱 Capture it to keep it', apply:e=>{ chg('happy',5); bumpFollowers(rng(100,600)); return {text:`The photo is genuinely beautiful — your most-loved post of the year. And yet every time you look at it, you half-remember that the real thing had a temperature, and a smell, and a silence the screen cannot hold.`, tags:[['good','Beautiful shot'],['bad','Half-lived the moment']]}; }}
+    ]},
+
+  { id:'tb_cu_ofrenda', when:(S,e)=>e.id==='muertos',
+    text:e=>`At ${e.name}, a family tending a marigold-covered ofrenda notices you lingering. The mother studies your face, sees something there, and gently asks: "Is there someone YOU are remembering tonight? There is room."`,
+    choices:[
+      {label:'🕯️ Add a candle for someone you lost', apply:e=>{ karma(5); chg('happy',8); if(S.mind) S.mind.stress=Math.max(0,(S.mind.stress||0)-10); return {text:`You say the name out loud — maybe for the first time in years — and light a candle among strangers who treat your grief like it belongs. "Tonight they visit," the mother says, matter-of-fact, and hands you pan de muerto. For one night, in a country not your own, it is simply true.`, tags:[['good','+karma'],['good','A name spoken again'],['echo','The candle among the marigolds']]}; }},
+      {label:'🌼 Help tend the altar instead', apply:e=>{ karma(4); chg('happy',6); return {text:`You spend an hour arranging marigolds and refilling candles, learning each face in the photographs from the stories the family tells. You leave knowing three generations of strangers better than some of your own neighbors.`, tags:[['good','+karma'],['good','Kept the flames lit']]}; }}
+    ]},
+
+  { id:'tb_cu_phrase',
+    text:e=>`You attempt the local phrase you rehearsed on the plane, at full confidence, to a stall vendor at ${e.name}. Her eyes go wide. The neighboring vendors turn. You have said something <b>very much not what you meant</b>.`,
+    choices:[
+      {label:'😂 Ask them to teach you properly', apply:e=>{ chg('smarts',3); chg('happy',9); karma(2); return {text:`The whole stall row adopts your education as the afternoon project. You leave two hours later with ten solid phrases, one free snack, and the knowledge that you originally announced yourself as "a haunted refrigerator." Best language class of your life.`, tags:[['good','+3 smarts'],['good','Haunted refrigerator, reformed']]}; }},
+      {label:'🫠 Nod and walk away FOREVER', apply:e=>{ chg('happy',-2); return {text:`You retreat with whatever dignity remains, which is none. For the rest of the trip you take a two-block detour around that stall. The vendors wave cheerfully every time they spot you doing it.`, tags:[['bad','The long way around']]}; }}
+    ]},
+
+  { id:'tb_cu_artisan',
+    text:e=>`Off the main drag at ${e.name}, an elderly artisan works in a doorway — no crowd, no card reader, hands moving with fifty years of muscle memory. The piece taking shape is <b>the best thing you have seen all trip</b>. It is not cheap.`,
+    choices:[
+      {label:'💎 Pay full price, no haggling', apply:e=>{ const price=rng(120,350); money(-price); S._tripMemorab=true; karma(4); chg('happy',10); return {text:`You pay what the hands are worth. The artisan wraps it slowly, properly, and tells you the story inside it — what the pattern means, who taught them. Every mass-produced souvenir on the main drag just became invisible to you.`, tags:[['good','The real thing'],['flag','Artisan keepsake'],['good','+karma']]}; }},
+      {label:'🤝 Haggle — it is expected, right?', apply:e=>{ if(rand()<0.5){ const price=rng(70,180); money(-price); S._tripMemorab=true; chg('happy',7); return {text:`A spirited negotiation conducted mostly in eyebrows lands on a fair middle. The artisan seems to enjoy the sport of it more than the money and throws in a small extra piece "for the fight in you."`, tags:[['good','Fair deal'],['flag','Artisan keepsake']]}; } chg('happy',-3); return {text:`Your opening offer lands like an insult. The artisan does not argue — just turns back to the work, and the doorway is closed to you in every way that matters. Some things are priced in respect.`, tags:[['bad','Offer refused'],['bad','Read the culture wrong']]}; }},
+      {label:'👛 Admire, and admit it is beyond you', apply:e=>{ chg('happy',3); karma(1); return {text:`You say honestly that it is beautiful and beyond your budget. The artisan nods without judgment and lets you watch the work a while longer — which was free, and almost as good.`, tags:[['good','Honest admirer']]}; }}
+    ]}
+  ]
+};
+
+/* --------------------------------------------------------------
+   tripBeatFor(e) — map an overseas event to its beat category,
+   filter by per-beat `when` gates, and pick ONE beat — or return
+   null 25% of the time so not every trip has a story moment.
+   -------------------------------------------------------------- */
+const TRIP_BEAT_CAT = {
+  worldcup:'sport', olympics:'sport', wolympics:'sport', eurofinal:'sport', cricketwc:'sport',
+  rugbywc:'sport', superbowl:'sport', wimbledon:'sport', rydercup:'sport',
+  monacogp:'motor', tourfr:'motor',
+  fashion:'glam', metgala:'glam', cannes:'glam', eurovision:'glam', biennale:'glam',
+  oktober:'festival', riocarn:'festival', sanfermin:'festival', tomatina:'festival',
+  glasto:'festival', burning:'festival', holi:'festival',
+  sakura:'culture', harbin:'culture', muertos:'culture', expo:'culture', comiccon:'culture'
+};
+
+function tripBeatFor(e){
+  if(!e) return null;
+  const cat=TRIP_BEAT_CAT[e.id]; if(!cat) return null;
+  if(rand()<0.25) return null;                       // some trips are just trips
+  const pool=(TRIP_BEATS[cat]||[]).filter(b=>!b.when || b.when(S,e));
+  if(!pool.length) return null;
+  return pick(pool);
+}
+
+/* ============================================================
+   🧳 MARQUEE TRIP AFTERMATH — what a world-event trip leaves behind.
+   Memorabilia (appreciating keepsakes), trip tracking, ribbons,
+   social-media splash, and Life-in-Review memory lines.
+   Deterministic: seeded rng/rand/pick ONLY. No DOM. No Math.random.
+   ============================================================ */
+
+/* ---- per-event keepsake flavor: what the merch stall sells + what the signed grail IS ----
+   m = cheap merch item name (builder), s = signed big-ticket item name (builder), si = signed icon */
+const TRIP_MEMO_FLAVOR = {
+  worldcup:  { m:n=>`${n} Supporter Scarf`,        s:n=>`Signed ${n} Jersey`,               si:'👕' },
+  olympics:  { m:n=>`${n} Torch Replica Pin`,      s:n=>`Signed ${n} Team Flag`,            si:'🏳️' },
+  wolympics: { m:n=>`${n} Torch Replica Pin`,      s:n=>`Signed ${n} Team Flag`,            si:'🏳️' },
+  eurofinal: { m:n=>`${n} Supporter Scarf`,        s:n=>`Signed ${n} Jersey`,               si:'👕' },
+  cricketwc: { m:n=>`${n} Team Cap`,               s:n=>`Signed ${n} Bat`,                  si:'🏏' },
+  rugbywc:   { m:n=>`${n} Supporter Scarf`,        s:n=>`Signed ${n} Jersey`,               si:'👕' },
+  expo:      { m:n=>`${n} Souvenir Medallion`,     s:n=>`Signed ${n} Pavilion Blueprint`,   si:'📐' },
+  rydercup:  { m:n=>`${n} Pin Flag`,               s:n=>`Signed ${n} Winning Glove`,        si:'🧤' },
+  biennale:  { m:n=>`${n} Exhibition Catalogue`,   s:n=>`Signed ${n} Artist Proof`,         si:'🖼️' },
+  superbowl: { m:n=>`${n} Pennant`,                s:n=>`Signed ${n} Helmet`,               si:'🪖' },
+  fashion:   { m:n=>`${n} Lookbook`,               s:n=>`Signed ${n} Designer Sketch`,      si:'✏️' },
+  wimbledon: { m:n=>`${n} Towel`,                  s:n=>`Signed ${n} Racquet`,              si:'🎾' },
+  tourfr:    { m:n=>`${n} Musette Bag`,            s:n=>`Signed ${n} Yellow Jersey`,        si:'👕' },
+  monacogp:  { m:n=>`${n} Paddock Cap`,            s:n=>`Signed ${n} Race Suit`,            si:'🏎️' },
+  cannes:    { m:n=>`${n} Festival Poster`,        s:n=>`Signed ${n} Palme Program`,        si:'🌿' },
+  metgala:   { m:n=>`${n} Invitation Facsimile`,   s:n=>`Signed ${n} Gala Program`,         si:'🎭' },
+  riocarn:   { m:n=>`${n} Feather Headpiece`,      s:n=>`Signed ${n} Samba Costume Piece`,  si:'🪶' },
+  oktober:   { m:n=>`${n} Commemorative Stein`,    s:n=>`Signed ${n} First-Keg Mallet`,     si:'🍺' },
+  sanfermin: { m:n=>`${n} Red Scarf`,              s:n=>`Signed ${n} Matador Cape`,         si:'🐂' },
+  tomatina:  { m:n=>`${n} Goggles`,                s:n=>`Signed ${n} Festival Banner`,      si:'🍅' },
+  eurovision:{ m:n=>`${n} Souvenir Mic`,           s:n=>`Signed ${n} Winning Setlist`,      si:'🎤' },
+  glasto:    { m:n=>`${n} Wristband`,              s:n=>`Signed ${n} Headliner Setlist`,    si:'🎸' },
+  sakura:    { m:n=>`${n} Painted Fan`,            s:n=>`Signed ${n} Calligraphy Scroll`,   si:'🌸' },
+  harbin:    { m:n=>`${n} Lantern Miniature`,      s:n=>`Signed ${n} Sculptor Sketch`,      si:'🏮' },
+  holi:      { m:n=>`${n} Pigment Set`,            s:n=>`Signed ${n} Festival Artwork`,     si:'🌈' },
+  muertos:   { m:n=>`${n} Painted Skull`,          s:n=>`Signed ${n} Altar Artwork`,        si:'💀' },
+  comiccon:  { m:n=>`${n} Exclusive Figure`,       s:n=>`Signed ${n} First-Edition Comic`,  si:'📖' },
+  burning:   { m:n=>`${n} Dust Goggles`,           s:n=>`Signed ${n} Installation Panel`,   si:'🔥' },
+};
+
+/* 🎁 tripMemorabilia(e, tier) — mint a keepsake belonging for OVERSEAS event `e`.
+   tier 'merch'  → small souvenir  (~200–800 base, inflated)
+   tier 'signed' → big-ticket grail (~3k–30k base, inflated)
+   cat:'art' so it APPRECIATES yearly; appraised:true & fake:false so the
+   appraisal economy never falsely flags a genuine trip keepsake.
+   4% of signed items are later revealed special (match-worn etc.): value ×3 + note.
+   Returns the item (caller displays it; item.note carries the reveal line if any). */
+function tripMemorabilia(e, tier){
+  const fl = TRIP_MEMO_FLAVOR[e.id] || { m:n=>`${n} Souvenir Program`, s:n=>`Signed ${n} Photo`, si:'🖋️' };
+  const signed = tier==='signed';
+  const base = signed ? rng(3000,30000) : rng(200,800);
+  const item = {
+    name: signed ? fl.s(e.name) : fl.m(e.name),
+    icon: signed ? fl.si : (e.icon||'🎁'),
+    value: Math.round(base*priceMult()),
+    bought: Math.round(base*priceMult()),
+    cat: 'art',                          // art appreciates yearly — memorabilia gains value
+    fake: false, fakeFrac: 0,
+    appraised: true,                     // provenance came with it — no appraisal needed
+    boughtAge: S.age,
+  };
+  if(signed && rand()<0.04){             // 🌟 rare: turns out to be the REAL match-worn/one-of-one piece
+    item.value = Math.round(item.value*3);
+    item.note = `Later authenticated as the genuine match-worn piece — collectors tripled its value overnight.`;
+  }
+  S.assets.belongings = S.assets.belongings || [];
+  S.assets.belongings.push(item);
+  return item;
+}
+
+/* 🧾 tripRecord(e, spentTotal) — call EXACTLY ONCE per completed marquee trip.
+   Pure tracking (no log lines — the caller narrates). spentTotal = everything
+   the trip cost in TODAY money (tickets+travel+lodging+extras+memorabilia). */
+function tripRecord(e, spentTotal){
+  S.tripLog = S.tripLog || [];
+  S.tripLog.push({ id:e.id, wy:S.worldYear||0, spent:Math.round(spentTotal||0), age:S.age });
+  S.marqueeTrips = (S.marqueeTrips||0) + 1;
+  S.tripSpendMax = Math.max(S.tripSpendMax||0, Math.round(spentTotal||0));
+  S.tripCounts = S.tripCounts || {};
+  S.tripCounts[e.id] = (S.tripCounts[e.id]||0) + 1;
+}
+
+/* 🎗️ TRIP RIBBONS — append these 4 entries INSIDE the existing `const RIBBONS=[` array.
+   They read ONLY the lifeRecord snapshot `r` (see lifeRecord() additions below). */
+const TRIP_RIBBONS = [
+  {id:'globetrotter_fan',   name:'Globetrotter Fan',   icon:'🧳', rarity:'rare',      priority:6, desc:'Attend 5 different marquee world events.',        q:r=>_frac(r.tripEventsDistinct,5)},
+  {id:'superfan',           name:'Superfan',           icon:'💺', rarity:'epic',      priority:8, desc:'Attend 3 editions of the same world event.',      q:r=>_frac(r.tripSameMax,3)},
+  {id:'high_roller_trip',   name:'High Roller',        icon:'💸', rarity:'rare',      priority:6, desc:'Blow 150k+ on a single world-event trip.',        q:r=>_frac(r.tripSpendMax,150000)},
+  {id:'once_in_a_lifetime', name:'Once in a Lifetime', icon:'🌍', rarity:'legendary', priority:9, desc:'Attend 12+ marquee world events across a life.',  q:r=>_frac(r.marqueeTrips,12)},
+];
+
+/* 📸 tripSocialSplash(e, picks) — post-trip social payoff.
+   picks = { tier:'nosebleed'|'standard'|'vip'|'legend', extras:[...('photographer')] }
+   Photographer extra DOUBLES the gain. Returns a display line, or null if no socials. */
+function tripSocialSplash(e, picks){
+  if(!(S.sm && S.sm.joined)) return null;
+  picks = picks || {};
+  const fame = Math.max(1, S.fame||0);
+  const T = {
+    nosebleed: ()=> fame*20  + rng(40,200),
+    standard:  ()=> fame*60  + rng(100,450),
+    vip:       ()=> fame*150 + rng(300,1200),
+    legend:    ()=> fame*400 + rng(1200,4000),
+  };
+  let gain = Math.round((T[picks.tier]||T.standard)());
+  if((picks.extras||[]).includes('photographer')) gain *= 2;   // pro shots hit different
+  bumpFollowers(gain);
+  return `📸 Your ${e.name} content blew up online — +${gain.toLocaleString()} followers.`;
+}
+
+/* 💭 TRIP_MEMORY_LINES — wistful recall for Life-in-Review / old-age flashbacks.
+   Each entry is (name)=>string; caller does pick(TRIP_MEMORY_LINES)(e.name). */
+const TRIP_MEMORY_LINES = [
+  (name)=>`I still have my ticket stub from the ${name}.`,
+  (name)=>`Sometimes I can still hear the roar of the crowd at the ${name}.`,
+  (name)=>`Nobody back home believed I was really at the ${name}.`,
+  (name)=>`The photos from the ${name} are faded now, but I am not in a single one — I was too busy living it.`,
+  (name)=>`I spent too much at the ${name}. Worth every cent.`,
+  (name)=>`I met strangers at the ${name} who felt like family for one perfect week.`,
+  (name)=>`The flight home from the ${name} was the quietest I have ever been.`,
+  (name)=>`Every time it comes around again, I remember my ${name}.`,
+  (name)=>`I got hopelessly lost on the way to the ${name}. Best wrong turn of my life.`,
+  (name)=>`The food near the ${name} ruined every restaurant back home for me.`,
+  (name)=>`I promised myself I would go back to the ${name}. Life had other plans.`,
+  (name)=>`My keepsake from the ${name} still sits where everyone can see it.`,
+];
+
+/* ============================================================
+   🔧 INTEGRATION NOTES (exact edits to index.html)
+   ============================================================
+
+   1) lifeRecord() — add these 4 fields inside the returned object
+      (e.g. right after `founder: has('founder'), founderPeak: S.founderPeak||0,` ~line 2406):
+
+        marqueeTrips: S.marqueeTrips||0,
+        tripEventsDistinct: Object.keys(S.tripCounts||{}).length,
+        tripSameMax: Object.values(S.tripCounts||{}).reduce((a,b)=>Math.max(a,b),0),
+        tripSpendMax: Math.round((S.tripSpendMax||0)/priceMult()),
+
+      NOTE: tripSpendMax is deflated back to BASE money at snapshot time so the
+      high_roller_trip q() compares against a flat 150000 — priceMult() is applied
+      here, not in the ribbon (q must stay a pure function of r).
+
+   2) RIBBONS — splice the 4 TRIP_RIBBONS entries into the existing
+      `const RIBBONS=[` array (drop the TRIP_RIBBONS wrapper, paste the objects).
+
+   3) HEIR RESET — trips are per-life. Next to `S.founderPeak=0` in the heir
+      handoff (~line 6165), add this ONE line:
+
+        S.tripLog=[]; S.marqueeTrips=0; S.tripCounts={}; S.tripSpendMax=0;
+
+      (S._lastMarquee already resets however the existing trip code handles it —
+      unchanged here. The world-event CALENDAR carries across heirs; attendance does not.)
+
+   4) CALL ORDER per completed trip (caller = the upgraded marquee trip flow):
+        tripRecord(e, spentTotal)                      // once, after all money is spent
+        const item = tripMemorabilia(e, tier)          // optional, if player bought a keepsake
+        const line = tripSocialSplash(e, picks)        // optional; null if no socials
+      Caller narrates: pushLog for the trip itself, item.name/item.note, and `line`.
+      DETERMINISM: if the caller is a modal leaf, the OPENER must logAct('call')
+      (replay trap #2) — tripMemorabilia and tripSocialSplash both consume RNG.
+
+   5) TIER NAMES — tripSocialSplash expects picks.tier in
+      {nosebleed, standard, vip, legend} and picks.extras containing 'photographer'.
+      If the ticket-tier layer used different keys, alias them at the call site
+      (unknown tiers safely fall back to `standard`).
+   ============================================================ */
+
+/* ===== end trip engine ===== */
+
 const OVERSEAS=[
   /* real recurring world events at their REAL cadence — multi-year ones live on the world calendar (you WAIT for the edition year) */
   {id:'worldcup', name:'World Cup Final',       icon:'🏆', country:'br', cost:1200, travel:2500, happy:18, fame:3, period:4, phaseOff:0},
@@ -12622,38 +13742,92 @@ function attendOverseas(id){
   const host=marqueeHost(e), abroad=host!==S.country;   // 🌍 this edition's host decides whether YOU are travelling abroad
   if(abroad && !passportValid()){ toast('🛂 You need a passport to travel abroad.'); return; }
   logAct('call',{fn:'attendOverseas',args:[id]});
-  if(!abroad){ doTravel(e,false,'economy'); return; }
-  const c=e.cost, t=e.travel;
-  openModal({banner:'Travel', title:e.name, icon:'✈️', text:'Pick your travel class — a better class means more comfort and a better chance to meet people.', closable:true,
+  const hc=COUNTRIES[host]||COUNTRIES[e.country];
+  S._trip={id:e.id, host, cls:null, lodging:null, ticket:null, extra:null};
+  if(!abroad){ S._trip.cls={k:'home',label:'🚗 Local travel — no flight needed',cost:0,comfort:0}; tripLodging(e); return; }
+  const t=e.travel;
+  openModal({banner:'Travel', title:`${e.icon} ${e.name} · ${hc.flag} ${hc.name}`, icon:'✈️', closable:true,
+    text:`This edition is in <b>${hc.flag} ${hc.name}</b>. First — how do you fly?`,
     choices:[
-      {label:`✈️ Economy — ${cur()}${(c+t).toLocaleString()}`, fn:()=>doTravel(e,true,'economy')},
-      {label:`🥂 Business — ${cur()}${(c+Math.round(t*2.2)).toLocaleString()}`, alt:true, fn:()=>doTravel(e,true,'business')},
-      {label:`👑 First Class — ${cur()}${(c+Math.round(t*4)).toLocaleString()}`, alt:true, fn:()=>doTravel(e,true,'first')},
+      {label:`✈️ Economy — ${cur()}${fmn(t)}`, fn:()=>{ S._trip.cls={k:'economy',label:'✈️ Economy flight',cost:t,comfort:0}; tripLodging(e); }},
+      {label:`🥂 Business — ${cur()}${fmn(Math.round(t*2.2))}`, alt:true, fn:()=>{ S._trip.cls={k:'business',label:'🥂 Business-class flight',cost:Math.round(t*2.2),comfort:4}; tripLodging(e); }},
+      {label:`👑 First Class — ${cur()}${fmn(t*4)}`, alt:true, fn:()=>{ S._trip.cls={k:'first',label:'👑 First-class flight',cost:t*4,comfort:9}; tripLodging(e); }},
     ]});
 }
-function doTravel(e,abroad,cls){
-  const travel=abroad?Math.round(e.travel*{economy:1,business:2.2,first:4}[cls]):0;
-  const total=e.cost+travel;
-  if(!spend(total))return;
-  S._lastMarquee=S._lastMarquee||{}; S._lastMarquee[e.id]=S.worldYear||0;   // 🗓️ mark THIS edition attended (only once you actually paid & went)
-  // 🌟 fame perk — a recognized face gets bumped up a class for free
-  let clsUp=cls;
-  if(abroad && (S.fame||0)>=40 && cls!=='first' && rng(0,100) < 10+Math.round((S.fame||0)/5)){
-    clsUp = cls==='economy'?'business':'first';
-  }
-  const comfort={economy:0,business:4,first:9}[clsUp];
-  chg('happy',e.happy+comfort);
-  const clsTxt={economy:'economy',business:'business class 🥂',first:'first class 👑'}[clsUp];
-  const lines=[`I ${abroad?`flew ${clsTxt} to experience`:'attended'} ${e.name}.`,
-    `Total cost: ${cur()}${total.toLocaleString()} · +${e.happy+comfort} Happiness.`];
-  if(clsUp!==cls) lines.splice(1,0,`🌟 ${typeof FAME_TRAVEL_PERKS!=='undefined'?pick(FAME_TRAVEL_PERKS.upgrade):`The gate agent recognized you — <b>free upgrade</b> to ${clsTxt}.`}`);
-  if(S.sm&&S.sm.joined){ const f=(e.fame||1)*rng(800,3000); bumpFollowers(f); lines.push(`+${fc(f)} followers.`); }
+/* ---- 🧳 THE TRIP PLANNER — fly → stay → ticket → one indulgence → book it. Every step is a real spend decision. ---- */
+function tripLodging(e){ closeModal();
+  const choices=LODGING_TIERS.map(L=>({label:`${L.label} — ${cur()}${fmn(L.cost)}`, alt:L.k!=='bnb', tip:L.note, fn:()=>{ S._trip.lodging={k:L.k,label:L.label,cost:L.cost,happy:L.happy||0,fame:L.fame||0,flag:L.flag||null}; tripTicket(e); }}));
+  openModal({banner:'Travel', title:'🏨 Where do you stay?', icon:'🏨', closable:false,
+    text:`From a bunk bed to the presidential suite — the trip is what you make of it.`, choices});
+}
+function tripTicket(e){ closeModal();
+  const choices=TICKET_TIERS.map(T=>{ const c=Math.round(e.cost*T.mult);
+    return {label:`${T.label} — ${cur()}${fmn(c)}`, alt:T.k!=='decent', tip:T.note, fn:()=>{ S._trip.ticket={k:T.k,label:T.label,cost:c,happy:T.happy||0,fame:T.fame||0,meet:!!T.meet,memorab:!!T.memorab}; tripExtra(e); }}; });
+  openModal({banner:'Travel', title:`🎟️ ${e.name} — your ticket`, icon:'🎟️', closable:false,
+    text:`How close to the action do you want to be?`, choices});
+}
+function tripExtra(e){ closeModal();
+  S._tripTicket=S._trip.ticket.k;
+  const elig=TRIP_EXTRAS.filter(x=>{ try{ return !x.when||x.when(S,e); }catch(_){ return false; } }).slice(0,8);
+  const choices=elig.map(x=>{ const c=Math.round(typeof x.cost==='function'?x.cost(e):x.cost);
+    return {label:`${x.icon} ${x.label} — ${cur()}${fmn(c)}`, alt:true, fn:()=>{ S._trip.extra={k:x.k,label:`${x.icon} ${x.label}`,cost:c,def:x}; tripConfirm(e); }}; });
+  choices.unshift({label:'🙅 No extras — just the trip', fn:()=>{ S._trip.extra=null; tripConfirm(e); }});
+  openModal({banner:'Travel', title:'✨ Anything special?', icon:'✨', closable:false,
+    text:`One indulgence, if you want it.`, choices});
+}
+function tripConfirm(e){ closeModal();
+  const tr=S._trip, picks={cls:tr.cls.cost?tr.cls:null, lodging:tr.lodging, ticket:tr.ticket, extras:tr.extra?[tr.extra]:[]};
+  tr.total=(tr.cls.cost||0)+tr.lodging.cost+tr.ticket.cost+(tr.extra?tr.extra.cost:0);
+  openModal({banner:'Travel', title:`${e.icon} ${e.name} — the plan`, icon:'🧾', closable:false,
+    text:tripBudgetSummary(picks)+`<div style="color:var(--dim);font-size:12px;margin-top:6px">You have ${cur()}${fmn(S.money)} to hand.</div>`,
+    choices:[
+      {label:`✅ Book it — ${cur()}${fmn(tr.total)}`, fn:()=>tripGo(e)},
+      {label:'✋ Cancel the trip', alt:true, fn:()=>{ S._trip=null; closeModal(); }},
+    ]});
+}
+function tripGo(e){ closeModal();
+  const tr=S._trip; if(!tr) return;
+  if(!spend(tr.total)){ S._trip=null; return; }
+  const host=tr.host, hc=COUNTRIES[host]||COUNTRIES[e.country], abroad=host!==S.country;
+  S._lastMarquee=S._lastMarquee||{}; S._lastMarquee[e.id]=S.worldYear||0;   // 🗓️ mark THIS edition attended (only after paying)
+  let happyGain=e.happy+(tr.cls.comfort||0)+(tr.lodging.happy||0)+(tr.ticket.happy||0);
+  const fameGain=(tr.lodging.fame||0)+(tr.ticket.fame||0);
+  if(tr.lodging.flag) setFlag(tr.lodging.flag);
+  chg('happy',happyGain); if(fameGain) bumpFame(fameGain);
+  const lines=[`${e.icon} You ${abroad?`flew to <b>${hc.flag} ${hc.name}</b> for`:'went to'} the <b>${e.name}</b> — ${tr.lodging.label.replace(/^[^ ]+ /,'')}, ${tr.ticket.label.replace(/^[^ ]+ /,'')}.`];
+  // 🌟 fame perks — recognized faces get bumped up and mobbed
+  if(abroad && (S.fame||0)>=40 && tr.cls.k!=='first' && tr.cls.k!=='home' && rng(0,100)<10+Math.round((S.fame||0)/5))
+    lines.push(`🌟 ${typeof FAME_TRAVEL_PERKS!=='undefined'?pick(FAME_TRAVEL_PERKS.upgrade):'The gate agent recognized you — <b>free upgrade</b> at the jet bridge.'}`);
   if((S.fame||0)>=32 && rng(0,100)<35){ const f2=Math.round((S.fame||0)*rng(40,120)); if(S.sm&&S.sm.joined)bumpFollowers(f2); chg('happy',1);
     lines.push(`📸 ${typeof FAME_TRAVEL_PERKS!=='undefined'?pick(FAME_TRAVEL_PERKS.mobbed):'You were recognized in the crowd — selfies, cheers, a little chaos.'}${S.sm&&S.sm.joined?` (+${fc(f2)} followers)`:''}`); }
-  const meetChance={economy:10,business:18,first:32}[cls];
-  if(S.celebs && rng(0,100)<meetChance){ const cel=unmetCeleb(); meetCeleb(cel,`Met ${abroad?`flying ${cls} to`:'at'} ${e.name}.`,rng(10,22)); lines.push(`🤩 I met <b>${cel.name}</b> ${cls==='first'?'in the first-class lounge':'on the trip'}!`); }
-  pushLog(`I ${abroad?`flew ${cls} to`:'attended'} ${e.name} ${e.icon}. (−${cur()}${total.toLocaleString()})`,[['good',`+${e.happy+comfort} Happiness`]]);
-  resultModal('Travel', e.name, e.icon, lines, ()=>setTab('life'));
+  // the indulgence
+  if(tr.extra){ S._tripExtraCost=tr.extra.cost; try{ const r=tr.extra.def.apply(e); if(r&&r.lines&&r.lines.length) lines.push(...r.lines); }catch(_){} }
+  // meet the stars (Legend package)
+  if(tr.ticket.meet && S.celebs && rng(0,100)<70){ const cel=unmetCeleb(); if(cel){ meetCeleb(cel,`Met at the ${e.name} — the money-no-object package.`,rng(15,30)); lines.push(`🤩 You met <b>${cel.name}</b> — the package delivered.`); } }
+  // keepsakes
+  if(tr.ticket.memorab||S._tripMemorab){ try{ const it=tripMemorabilia(e,'signed'); if(it) lines.push(`🖋️ Keepsake: <b>${it.name}</b> (worth ${cur()}${fmn(it.value)}) — in your belongings, and it will appreciate.`); }catch(_){} S._tripMemorab=false; }
+  else if(S._tripMerch){ try{ const it=tripMemorabilia(e,'merch'); if(it) lines.push(`🧢 Souvenir: <b>${it.name}</b> added to your belongings.`); }catch(_){} S._tripMerch=false; }
+  // 🏁 HOW IT ENDED — the edition's actual story (who won, who shone)
+  try{ const out=marqueeOutcome(e.id,host); if(out&&out.length){ lines.push(`<div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px"><b>How it ended:</b></div>`); lines.push(...out); } }catch(_){}
+  // social splash
+  try{ const alias={standing:'nosebleed',decent:'standard',premium:'standard',vip:'vip',legend:'legend'};
+    const sp=tripSocialSplash(e,{tier:alias[tr.ticket.k]||'standard',extras:(tr.extra&&tr.extra.k==='photog')?['photographer']:[]}); if(sp) lines.push(sp); }catch(_){}
+  try{ tripRecord(e,tr.total); }catch(_){}
+  pushLog(`${e.icon} I went to the <b>${e.name}</b> in ${hc.flag} ${hc.name} — ${cur()}${fmn(tr.total)} all-in.`,[['good',`+${happyGain} Happiness`],['flag',e.name]]);
+  const done=()=>{ S._trip=null; setTab('life'); };
+  let beat=null; try{ beat=tripBeatFor(e); }catch(_){}
+  if(beat){ tripBeatShow(e,beat,lines,done); return; }
+  resultModal('Travel', e.name, e.icon, lines, done);
+}
+function tripBeatShow(e,beat,lines,done){   // 🎬 one interactive moment mid-trip
+  openModal({banner:'On the Trip', title:`${e.icon} A Moment`, icon:'🎬', closable:false,
+    text:(typeof beat.text==='function'?beat.text(e):beat.text),
+    choices:beat.choices.map(c=>({label:c.label, tip:c.tip, alt:true, fn:()=>{ closeModal();
+      let r=null; try{ r=c.apply(e)||{}; }catch(_){ r={}; }
+      if(r.text){ lines.push(`<div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px">🎬 ${r.text}</div>`); pushLog(`🎬 ${r.text}`, r.tags||[['flag','Trip moment']]); }
+      if(S._tripMemorab){ try{ const it=tripMemorabilia(e,'merch'); if(it) lines.push(`🎁 Keepsake: <b>${it.name}</b> added to your belongings.`); }catch(_){} S._tripMemorab=false; }
+      resultModal('Travel', e.name, e.icon, lines, done);
+    }}))});
 }
 function eventRow(icon,name,priceTxt,onclick,note){
   return `<div class="platrow" onclick="${onclick}"><div class="pinfo"><div class="pn">${icon} ${name}</div>
@@ -16784,6 +17958,369 @@ const EVENTS_WAVE4 = [
 try{ EVENTS.push(...COLLEGE_LIFE, ...FAME_EVENTS, ...EVENTS_WAVE4); }catch(e){ console&&console.warn&&console.warn("event push failed",e); }
 /* ===================== end big update packs ===================== */
 
+
+/* ===== 💎 LUXURY LIFESTYLE PACK ===== */
+/* ============================================================
+   💎 ULTRA-LUXURY EXPERIENCE PACK — one-off money burners for the rich.
+   ~23 interactive EVENTS, id prefix lux_, exact EVENTS shape
+   {id, once?, weight, when, build}. Deterministic: seeded rng/rand/pick
+   ONLY, no DOM, no Date, no Math.random. All `when` are PURE reads of S.
+   Shared cooldown: S._lastLux (≈2yr gap) for repeatable events;
+   once:true bucket-list events skip the cooldown entirely.
+   ============================================================ */
+
+/* -- tiny shared helpers (pure where used in `when`) -- */
+const luxReady = (S, min, age) => S.age >= (age || 18) && S.money >= min &&
+  (S.age - (S._lastLux == null ? -99 : S._lastLux)) >= 2;
+const luxStamp = S => { S._lastLux = S.age; };
+const luxBelong = (S, item) => { S.assets = S.assets || {}; (S.assets.belongings = S.assets.belongings || []).push(item); };
+const luxFmt = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+const LUXURY_EVENTS = [
+
+/* 🛩️ 1. Charter a private jet weekend */
+{ id:'lux_jet', weight:6, when:S=>luxReady(S,250000,21),
+  build:S=>({ yr:`Age ${S.age}`, title:'Wheels Up 🛩️',
+    text:`A charter broker you met at a gala texts you a photo of a Gulfstream on a private apron. "She is fueled and crewed for the weekend. Just say where."`,
+    choices:[
+      {label:'Monaco — Grand Prix weekend', tip:`~${cur()}160k · rub shoulders with money`, apply:()=>{ luxStamp(S); const cost=rng(120,180)*1000; money(-cost); chg('happy',10);
+        if(rng(0,100)<30){ const tip=rng(60,180)*1000; money(tip); bumpFame(2); return {text:`Harbor-front terrace, engines screaming below. A shipping heiress liked your company enough to cut you into a deal that actually paid — ${cur()}${luxFmt(tip)} back before you even landed home.`,tags:[['good',`Monaco paid off +${cur()}${luxFmt(tip)}`]]}; }
+        bumpFame(rng(1,3)); return {text:`Champagne on the paddock roof, a blur of famous faces, and a sunrise flight home. The money is gone and you regret nothing.`,tags:[['good','Monaco weekend']]}; }},
+      {label:'Tokyo — neon and omakase', tip:`~${cur()}120k · feed the soul`, apply:()=>{ luxStamp(S); const cost=rng(100,140)*1000; money(-cost); chg('happy',12); chg('smarts',2);
+        return {text:`Forty-eight hours of back-alley omakase, midnight arcades and a tea ceremony that rewired something in you. You flew home a slightly different person.`,tags:[['good','Tokyo in 48 hours']]}; }},
+      {label:'Maldives — just the two of you', tip:`~${cur()}130k · romance`, when:S=>!!S.spouse, apply:()=>{ luxStamp(S); const cost=rng(110,150)*1000; money(-cost); chg('happy',14);
+        return {text:`An overwater villa, no phones, no staff after sunset. ${S.spouse&&S.spouse.name?S.spouse.name:'Your other half'} said it was the best weekend of the marriage so far. Worth every cent.`,tags:[['good','Maldives escape']]}; }},
+      {label:'Delete the text', apply:()=>{ luxStamp(S); chg('happy',-1); return {text:`You stared at the photo of the jet for a long minute, then put the phone away. The apron stays empty.`,tags:[['flag','Kept your feet on the ground']]}; }},
+    ]})},
+
+/* 🛥️ 2. Superyacht week with full crew */
+{ id:'lux_yacht', weight:5, when:S=>luxReady(S,1500000,21),
+  build:S=>({ yr:`Age ${S.age}`, title:'The Charter of a Lifetime 🛥️',
+    text:`A 70-meter superyacht — twelve crew, a chef, a helipad, a slide off the top deck — is available for one week in the Mediterranean. The quote makes your accountant go quiet.`,
+    choices:[
+      {label:'Fill it with family and friends', tip:`~${cur()}600k · make memories`, apply:()=>{ luxStamp(S); const cost=rng(520,680)*1000; money(-cost);
+        if(rng(0,100)<20){ chg('happy',8); chg('health',-3); return {text:`Three perfect days — then a squall pinned you in a cove for two more, everyone green and clinging to the rails. Somehow that became the story everyone tells, laughing, at every dinner since.`,tags:[['good','The storm week'],['bad','Rough seas']]}; }
+        chg('happy',16); karma(2); return {text:`A week of cliff jumps, chef-made breakfasts and card games under deck lights. Your family will be dining out on this week for a decade.`,tags:[['good','Legendary family week']]}; }},
+      {label:'A-list guest list', tip:`~${cur()}700k · fame-fuel`, when:S=>(S.fame||0)>=32, apply:()=>{ luxStamp(S); const cost=rng(600,760)*1000; money(-cost); bumpFame(rng(5,10)); bumpFollowers(rng(20000,90000));
+        if(rng(0,100)<25){ chg('happy',-4); return {text:`The party was mythic — until a paparazzi drone caught you mid-belly-flop off the helipad. The clip is everywhere. Your publicist says, through gritted teeth, that "all engagement is good engagement."`,tags:[['bad','Belly-flop went viral'],['good','Famous anyway']]}; }
+        chg('happy',12); return {text:`Deck lights, a DJ flown in from Ibiza, and a guest list that made the tabloids invent a nickname for your boat. Your stock as a host has never been higher.`,tags:[['good','Yacht party of the year']]}; }},
+      {label:'Charter it alone — total silence', tip:`~${cur()}480k`, apply:()=>{ luxStamp(S); const cost=rng(430,520)*1000; money(-cost); chg('happy',11); chg('health',4);
+        return {text:`One week. Twelve crew. One guest: you. You read, swam, slept, and remembered what your own thoughts sound like.`,tags:[['good','Silence at sea']]}; }},
+      {label:'Decline the charter', apply:()=>{ luxStamp(S); return {text:`You closed the brochure. A boat that size is really just a very beautiful hole in the ocean you pour money into.`,tags:[['flag','Passed on the yacht']]}; }},
+    ]})},
+
+/* 🚀 3. A seat to space — once in a lifetime */
+{ id:'lux_space', once:true, weight:6, when:S=>S.age>=25 && S.money>=8000000,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Seat on the Rocket 🚀',
+    text:`The email subject line reads: SEAT CONFIRMATION — FLIGHT 7. A private spaceflight company has a cancellation. One seat. Suborbital, eleven minutes, four of them weightless. The price is ${cur()}5,000,000 and the window closes Friday.`,
+    choices:[
+      {label:'Take the seat', tip:`${cur()}5M · see the Earth from above`, apply:()=>{ money(-5000000); setFlag('saw_earth_from_space'); bumpFame(rng(10,18)); ledgerAdd('triumph',20,{note:'Flew to space as a private astronaut.'});
+        if(rng(0,100)<15){ chg('health',-rng(8,16)); chg('happy',16); return {text:`The ascent crushed you into the seat and the re-entry was violent enough to leave bruises — but you floated in silence and watched the whole blue Earth hang in black velvet. Nothing will ever look big to you again.`,tags:[['good','SAW EARTH FROM SPACE'],['bad','Rough re-entry']]}; }
+        chg('happy',20); return {text:`Four minutes of weightlessness. The curve of the Earth, thin blue atmosphere like a held breath. You came down changed — smaller problems stayed smaller forever.`,tags:[['good','SAW EARTH FROM SPACE']]}; }},
+      {label:'Freeze at the gantry', tip:'Lose the deposit', apply:()=>{ money(-500000); chg('happy',-6); return {text:`Suited, strapped, hatch open — and your body simply said no. The deposit is gone. The sky stays where it is, above you.`,tags:[['bad',`Backed out — lost ${cur()}500,000`]]}; }},
+      {label:'Delete the email', apply:()=>({text:`Five million dollars for eleven minutes. You did the math per second and closed the laptop. The stars will still be there.`,tags:[['flag','Stayed on Earth']]})},
+    ]})},
+
+/* 🏝️ 4. Rent a private island */
+{ id:'lux_island', weight:5, when:S=>luxReady(S,3000000,21),
+  build:S=>({ yr:`Age ${S.age}`, title:'An Island of Your Own 🏝️',
+    text:`For one month, an entire private island in the Indian Ocean can be yours — staff of thirty, one guest villa per beach, and a no-fly agreement with the local aviation authority.`,
+    choices:[
+      {label:'Disappear completely', tip:`~${cur()}1.2M · off the grid`, apply:()=>{ luxStamp(S); const cost=rng(1050,1350)*1000; money(-cost); chg('happy',14); chg('health',6);
+        return {text:`Thirty days without a single notification. You learned the names of the reef fish, slept when tired, ate when hungry. Coming back to civilization felt like putting shoes on after a summer barefoot.`,tags:[['good','A month off the map']]}; }},
+      {label:'Fly the whole family out', tip:`~${cur()}1.5M · reunion`, apply:()=>{ luxStamp(S); const cost=rng(1350,1650)*1000; money(-cost); karma(3);
+        if(rng(0,100)<25){ chg('happy',4); return {text:`It took four days for the old arguments to find their way onto the island — apparently no beach is remote enough for family politics. Still: the group photo at sunset is the best one that exists of all of you.`,tags:[['good','Reunion (with drama)']]}; }
+        chg('happy',16); return {text:`Three generations on one beach, no schedules, no screens. The kind of month that becomes family legend before it is even over.`,tags:[['good','The island reunion']]}; }},
+      {label:'Turn it into a content fortress', tip:`~${cur()}1.1M`, when:S=>(S.fame||0)>=15, apply:()=>{ luxStamp(S); const cost=rng(1000,1250)*1000; money(-cost); bumpFollowers(rng(80000,300000)); bumpFame(rng(3,7)); chg('happy',6);
+        return {text:`Drone shots, sunrise posts, a "day 14 on MY island" series. The internet is equal parts obsessed and furious, which is exactly the recipe.`,tags:[['good','Island content empire']]}; }},
+      {label:'Rent a beach house instead', tip:`${cur()}40k`, apply:()=>{ luxStamp(S); money(-40000); chg('happy',7); return {text:`Same ocean, same sunsets, one-thirtieth the price. The only thing missing was the ego.`,tags:[['good','Sensible splurge']]}; }},
+    ]})},
+
+/* 🍷 5. The six-figure wine lot */
+{ id:'lux_wine', weight:5, when:S=>luxReady(S,500000),
+  build:S=>({ yr:`Age ${S.age}`, title:'Lot 47 🍷',
+    text:`At a velvet-roped auction, Lot 47 comes up: a cellar of 1959 Burgundy from a legendary estate, provenance papers thick as a novel. The hammer will land somewhere north of ${cur()}150,000.`,
+    choices:[
+      {label:'Buy it and DRINK it', tip:`~${cur()}220k · one legendary night`, apply:()=>{ luxStamp(S); const cost=rng(160,280)*1000; money(-cost); chg('health',-2);
+        if(rng(0,100)<12){ chg('happy',-5); return {text:`You gathered your favorite people, decanted the crown-jewel bottle with ceremony... and it was corked. Sixty years of waiting for wet cardboard. The sommelier looked physically ill. The backup bottles were merely magnificent.`,tags:[['bad','The star bottle was corked']]}; }
+        chg('happy',14); karma(1); return {text:`One long table, twelve friends, candles burning down as bottle after impossible bottle went around. Someone cried at the 1959. You will never drink better, and you know it, and that is fine.`,tags:[['good','The dinner of a lifetime']]}; }},
+      {label:'Buy it and cellar it', tip:`~${cur()}220k · liquid asset`, apply:()=>{ luxStamp(S); const cost=rng(160,280)*1000; money(-cost);
+        luxBelong(S,{name:'1959 Burgundy Cellar — Lot 47', icon:'🍷', cat:'art', value:Math.round(cost*1.12), bought:cost, appraised:true, fake:false});
+        return {text:`Climate-controlled vault, insurance rider, provenance sealed. It will only get rarer — every collector who drinks theirs makes yours worth more.`,tags:[['good','Cellared Lot 47']]}; }},
+      {label:'Bid, lose on purpose, drink the free samples', apply:()=>{ luxStamp(S); chg('happy',4); return {text:`You raised your paddle twice for the thrill, dropped out gracefully, and spent the evening on the tasting table. The best wines at an auction are the ones someone else pays for.`,tags:[['good','Freeloaded elegantly']]}; }},
+    ]})},
+
+/* 💎 6. Commission a custom diamond piece */
+{ id:'lux_diamond', weight:5, when:S=>luxReady(S,1500000),
+  build:S=>({ yr:`Age ${S.age}`, title:'The Commission 💎',
+    text:`A master jeweler in Antwerp — waiting list measured in years — has agreed to take your commission. A one-of-one piece around a flawless 8-carat stone. Design meetings begin at ${cur()}600,000.`,
+    choices:[
+      {label:'A gift for the love of your life', tip:`~${cur()}650k`, when:S=>!!S.spouse, apply:()=>{ luxStamp(S); const cost=rng(550,750)*1000; money(-cost); chg('happy',12);
+        luxBelong(S,{name:'One-of-One Diamond Necklace', icon:'💎', cat:'jewelry', value:Math.round(cost*0.85), bought:cost, appraised:true, fake:false});
+        return {text:`Eight months of secret design meetings. When the box opened, ${S.spouse&&S.spouse.name?S.spouse.name:'your spouse'} went completely silent — then wore it to breakfast for a week straight, over pajamas.`,tags:[['good','The necklace']]}; }},
+      {label:'A statement ring — for you', tip:`~${cur()}600k`, apply:()=>{ luxStamp(S); const cost=rng(520,700)*1000; money(-cost); chg('happy',8);
+        luxBelong(S,{name:'Flawless 8-Carat Signet Ring', icon:'💍', cat:'jewelry', value:Math.round(cost*0.85), bought:cost, appraised:true, fake:false});
+        if(rng(0,100)<15 && (S.fame||0)>=32){ bumpFame(2); return {text:`The ring is absurd and magnificent. A tabloid ran a zoomed photo of your hand with the headline WHAT IS THAT. Free publicity, technically.`,tags:[['good','The ring made headlines']]}; }
+        return {text:`It catches the light from across a room. You have caught yourself gesturing more when you talk. You regret nothing.`,tags:[['good','The signet ring']]}; }},
+      {label:'Lab-grown replica of the design', tip:`${cur()}35k · nobody can tell`, apply:()=>{ luxStamp(S); money(-35000); chg('happy',4);
+        luxBelong(S,{name:'Lab-Grown Diamond Piece', icon:'💎', cat:'jewelry', value:22000, bought:35000, appraised:true, fake:false});
+        return {text:`Chemically identical, ninety-five percent cheaper, and the jeweler kept your secret. Every compliment it gets feels like getting away with something.`,tags:[['good','The clever replica']]}; }},
+      {label:'Walk away from the atelier', apply:()=>{ luxStamp(S); return {text:`You looked at the sketches, did the arithmetic on what else ${cur()}600,000 buys, and shook hands goodbye.`,tags:[['flag','Passed on the diamond']]}; }},
+    ]})},
+
+/* 🏎️ 7. Supercar track day with a pro driver */
+{ id:'lux_track', weight:6, when:S=>luxReady(S,250000),
+  build:S=>({ yr:`Age ${S.age}`, title:'Green Flag 🏎️',
+    text:`A private circuit, a fleet of hypercars, and a former F1 driver as your personal coach for the day. He looks you up and down and says: "How brave are we feeling?"`,
+    choices:[
+      {label:'Push past the limit', tip:`${cur()}70k · glory or gravel`, apply:()=>{ luxStamp(S); money(-rng(55,85)*1000);
+        if(rng(0,100) < 35 + Math.floor(S.stats.health/4)){ chg('happy',14); bumpFame(1); return {text:`Last session of the day, you strung together a lap that made the pro whistle into the radio. He said — on the record — that you could have raced. You will be retelling this forever.`,tags:[['good','The lap of your life']]}; }
+        const damage=rng(90,220)*1000; money(-damage); chg('health',-rng(8,20)); chg('happy',-6);
+        return {text:`Turn 7, too hot, and half a million dollars of carbon fiber met the barrier at speed. You walked away — limping — and the damage waiver did NOT cover "driver exuberance": ${cur()}${luxFmt(damage)} on top.`,tags:[['bad',`Crashed — ${cur()}${luxFmt(damage)} damage`]]}; }},
+      {label:'Follow the racing line, learn', tip:`${cur()}60k`, apply:()=>{ luxStamp(S); money(-rng(50,70)*1000); chg('happy',11); chg('smarts',1);
+        return {text:`Braking points, apexes, throttle discipline. By the last session you were smooth enough that the pro stopped talking and just let you drive. A perfect day.`,tags:[['good','Fast and clean']]}; }},
+      {label:'Passenger hot laps only', tip:`${cur()}15k`, apply:()=>{ luxStamp(S); money(-15000); chg('happy',7);
+        return {text:`You let the professional do the driving and spent three laps making sounds you did not know you could make. Cheaper, and honestly maybe faster.`,tags:[['good','Passenger of the year']]}; }},
+      {label:'Stay in the paddock', apply:()=>{ luxStamp(S); return {text:`You drank the free espresso, admired the machines, and kept your license points intact.`,tags:[['flag','Kept it in the garage']]}; }},
+    ]})},
+
+/* 🎰 8. The high-roller suite */
+{ id:'lux_highroller', weight:5, when:S=>luxReady(S,600000,21),
+  build:S=>({ yr:`Age ${S.age}`, title:'The Private Floor 🎰',
+    text:`A casino host with a titanium business card invites you up past the velvet rope — the private gaming floor. Butler service, no cameras you can see, and table minimums that would buy a car.`,
+    choices:[
+      {label:'Baccarat until sunrise', tip:`${cur()}180k buy-in · real swings`, apply:()=>{ luxStamp(S); const buyin=rng(120,240)*1000; money(-buyin); const r=rng(0,100);
+        if(r<32){ const win=Math.round(buyin*(1.6+rand()*1.6)); money(win); chg('happy',12); return {text:`The shoe ran hot for four straight hours. You walked out at dawn with ${cur()}${luxFmt(win)}, comped everything, and the host bowing slightly lower than before.`,tags:[['good',`Won ${cur()}${luxFmt(win)}`]]}; }
+        if(r<75){ chg('happy',-7); return {text:`The cards had no mercy. ${cur()}${luxFmt(buyin)} evaporated with a politeness that somehow made it worse. The suite was comped. Cold comfort.`,tags:[['bad',`Lost ${cur()}${luxFmt(buyin)}`]]}; }
+        money(buyin); chg('happy',5); return {text:`Up big, down big, and out at exactly even — plus a comped penthouse, a chef, and a story. The only way to beat the house is to break even in style.`,tags:[['good','Broke even, lived large']]}; }},
+      {label:'Whale it — double buy-in', tip:`${cur()}400k · maximum variance`, when:S=>S.money>=1200000, apply:()=>{ luxStamp(S); const buyin=rng(320,480)*1000; money(-buyin); const r=rng(0,100);
+        if(r<30){ const win=Math.round(buyin*(2+rand()*2)); money(win); chg('happy',15); bumpFame(2); return {text:`A crowd of hosts materialized as the chips stacked up. ${cur()}${luxFmt(win)} and a standing invitation to every property they own on three continents.`,tags:[['good',`WHALE WIN +${cur()}${luxFmt(win)}`]]}; }
+        chg('happy',-10); return {text:`The pit boss watched ${cur()}${luxFmt(buyin)} cross the felt with the serene face of a man who has seen it all before. The private elevator down felt very long.`,tags:[['bad',`Lost ${cur()}${luxFmt(buyin)}`]]}; }},
+      {label:'Play tiny, milk the comps', tip:`~${cur()}25k`, apply:()=>{ luxStamp(S); money(-rng(15,35)*1000); chg('happy',8);
+        return {text:`Minimum bets, maximum lifestyle. You nursed your chips for six hours while the butler kept the wagyu and vintage champagne coming. The host has quietly downgraded your card.`,tags:[['good','Comp goblin']]}; }},
+      {label:'Take the tour, bet nothing', apply:()=>{ luxStamp(S); return {text:`You admired the room where fortunes go to die, thanked the host, and took the elevator down with your fortune intact.`,tags:[['flag','Left the chips alone']]}; }},
+    ]})},
+
+/* 🐎 9. Buy a racehorse share */
+{ id:'lux_racehorse', weight:5, when:S=>luxReady(S,750000),
+  build:S=>{ const horse=pick(['Midnight Ledger','Burn Rate','Old Money','Photo Finish','Inheritance','Protean Dream','Compound Interest']);
+    return { yr:`Age ${S.age}`, title:'The Yearling 🐎',
+    text:`A bloodstock agent shows you a video of a yearling with an absurd stride and a pedigree full of champions. A controlling share is available — and you get naming rights. You already know the name: ${horse}.`,
+    choices:[
+      {label:`Buy in and race ${horse}`, tip:`~${cur()}320k · first race this season`, apply:()=>{ luxStamp(S); const cost=rng(260,400)*1000; money(-cost); const r=rng(0,100);
+        if(r<20){ const purse=rng(120,300)*1000; money(purse); bumpFame(rng(2,5)); chg('happy',15); ledgerAdd('triumph',10,{note:`${horse} won on debut.`}); return {text:`${horse} broke last from the gate, swung five wide, and ran them all down in the stretch. The grandstand ROARED your colors home. Purse: ${cur()}${luxFmt(purse)}. You cried a little. Everyone did.`,tags:[['good',`${horse} WINS +${cur()}${luxFmt(purse)}`]]}; }
+        if(r<70){ chg('happy',6); return {text:`${horse} ran a game fourth on debut — green, but the trainer is beaming: "This one just needs to figure out what legs are for." There is real hope in the barn.`,tags:[['good',`${horse} shows promise`]]}; }
+        money(-30000); chg('happy',-8); return {text:`${horse} pulled up lame at the top of the stretch. Heart in your throat until the vet called it a strain, not a break — months of rehab and a ${cur()}30,000 vet bill, but the horse will be fine. Racing is a cruel religion.`,tags:[['bad',`${horse} injured — ${cur()}30,000 vet bill`]]}; }},
+      {label:'Buy in for breeding instead', tip:`~${cur()}280k · steadier`, apply:()=>{ luxStamp(S); const cost=rng(240,320)*1000; money(-cost); const fees=rng(40,90)*1000; money(fees); chg('happy',6);
+        return {text:`No glory, no grandstands — just a beautiful animal in a green field and stud contracts that paid ${cur()}${luxFmt(fees)} in the first season. The unsexy end of the sport is the profitable one.`,tags:[['good',`Stud fees +${cur()}${luxFmt(fees)}`]]}; }},
+      {label:'Pet the horse, keep the money', apply:()=>{ luxStamp(S); chg('happy',2); return {text:`You fed the yearling a carrot, admired the stride one more time, and let someone else buy the dream. Horses eat money faster than they run.`,tags:[['flag','Passed on the horse']]}; }},
+    ]};}},
+
+/* 👨‍🍳 10. Fly in a three-Michelin-star chef */
+{ id:'lux_chef', weight:6, when:S=>luxReady(S,150000),
+  build:S=>({ yr:`Age ${S.age}`, title:'A Private Table 👨‍🍳',
+    text:`Through a friend of a friend, a chef with three Michelin stars will close the restaurant for a night, fly in with a brigade of six, and cook a fourteen-course menu in YOUR kitchen. Who gets a seat?`,
+    choices:[
+      {label:'A table for two — your spouse', tip:`~${cur()}40k`, when:S=>!!S.spouse, apply:()=>{ luxStamp(S); money(-rng(32,48)*1000); chg('happy',13);
+        return {text:`Fourteen courses, four hours, two chairs. Somewhere around the seventh course you both stopped talking about the food and started talking the way you did when you first met. Cheaper than therapy. Well — comparable.`,tags:[['good','The fourteen-course date']]}; }},
+      {label:'Invite the boss and the inner circle', tip:`~${cur()}55k · power move`, when:S=>!!S.job, apply:()=>{ luxStamp(S); money(-rng(45,65)*1000);
+        if(rng(0,100)<60){ S.rep=clamp((S.rep||0)+8,-100,100); chg('happy',8); return {text:`By the cheese course the boss was telling stories nobody at the office has ever heard. You are now, permanently, "the one who did THAT dinner." Doors will open.`,tags:[['good','Career-defining dinner']]}; }
+        chg('happy',-4); return {text:`The chef sent back a question about "dietary restrictions" and the boss replied "surprise me" — then turned out to be violently allergic to the theme ingredient. An ambulance was NOT needed, barely. The dinner is legendary for the wrong reasons.`,tags:[['bad','The allergy incident']]}; }},
+      {label:'Table for one — pure selfishness', tip:`~${cur()}35k`, apply:()=>{ luxStamp(S); money(-rng(28,42)*1000); chg('happy',10);
+        return {text:`Fourteen courses, one chair, zero conversation, total attention. The chef said cooking for a single focused guest was "an honor." You have peaked as a diner.`,tags:[['good','Table for one']]}; }},
+      {label:'Order takeout instead', apply:()=>{ luxStamp(S); chg('happy',2); return {text:`You got the usual from the usual place and ate it on the couch. Somewhere, a chef with three stars will never know what he missed.`,tags:[['flag','Takeout wins again']]}; }},
+    ]})},
+
+/* 🎭 11. Rent out an entire stadium for your party */
+{ id:'lux_stadium', weight:5, when:S=>luxReady(S,1000000,21),
+  build:S=>({ yr:`Age ${S.age}`, title:'Your Name on the Marquee 🎭',
+    text:`The city arena has an open date, and the events director is very willing to rent you the ENTIRE venue for one night. Your birthday, your show, your name in ten-foot letters.`,
+    choices:[
+      {label:'Open the doors to the public', tip:`~${cur()}300k · fame roulette`, apply:()=>{ luxStamp(S); money(-rng(240,380)*1000);
+        if((S.fame||0)>=32){ bumpFame(rng(4,8)); bumpFollowers(rng(30000,120000)); chg('happy',14); return {text:`Fourteen thousand people sang to you. FOURTEEN THOUSAND. The aerial shot of the packed bowl with your name on the screen is your pinned post forever.`,tags:[['good','Sold out your own birthday']]}; }
+        chg('happy',-9); bumpFame(1); return {text:`Roughly four hundred people came to a nineteen-thousand-seat arena. The echo was extraordinary. A local blog ran the headline "Who Is This For?" — and honestly, fair.`,tags:[['bad','The empty arena']]}; }},
+      {label:'Invite-only spectacle', tip:`~${cur()}280k · safe and glorious`, apply:()=>{ luxStamp(S); money(-rng(220,340)*1000); chg('happy',12); karma(1);
+        return {text:`Six hundred hand-picked guests on the arena floor, acrobats in the rafters, fireworks indoors (permitted, barely). Nobody who was there will ever shut up about it, which was the entire point.`,tags:[['good','The private spectacle']]}; }},
+      {label:'Add a superstar headliner', tip:`~${cur()}650k total`, when:S=>S.money>=1600000, apply:()=>{ luxStamp(S); money(-rng(580,720)*1000); bumpFame(rng(3,6)); chg('happy',15);
+        return {text:`A genuine chart-topper played a ninety-minute set for your guests, then stayed for cake. Your birthday now has a live album. This is the most money-shaped flex of your life.`,tags:[['good','A superstar sang happy birthday']]}; }},
+      {label:'Book a nice restaurant like a normal person', apply:()=>{ luxStamp(S); chg('happy',4); return {text:`Twelve friends, one long table, no arena. The events director sounded genuinely heartbroken on the phone.`,tags:[['flag','Kept the party human-sized']]}; }},
+    ]})},
+
+/* 🖼️ 12. The famous-artist canvas at auction */
+{ id:'lux_art', weight:5, when:S=>luxReady(S,3000000),
+  build:S=>({ yr:`Age ${S.age}`, title:'The Last Canvas 🖼️',
+    text:`A late masterwork by a blue-chip artist comes up at the evening sale — estimate ${cur()}1,200,000. The room is full of phone bidders and one rival collector who keeps glancing at you. The auctioneer clears his throat.`,
+    choices:[
+      {label:'Bid to your limit, not a cent more', tip:`~${cur()}1.2M · discipline`, apply:()=>{ luxStamp(S);
+        if(rng(0,100)<55){ const cost=rng(1050,1300)*1000; money(-cost); chg('happy',10);
+          luxBelong(S,{name:'Blue-Chip Masterwork (Evening Sale)', icon:'🖼️', cat:'art', value:Math.round(cost*1.08), bought:cost, appraised:true, fake:false});
+          return {text:`The rival blinked first. Hammer down at ${cur()}${luxFmt(cost)} — within estimate, which in this room counts as theft. It hangs where you see it every morning.`,tags:[['good','Won the canvas at estimate']]}; }
+        chg('happy',-4); return {text:`The rival collector took it three bids past your ceiling, then had the audacity to nod at you respectfully. You kept your discipline and lost the painting. Both things hurt.`,tags:[['bad','Outbid — walked away clean']]}; }},
+      {label:'Win it at ANY cost', tip:`could hit ${cur()}2.5M · ego bidding`, apply:()=>{ luxStamp(S); const cost=rng(1800,2600)*1000; money(-cost); bumpFame(rng(2,4)); chg('happy',7);
+        luxBelong(S,{name:'Blue-Chip Masterwork (Record Price)', icon:'🖼️', cat:'art', value:1350000, bought:cost, appraised:true, fake:false});
+        return {text:`A bidding war that made the room gasp. Hammer at ${cur()}${luxFmt(cost)} — a record for the artist, and roughly double what the piece is worth. The art press called it "exuberant." Your accountant used a different word.`,tags:[['good','Won the war'],['bad','Overpaid spectacularly']]}; }},
+      {label:'Buy a quiet lesser work instead', tip:`~${cur()}320k · smart money`, apply:()=>{ luxStamp(S); const cost=rng(280,360)*1000; money(-cost); chg('happy',6);
+        luxBelong(S,{name:'Early Study by a Blue-Chip Artist', icon:'🖼️', cat:'art', value:Math.round(cost*1.15), bought:cost, appraised:true, fake:false});
+        return {text:`While the room fought over the trophy, you picked up an early study from the same hand at a fraction of the price. The dealers noticed. That is how reputations start.`,tags:[['good','The connoisseur move']]}; }},
+      {label:'Sit on your hands', apply:()=>{ luxStamp(S); return {text:`You watched two egos light money on fire over stretched canvas and enjoyed the show for free.`,tags:[['flag','Spectator at the sale']]}; }},
+    ]})},
+
+/* 🚁 13. Heli-skiing the Alps */
+{ id:'lux_heliski', weight:5, when:S=>luxReady(S,300000) && S.stats.health>=50,
+  build:S=>({ yr:`Age ${S.age}`, title:'First Tracks 🚁',
+    text:`A helicopter, a mountain guide, and a week of untouched alpine powder that no lift can reach. The guide taps the avalanche transceiver on your chest: "This stays on. Always."`,
+    choices:[
+      {label:'Ask for the steepest lines', tip:`~${cur()}95k · the edge`, apply:()=>{ luxStamp(S); money(-rng(80,115)*1000);
+        if(rng(0,100)<25){ chg('health',-rng(8,18)); chg('happy',5); return {text:`On day four the slope CRACKED — a slab broke away twenty meters above and you skied out of it on pure adrenaline as the guide screamed vectors into the radio. Everyone made it. Nobody spoke on the flight back. You have never felt more alive or less immortal.`,tags:[['bad','Avalanche scare'],['good','Skied out alive']]}; }
+        chg('happy',15); chg('health',3); return {text:`Seven days of first tracks down faces most humans will only ever see from airplanes. The last run — sunset, waist-deep, utterly silent — is now the memory you go to when someone says "happy place."`,tags:[['good','The perfect powder week']]}; }},
+      {label:'Ride the safe, glorious classics', tip:`~${cur()}80k`, apply:()=>{ luxStamp(S); money(-rng(70,95)*1000); chg('happy',12); chg('health',4);
+        return {text:`The guide picked the lines and every single one was better than the best run of your life to date. Champagne in the snow at the pickup zone. This is what money is FOR.`,tags:[['good','Alpine perfection']]}; }},
+      {label:'Stay in the chalet spa', apply:()=>{ luxStamp(S); money(-8000); chg('happy',6); chg('health',3); return {text:`You watched the helicopter shrink into the peaks from a hot tub with a drink in hand. Everyone wins in their own way.`,tags:[['good','Spa summit']]}; }},
+    ]})},
+
+/* ⌚ 14. The grail watch */
+{ id:'lux_watch', weight:5, when:S=>luxReady(S,600000),
+  build:S=>({ yr:`Age ${S.age}`, title:'The Grail ⌚',
+    text:`The watch. THE watch — the one with an eight-year waiting list. An authorized dealer says he can move you up the list "eventually." A grey-market contact says he has one in a briefcase, today, for a premium.`,
+    choices:[
+      {label:'The official list — patience', tip:`~${cur()}175k · guaranteed genuine`, apply:()=>{ luxStamp(S); const cost=rng(150,200)*1000; money(-cost); chg('happy',9);
+        luxBelong(S,{name:'Grail Chronograph (Boutique)', icon:'⌚', cat:'jewelry', value:Math.round(cost*1.25), bought:cost, appraised:true, fake:false});
+        return {text:`Months of polite emails, one bottle of very good scotch to the dealer, and then the call. Full papers, boutique box, factory seal. It was already worth more than you paid before you left the store.`,tags:[['good','The grail — genuine']]}; }},
+      {label:'Grey market — the briefcase, today', tip:`~${cur()}260k · instant... probably real`, apply:()=>{ luxStamp(S); const cost=rng(220,300)*1000; money(-cost);
+        if(rng(0,100)<22){ chg('happy',6); luxBelong(S,{name:'Grail Chronograph (Grey Market)', icon:'⌚', cat:'jewelry', value:cost, bought:cost, appraised:false, fake:true, fakeFrac:rng(8,15)/100});
+          return {text:`The weight felt right. The dial looked right. The seller vanished politely. It ticks beautifully on your wrist — and you have not had it appraised. Some part of you does not want to.`,tags:[['flag','The briefcase watch...']]}; }
+        chg('happy',10); luxBelong(S,{name:'Grail Chronograph (Grey Market)', icon:'⌚', cat:'jewelry', value:Math.round(cost*1.05), bought:cost, appraised:true, fake:false});
+        return {text:`A tense hour with a loupe and an independent watchmaker confirmed it: genuine, unpolished, unworn. You paid the impatience tax — ${cur()}${luxFmt(cost)} — but the grail is on your wrist TONIGHT.`,tags:[['good','Grail secured (premium paid)']]}; }},
+      {label:'Keep wearing what you have', apply:()=>{ luxStamp(S); return {text:`Your current watch tells the same time for a lot less money. The grail can stay a dream — that is half of what grails are for.`,tags:[['flag','Resisted the grail']]}; }},
+    ]})},
+
+/* 🦈 15. Cage-diving with great whites */
+{ id:'lux_sharks', weight:5, when:S=>luxReady(S,100000),
+  build:S=>({ yr:`Age ${S.age}`, title:'Something in the Water 🦈',
+    text:`A private expedition boat off a cold, famous coastline. The crew chums the water and lowers a steel cage. Somewhere below, four meters of great white shark is circling.`,
+    choices:[
+      {label:'Get in the cage', tip:`${cur()}30k`, apply:()=>{ luxStamp(S); money(-rng(24,38)*1000);
+        if(rng(0,100)<15){ chg('happy',8); chg('health',-2); return {text:`She hit the cage. HIT it — a test bite on the bars a forearm from your face, black eye rolling white. You surfaced screaming, half terror, half the purest joy of your life. The crew called it "a good interaction."`,tags:[['good','The shark TOUCHED THE CAGE']]}; }
+        chg('happy',11); return {text:`She glided past close enough to count the scars on her flank — ancient, indifferent, perfect. You came up changed. The ocean has an owner and it is not us.`,tags:[['good','Eye to eye with a great white']]}; }},
+      {label:'Film it from the deck', tip:`${cur()}26k`, when:S=>(S.fame||0)>=15, apply:()=>{ luxStamp(S); money(-rng(22,30)*1000); bumpFollowers(rng(10000,60000)); chg('happy',7);
+        return {text:`The breach shot — full body out of the water at golden hour — did numbers you did not think were possible. The comments are just the shark emoji, thousands deep.`,tags:[['good','The breach went viral']]}; }},
+      {label:'Stay on the boat with the soup', apply:()=>{ luxStamp(S); money(-6000); chg('happy',4); return {text:`You watched the fins from the warm side of the railing with a mug in your hands. Nature documentaries exist for a reason.`,tags:[['good','Dry and delighted']]}; }},
+    ]})},
+
+/* 🌋 16. The volcano expedition */
+{ id:'lux_volcano', weight:5, when:S=>luxReady(S,100000),
+  build:S=>({ yr:`Age ${S.age}`, title:'The Fire Below 🌋',
+    text:`A helicopter charter over an ACTIVE volcano, then a guided walk across a cooled lava field to the crater rim. The waiver is four pages long and the guide is missing an eyebrow.`,
+    choices:[
+      {label:'To the crater rim', tip:`${cur()}42k`, apply:()=>{ luxStamp(S); money(-rng(34,50)*1000);
+        if(rng(0,100)<18){ chg('health',-4); chg('happy',6); return {text:`The wind shifted and a curtain of sulfur gas rolled over the rim — thirty seconds of burning lungs and stumbling behind the guide before the masks cleared it. Below, the lava lake churned on, completely unimpressed. Terrifying. Magnificent. Both.`,tags:[['bad','Gas cloud scare'],['good','Stood at the rim']]}; }
+        chg('happy',13); return {text:`You stood at the edge of a lake of liquid rock and felt the heat push against your chest like a living thing. The planet is a furnace with a thin crust of gardens on top, and now you KNOW it.`,tags:[['good','Looked into the volcano']]}; }},
+      {label:'Helicopter flyover only', tip:`${cur()}25k`, apply:()=>{ luxStamp(S); money(-rng(20,30)*1000); chg('happy',9);
+        return {text:`The crater glowed beneath the helicopter like an open wound in the earth. Close enough to feel small, far enough to keep both eyebrows.`,tags:[['good','The flyover']]}; }},
+      {label:'Admire it from the resort', apply:()=>{ luxStamp(S); chg('happy',2); return {text:`The volcano smoked handsomely on the horizon all week, right where it belongs — over there.`,tags:[['flag','Respected the volcano']]}; }},
+    ]})},
+
+/* 🐋 17. Swim with the whales */
+{ id:'lux_whales', weight:5, when:S=>luxReady(S,100000),
+  build:S=>({ yr:`Age ${S.age}`, title:'Songs in the Deep 🐋',
+    text:`A permit-only expedition to swim — actually SWIM, no cage, no gear but a snorkel — with humpback whales and their calves in a warm sanctuary sea.`,
+    choices:[
+      {label:'Slip into the water', tip:`${cur()}32k`, apply:()=>{ luxStamp(S); money(-rng(26,40)*1000); chg('happy',15); chg('health',2);
+        if(rng(0,100)<30){ karma(2); return {text:`A calf — a BUS-sized baby — swam a slow, deliberate circle around you while its mother watched from below. The guide said in twenty years she has seen that four times. You heard the whale song through your own ribs. You will never fully come back from this.`,tags:[['good','A whale CHOSE you']]}; }
+        return {text:`You hung in blue water while forty tons of gentleness glided beneath your fins, singing. Every luxury you have ever bought just got quietly demoted.`,tags:[['good','Swam with giants']]}; }},
+      {label:'Watch from the boat with the hydrophone', tip:`${cur()}12k`, apply:()=>{ luxStamp(S); money(-12000); chg('happy',8);
+        return {text:`The hydrophone filled the boat with whale song for three hours. Cheaper, drier, and you still cried. Twice.`,tags:[['good','The concert below']]}; }},
+      {label:'Pass on the trip', apply:()=>{ luxStamp(S); return {text:`The whales will keep singing whether you are there or not. That thought is either comforting or the exact reason to go — you chose comforting.`,tags:[['flag','Left the whales in peace']]}; }},
+    ]})},
+
+/* 🎓 18. Endow a scholarship — once */
+{ id:'lux_scholarship', once:true, weight:5, when:S=>S.age>=25 && S.money>=1000000,
+  build:S=>({ yr:`Age ${S.age}`, title:'A Name on a Door 🎓',
+    text:`A university development office has done its homework on your net worth. Over an extremely good lunch, the dean slides a folder across the table: a permanently endowed scholarship fund. Full rides, forever, in your name — if you want it there.`,
+    choices:[
+      {label:'Endow it — your name on it', tip:`~${cur()}600k · a legacy`, apply:()=>{ money(-rng(520,700)*1000); setFlag('philanthropist'); karma(8); bumpFame(3); ledgerAdd('charity',22,{note:'Endowed a university scholarship.'}); chg('happy',10);
+        return {text:`Every single year, forever, a kid who could not afford the door will walk through it because of you. The first recipient wrote you a letter. You have read it eleven times.`,tags:[['good','SCHOLARSHIP ENDOWED']]}; }},
+      {label:'Endow it anonymously', tip:`~${cur()}600k · the quiet way`, apply:()=>{ money(-rng(520,700)*1000); setFlag('philanthropist'); karma(12); ledgerAdd('charity',26,{note:'Anonymously endowed a scholarship.'}); chg('happy',12);
+        return {text:`The fund exists. The students will never know your name, and neither will the press. It is the purest thing you have ever done with money, and only you know it happened.`,tags:[['good','The anonymous fund']]}; }},
+      {label:'Write a one-time check', tip:`${cur()}50k`, apply:()=>{ money(-50000); karma(3); ledgerAdd('charity',8,{note:'One-time university donation.'}); chg('happy',4);
+        return {text:`A generous check, a firm handshake, and a dean visibly recalibrating expectations. It funds two scholarships this year. That is not nothing.`,tags:[['good','One-time gift']]}; }},
+      {label:'Decline the folder', apply:()=>({text:`You paid for the lunch, at least. The dean smiled the smile of a man playing a very long game.`,tags:[['flag','Kept the fortune intact']]})},
+    ]})},
+
+/* 🏥 19. Fund a hospital wing — once */
+{ id:'lux_hospital', once:true, weight:5, when:S=>S.age>=30 && S.money>=5000000,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Wing 🏥',
+    text:`The regional hospital needs a new pediatric wing and the fundraising has stalled ${cur()}2,500,000 short. The chief of medicine does not do sales pitches. She just walks you down the old ward, says nothing, and lets you look.`,
+    choices:[
+      {label:'Fund it — your family name above the doors', tip:`~${cur()}2.5M`, apply:()=>{ money(-rng(2300,2800)*1000); setFlag('philanthropist'); karma(10); bumpFame(rng(6,10)); ledgerAdd('charity',30,{note:'Funded a pediatric hospital wing.'}); chg('happy',12);
+        return {text:`Two years later you cut a ribbon under your own family name in steel letters. Forty beds, two operating theaters, a mural of a hot-air balloon. Long after every other thing you bought is gone, this will be running at 3 a.m., lights on, saving somebody.`,tags:[['good','THE WING — a legacy in brick']]}; }},
+      {label:'Fund it in memory of someone you lost', tip:`~${cur()}2.5M`, apply:()=>{ money(-rng(2300,2800)*1000); setFlag('philanthropist'); karma(14); bumpFame(3); ledgerAdd('charity',34,{note:'Funded a hospital wing in memoriam.'}); chg('happy',9);
+        return {text:`Their name, not yours, above the doors. At the ribbon cutting you managed about half the speech before your voice went. Nobody minded. Grief, converted at last into something that heals.`,tags:[['good','A wing in their memory']]}; }},
+      {label:'Give what stings a little', tip:`${cur()}250k`, apply:()=>{ money(-250000); karma(4); ledgerAdd('charity',10,{note:'Major gift to the hospital fund.'}); chg('happy',5);
+        return {text:`A quarter of a million toward the shortfall — the kind of check that gets a plaque in the lobby, not letters on the roof. The chief shook your hand like she meant it.`,tags:[['good','Lobby-plaque generous']]}; }},
+      {label:'Walk back out through the old ward', apply:()=>{ chg('happy',-3); return {text:`You said you would think about it. The old ward is still there, and so, at odd hours, is the memory of it.`,tags:[['flag','Could not commit']]}; }},
+    ]})},
+
+/* 🎮 20. Build the pleasure wing — once */
+{ id:'lux_cinema', once:true, weight:5, when:S=>S.age>=18 && S.money>=500000,
+  build:S=>({ yr:`Age ${S.age}`, title:'The Fun Wing 🎮',
+    text:`An architect who specializes in "residential entertainment" unrolls the plans: a private cinema with a real projection booth, a two-lane bowling alley, a wall of restored arcade cabinets, a candy bar. A permanent theme park inside your own home.`,
+    choices:[
+      {label:'Build the FULL wing', tip:`~${cur()}220k · joy, permanently installed`, apply:()=>{ money(-rng(180,260)*1000); setFlag('pleasure_wing'); chg('happy',12);
+        return {text:`Six months of construction dust, then: lights down, projector humming, pinball chiming in the next room, the smell of real buttered popcorn in your own house. Every bad day for the rest of your life now has somewhere to go.`,tags:[['good','THE FUN WING — built']]}; }},
+      {label:'Just the cozy media room', tip:`${cur()}75k`, apply:()=>{ money(-75000); chg('happy',7);
+        return {text:`A great screen, absurd speakers, seats that recline past the point of dignity. Ninety percent of the joy at a third of the price — though you do sometimes think about the bowling alley.`,tags:[['good','The media room']]}; }},
+      {label:'Roll the plans back up', apply:()=>({text:`You thanked the architect and kept the spare rooms spare. They stayed empty, which is also a kind of luxury, you tell yourself.`,tags:[['flag','No fun wing']]})},
+    ]})},
+
+/* 💍 21. The grand romantic spectacle — once, spouse-gated */
+{ id:'lux_spectacle', once:true, weight:5, when:S=>!!S.spouse && S.age>=21 && S.money>=400000,
+  build:S=>({ yr:`Age ${S.age}`, title:'Say It Bigger 💍',
+    text:`An "experience architect" (real job title) pitches you the grand gesture: renew your vows in a way ${S.spouse&&S.spouse.name?S.spouse.name:'your spouse'} will never, ever forget. The options escalate quickly.`,
+    choices:[
+      {label:'A 500-drone light show over the city', tip:`~${cur()}160k`, apply:()=>{ money(-rng(130,190)*1000); chg('happy',14);
+        if((S.fame||0)>=32){ bumpFame(rng(3,6)); bumpFollowers(rng(15000,80000)); return {text:`Five hundred drones drew your love story across the night sky — your initials, the date you met, a heart the size of a city block. Half the city filmed it. Your spouse cried before the second formation. So did the internet.`,tags:[['good','The sky said it']]}; }
+        return {text:`Five hundred drones over the rooftop where you had your first date, spelling out words meant for exactly one person — who stood there with both hands over their mouth. The whole neighborhood applauded from balconies.`,tags:[['good','The drone show']]}; }},
+      {label:'Stadium screen + flash mob', tip:`~${cur()}85k · bold... risky`, apply:()=>{ money(-rng(70,100)*1000);
+        if(rng(0,100)<15){ chg('happy',-4); return {text:`The flash mob peaked BEFORE the jumbotron cut to you, the crowd chanted at the wrong moment, and your spouse — who hates being on camera — went pale on a screen twelve meters tall. You have both agreed, lovingly, to never speak of it. The clip has two million views.`,tags:[['bad','The cringe heard round the world']]}; }
+        chg('happy',12); return {text:`Forty dancers, one jumbotron, twenty thousand strangers roaring their approval as your spouse laughed and cried at the same time. Excessive. Perfect. Excessively perfect.`,tags:[['good','The stadium yes']]}; }},
+      {label:'Just the two of you — done perfectly', tip:`${cur()}6k`, apply:()=>{ money(-6000); chg('happy',11); karma(1);
+        return {text:`The restaurant from your first anniversary, the same corner table, a string quartet that "happened" to be there, and the vows rewritten from memory. No drones. No crowd. Your spouse said it was the best night in years — and meant it.`,tags:[['good','Perfect and private']]}; }},
+      {label:'Words are free, actually', apply:()=>({text:`You told the experience architect that love is not a procurement process. Then you went home and said the important part out loud for free.`,tags:[['flag','Kept it simple']]})},
+    ]})},
+
+/* 🤿 22. Submersible to a famous wreck */
+{ id:'lux_submarine', weight:4, when:S=>luxReady(S,800000),
+  build:S=>({ yr:`Age ${S.age}`, title:'Into the Dark 🤿',
+    text:`A private submersible — three seats, one pilot, a titanium sphere with a viewport — is offering dives to a famous deep-water wreck. Hours of descent into a blackness almost no living person has seen.`,
+    choices:[
+      {label:'Make the dive', tip:`~${cur()}320k`, apply:()=>{ luxStamp(S); const cost=rng(260,400)*1000; money(-cost);
+        if(rng(0,100)<10){ money(Math.round(cost/2)); chg('happy',-5); return {text:`Ninety minutes down, an alarm chirped and the pilot — very calmly, which was somehow worse — aborted the dive. Hours of silent ascent staring at the depth gauge. They refunded half. You are still deciding how you feel about deep water.`,tags:[['bad','Dive aborted at depth']]}; }
+        chg('happy',13); chg('smarts',2); return {text:`The wreck came out of the black like a cathedral — rails, portholes, a bow older than your grandparents, resting where the sun has never once reached. Four humans saw it that day. You were one of them.`,tags:[['good','Touched down at the wreck']]}; }},
+      {label:'Sponsor the science dive instead', tip:`${cur()}90k · they take the samples, you take the credit`, apply:()=>{ luxStamp(S); money(-90000); karma(3); ledgerAdd('charity',8,{note:'Sponsored a deep-sea research dive.'}); chg('happy',6);
+        return {text:`Your money sent the marine biologists down instead. They named a newly documented deep-sea anemone after you. It is objectively hideous. You love it.`,tags:[['good','An anemone bears your name']]}; }},
+      {label:'The ocean can keep its secrets', apply:()=>{ luxStamp(S); return {text:`You watched the launch video from a sunny deck and felt zero regret. Some frontiers are for other people.`,tags:[['flag','Stayed at the surface']]}; }},
+    ]})},
+
+/* 🎤 23. A pop star, in your living room */
+{ id:'lux_popstar', weight:4, when:S=>luxReady(S,1200000,21),
+  build:S=>({ yr:`Age ${S.age}`, title:'Private Show 🎤',
+    text:`Through a booking agent who only communicates via encrypted messages, a genuine chart-topping pop star can be yours for one private evening — full band, full production, your living room.`,
+    choices:[
+      {label:'Book the superstar', tip:`~${cur()}400k`, apply:()=>{ luxStamp(S); money(-rng(320,480)*1000); const r=rng(0,100);
+        if(r<20){ money(-50000); chg('happy',7); return {text:`The star was forty minutes late, demanded the thermostat at exactly 21.5 degrees, made your butler cry, and then — THEN — sang for ninety minutes so beautifully that everyone forgave everything. The green room required ${cur()}50,000 in repairs. Legends are expensive.`,tags:[['good','Diva delivered'],['bad',`+${cur()}50,000 in damages`]]}; }
+        chg('happy',14); bumpFame(rng(2,5)); return {text:`Utterly charming, took requests, stayed two hours past contract to play piano and tell tour stories. Your friends are STILL not over it. Neither are you.`,tags:[['good','The private concert']]}; }},
+      {label:'Book the tribute act, tell no one', tip:`${cur()}20k · what could go wrong`, apply:()=>{ luxStamp(S); money(-20000);
+        if(rng(0,100)<50){ chg('happy',8); return {text:`Dim lighting, strong cocktails, and a tribute act with genuinely uncanny stage presence. Half your guests left convinced they had seen the real thing. You will take this secret to the grave, grinning.`,tags:[['good','The perfect con']]}; }
+        chg('happy',-6); return {text:`Two songs in, your most insufferable friend stood up and said, loudly, "That is NOT her." The room turned. The tribute act, to their credit, finished the set with dignity. You did not.`,tags:[['bad','Busted mid-chorus']]}; }},
+      {label:'Just buy concert tickets like everyone else', apply:()=>{ luxStamp(S); money(-2000); chg('happy',5); return {text:`Excellent seats, overpriced drinks, twenty thousand fellow humans singing every word. There is a version of this that money cannot improve, and you just attended it.`,tags:[['good','Front row, normal life']]}; }},
+    ]})},
+
+];
+
+try{ EVENTS.push(...LUXURY_EVENTS); }catch(e){}
+try{ RIBBONS.push(...TRIP_RIBBONS); }catch(e){}   // 🧳 globetrotter / superfan / high-roller / once-in-a-lifetime
+/* ===== end luxury ===== */
 try{ applyTheme(currentTheme()); }catch(e){}   // 🎨 apply the saved appearance theme on load
 try{ initSoundLabel(); }catch(e){}             // 🔊 sync the sound-toggle label
 try{ initLang(); }catch(e){}      // apply saved UI language on load
