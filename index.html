@@ -1728,8 +1728,13 @@ function firstFamilyInit(){
     if(actualRel==='parent'){ const other=P(p.id==='mom'?'dad':p.id==='dad'?'mom':null);   // pull the First Spouse within a believable gap
       if(other && Math.abs((other.age||0)-p.age)>14) other.age=clamp(p.age+rng(-10,6),30,80); } }
   if(P(p.id)) P(p.id).job = foreign ? `President of ${countryName(presCountry)}` : 'President';
+  // 💐 THE FIRST SPOUSE — the president's husband/wife holds the ceremonial title (First Lady / First Gentleman)
+  const spouseId = actualRel==='parent' ? (p.id==='mom'?'dad':p.id==='dad'?'mom':null)
+                 : ({pgf:'pgm',pgm:'pgf',mgf:'mgm',mgm:'mgf'})[p.id] || null;
+  const spouse = spouseId ? P(spouseId) : null;
+  if(spouse && spouse.alive){ spouse.job = spouse.gender==='f' ? 'First Lady' : 'First Gentleman'; spouse.firstSpouse=true; }
   S.potus={ id:p.id, name:p.name, relation:actualRel, title:'President', party:pick(POTUS_PARTIES),
-    country:presCountry, foreign,
+    country:presCountry, foreign, spouseId: (spouse&&spouse.alive)?spouseId:null,
     approval: clamp(50 + Math.round(goodness/4) + rng(-12,12), 20, 88),
     goodness, inOffice:true, term:1, yearsInOffice:0, endYear:rng(9,18),   // stays in office through much of your childhood/teens, then leaves
     codeName: pick(POTUS_CODENAMES), secretService:true };
@@ -1745,11 +1750,11 @@ function potusYear(){
     // a mid-run re-election beat (once), then the term runs until roughly your teen years — or ends early if they are deeply unpopular
     if(!pt._reelected && pt.yearsInOffice>=4 && S.age < (pt.endYear||14)-1){
       if(pt.approval>=44){ pt._reelected=true; pt.term=2; pushLog(`🗳️ ${pt.name} won <b>re-election</b> — another term in the highest office.`,[['good','Re-elected']]); }
-      else { pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job = pt.foreign ? 'former President of '+countryName(pt.country) : 'former President'; setFlag('former_first_family');
+      else { pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job = pt.foreign ? 'former President of '+countryName(pt.country) : 'former President'; { const sp=pt.spouseId&&P(pt.spouseId); if(sp&&/^First (Lady|Gentleman)/.test(sp.job||'')) sp.job='former '+sp.job; } setFlag('former_first_family');
         pushLog(`🗳️ ${pt.name} <b>lost re-election</b>. The family packs up the residence; the motorcades thin.`,[['bad','Voted out']]); }
     }
     if(pt.inOffice && (S.age>=(pt.endYear||14) || (pt.approval<24 && rand()<0.12))){
-      pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job = pt.foreign ? 'former President of '+countryName(pt.country) : 'former President'; setFlag('former_first_family');
+      pt.inOffice=false; const P0=P(pt.id); if(P0) P0.job = pt.foreign ? 'former President of '+countryName(pt.country) : 'former President'; { const sp=pt.spouseId&&P(pt.spouseId); if(sp&&/^First (Lady|Gentleman)/.test(sp.job||'')) sp.job='former '+sp.job; } setFlag('former_first_family');
       pushLog(`🏛️ ${pt.name}'s time in office has <b>ended</b>. The motorcades thin, the world moves on — but you will always be a former first-family member.`,[['echo','The term ends']]);
     }
   } else {
@@ -2860,7 +2865,7 @@ function birthNarrative(){
   t+=`My birthday is ${MONTHS[S.birthMonth-1]} ${S.birthDay} — I'm a ${sign}.<br>`;
   t+=`My name is <b>${S.name}</b>.<br>`;
   const art=j=>(/^[aeiou]/i.test(j)?'an ':'a ')+j;
-  const _job=p=> (S.potus && S.potus.id===p.id) ? `the ${p.job}` : art(p.job);   // "the President", not "a President"
+  const _job=p=> (S.potus && (S.potus.id===p.id || S.potus.spouseId===p.id)) ? `the ${p.job}` : art(p.job);   // "the President" / "the First Gentleman", not "a President"
   if(P('mom')) t+=`My mother is ${P('mom').name}, ${_job(P('mom'))} (age ${P('mom').age}).<br>`;
   if(P('dad')) t+=`My father is ${P('dad').name}, ${_job(P('dad'))} (age ${P('dad').age}).`;
   if(sibs.length){ const list=sibs.map(s=>`${s.name} (age ${s.age})`).join(', ');
