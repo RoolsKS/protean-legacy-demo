@@ -1739,6 +1739,27 @@ function firstFamilyInit(){
     goodness, inOffice:true, term:1, yearsInOffice:0, endYear:rng(9,18),   // stays in office through much of your childhood/teens, then leaves
     codeName: pick(POTUS_CODENAMES), secretService:true };
   setFlag('secret_service'); S.hood='an affluent';
+  firstFamilyKin();   // 🏛️ tag the president's whole bloodline — their parents, siblings, and children — as the extended first family
+}
+// walk the president's blood relatives and label each by their tie to the office
+function firstFamilyKin(){
+  if(!S.potus) return; const pt=S.potus, pres=P(pt.id); if(!pres) return;
+  const presGen=pres.gen||0, presSide=pres.side;
+  for(const q of Object.values(S.people)){
+    if(!q.fam || q.pet || q.id===pt.id || q.id===pt.spouseId) continue;
+    const onSide = (q.side===presSide) || /Brother|Sister/.test(q.rel);   // the president's bloodline: same family side, plus your own siblings (a shared parent)
+    if(!onSide) continue;
+    const dg=(q.gen||0)-presGen; let role=null;
+    if(dg===-2) role = q.gender==='f'?'grandmother':'grandfather';
+    else if(dg===-1) role = q.gender==='f'?'mother':'father';
+    else if(dg===0) role = q.gender==='f'?'sister':'brother';
+    else if(dg===1) role = q.gender==='f'?'daughter':'son';
+    else if(dg===2) role = q.gender==='f'?'granddaughter':'grandson';
+    if(dg===1 && /Cousin/.test(q.rel) && pt.relation==='parent') role = q.gender==='f'?'niece':'nephew';   // the president's siblings' kids
+    if(!role) continue;
+    q.ffKin=true; q.ffRole=`the President's ${role}`;
+    if(q.alive && (q.fame||0)<25) q.fame=Math.max(q.fame||0, rng(8,26));      // first-family relatives are publicly known
+  }
 }
 function potusYear(){
   if(!S || !S.potus) return; const pt=S.potus;
@@ -10274,8 +10295,9 @@ function personCard(p){
   const spark=(lover&&p.spark!=null&&typeof sparkBand==='function')?` · <span style="color:#ff7bb0">💕 ${sparkBand(p.spark).l}</span>`:'';
   return `<div class="person ${p.alive?'':'dead'}${lover?' lover':''}" onclick="openPerson('${p.id}')" style="cursor:pointer">
     <div class="avatar" style="background:linear-gradient(135deg,${col},#3a4658)">${p.name[0]}</div>
-    <div class="meta"><div class="nm">${p.name}${lover?' 💗':''}${p.bestFriend&&p.alive?' 🤝':''}${p.nemesis&&p.alive?' 😈':''}${p.tricks&&p.tricks.length>=3?' 🎓':''}${(typeof emLongDistance==='function'&&emLongDistance(p)&&p.alive)?' 🌍':''}</div>
+    <div class="meta"><div class="nm">${p.name}${p.potus?' 🏛️':p.firstSpouse?' 🎀':p.ffKin?' 🏛️':''}${lover?' 💗':''}${p.bestFriend&&p.alive?' 🤝':''}${p.nemesis&&p.alive?' 😈':''}${p.tricks&&p.tricks.length>=3?' 🎓':''}${(typeof emLongDistance==='function'&&emLongDistance(p)&&p.alive)?' 🌍':''}</div>
       <div class="rl">${p.bestFriend&&p.alive?'Best Friend · ':''}${p.nemesis&&p.alive?'Nemesis · ':''}${p.rel}${p.fam&&p.alive?` · Age ${p.age}`:!p.alive?' · ✝ deceased':''}${spark}${(typeof emLongDistance==='function'&&emLongDistance(p)&&p.alive)?` · <span style="color:var(--warn)">${typeof countryFlag==='function'?countryFlag(p.countryOf):'🌍'} abroad</span>`:''}</div>
+      ${(p.potus||p.firstSpouse||p.ffKin)?`<div class="rl" style="color:#8fd3ff;font-weight:700">🏛️ ${p.potus?('the '+p.job):p.firstSpouse?('the '+p.job):p.ffRole}</div>`:''}
       ${p.alive?`<div class="rl" style="color:${col};font-weight:700">${relStatus(p)}</div>
       <div class="relbars">${pbar('Relationship',p.affinity,col)}${pbar('Trust',p.trust,'var(--accent)')}</div>`:''}
     </div></div>`;
