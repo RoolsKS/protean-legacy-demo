@@ -1705,12 +1705,10 @@ const POTUS_CODENAMES=['Renegade','Radiance','Rosebud','Marksman','Rawhide','Tra
 const POTUS_PARTIES=['the Federalists','the Progressives','the National Union','the Liberty Party','the Reform Coalition'];
 function firstFamily(){ return (S && S.potus) ? S.potus : null; }
 function firstFamilyInit(){
-  const rel = pick(['parent','parent','parent','grandparent','sibling','sibling','aunt']);   // usually a parent
+  const rel = pick(['parent','parent','parent','parent','grandparent']);   // only a parent or grandparent is old enough to hold the office without an age paradox
   let id='dad';
   if(rel==='parent') id = rand()<0.5?'dad':'mom';
-  else if(rel==='grandparent') id = pick(['pgf','pgm','mgf','mgm']);
-  else if(rel==='sibling'){ const sibs=Object.values(S.people).filter(p=>p.fam&&/Brother|Sister/.test(p.rel)); id = sibs.length?pick(sibs).id:'dad'; }
-  else if(rel==='aunt'){ const au=Object.values(S.people).filter(p=>p.fam&&/Aunt|Uncle/.test(p.rel)); id = au.length?pick(au).id:'dad'; }
+  else id = pick(['pgf','pgm','mgf','mgm']);
   const p=P(id) || P('dad'); if(!p){ S.potus=null; return; }
   p.alive=true; if(p.memory) p.memory=p.memory.filter(m=>!/Passed before/.test(m.note||''));
   p.job='President'; p.potus=true;
@@ -1724,6 +1722,11 @@ function firstFamilyInit(){
     presCountry = reps.length ? reps[rng(0,reps.length-1)] : S.country;
   }
   const foreign = presCountry!==S.country;
+  // 🎂 a President is not 25 — age the office-holder up to a realistic range for their relation, and nudge their spouse closer
+  { const minAge = actualRel==='grandparent'?rng(62,78) : actualRel==='aunt'?rng(50,66) : actualRel==='sibling'?rng(44,60) : rng(48,64);   // parent president: late 40s–60s
+    if(p.age<minAge) p.age=minAge;
+    if(actualRel==='parent'){ const other=P(p.id==='mom'?'dad':p.id==='dad'?'mom':null);   // pull the First Spouse within a believable gap
+      if(other && Math.abs((other.age||0)-p.age)>14) other.age=clamp(p.age+rng(-10,6),30,80); } }
   if(P(p.id)) P(p.id).job = foreign ? `President of ${countryName(presCountry)}` : 'President';
   S.potus={ id:p.id, name:p.name, relation:actualRel, title:'President', party:pick(POTUS_PARTIES),
     country:presCountry, foreign,
@@ -2857,8 +2860,9 @@ function birthNarrative(){
   t+=`My birthday is ${MONTHS[S.birthMonth-1]} ${S.birthDay} — I'm a ${sign}.<br>`;
   t+=`My name is <b>${S.name}</b>.<br>`;
   const art=j=>(/^[aeiou]/i.test(j)?'an ':'a ')+j;
-  if(P('mom')) t+=`My mother is ${P('mom').name}, ${art(P('mom').job)} (age ${P('mom').age}).<br>`;
-  if(P('dad')) t+=`My father is ${P('dad').name}, ${art(P('dad').job)} (age ${P('dad').age}).`;
+  const _job=p=> (S.potus && S.potus.id===p.id) ? `the ${p.job}` : art(p.job);   // "the President", not "a President"
+  if(P('mom')) t+=`My mother is ${P('mom').name}, ${_job(P('mom'))} (age ${P('mom').age}).<br>`;
+  if(P('dad')) t+=`My father is ${P('dad').name}, ${_job(P('dad'))} (age ${P('dad').age}).`;
   if(sibs.length){ const list=sibs.map(s=>`${s.name} (age ${s.age})`).join(', ');
     t+=`<br>I have ${sibs.length>1?'older siblings: ':'an older '+sibs[0].rel.toLowerCase()+' named '}${list}.`; }
   t+=`<br>I grew up in ${S.hood} part of ${S.city} — ${c.climate} climate.`;
